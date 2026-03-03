@@ -17,6 +17,7 @@ Output:
 
 from __future__ import annotations
 
+import scripts._fix_encoding  # noqa: F401
 import argparse
 from datetime import datetime
 from pathlib import Path

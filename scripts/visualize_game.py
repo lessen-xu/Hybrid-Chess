@@ -9,6 +9,7 @@ Usage:
 """
 
 from __future__ import annotations
+import scripts._fix_encoding  # noqa: F401
 import argparse
 import json
 import html as html_mod

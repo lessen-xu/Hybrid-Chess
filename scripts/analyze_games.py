@@ -1,4 +1,5 @@
 """Analyze game records and metrics for summary enrichment."""
+import scripts._fix_encoding  # noqa: F401
 import json, os, csv
 
 BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))

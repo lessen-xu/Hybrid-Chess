@@ -2,6 +2,7 @@
 # -*- coding: utf-8 -*-
 """V4 Champion Evaluation: run all evaluations and save results."""
 
+import scripts._fix_encoding  # noqa: F401
 import subprocess
 import sys
 import time

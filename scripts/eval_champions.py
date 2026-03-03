@@ -17,6 +17,7 @@ Progress is streamed to:
 
 from __future__ import annotations
 
+import scripts._fix_encoding  # noqa: F401
 import argparse
 import json
 import math
@@ -349,7 +350,7 @@ def main():
         output_lines.append(msg)
 
     log("=" * 70)
-    log("  🏆 Champion Evaluation — Hybrid Chess AlphaZero")
+    log("  Champion Evaluation - Hybrid Chess AlphaZero")
     log("=" * 70)
     log(f"  Run dir:      {run_dir}")
     log(f"  Iterations:   {args.iters}")
@@ -365,17 +366,17 @@ def main():
     for it in args.iters:
         ckpt = run_dir / f"ckpt_iter{it}.pt"
         if not ckpt.exists():
-            log(f"\n⚠️  Checkpoint not found: {ckpt} — skipping.")
+            log(f"\n[!] Checkpoint not found: {ckpt} -- skipping.")
             continue
 
         log(f"\n{'─' * 70}")
-        log(f"  📦 Iteration {it}  ({ckpt.name})")
+        log(f"  Iteration {it}  ({ckpt.name})")
         log(f"{'─' * 70}")
 
         for sims in args.eval_simulations:
             for opp in args.opponents:
                 opp_label = opponent_labels.get(opp, opp)
-                log(f"\n  ▶ vs {opp_label} @ {sims} sims ...")
+                log(f"\n  > vs {opp_label} @ {sims} sims ...")
                 t0 = time.time()
                 res = run_eval(
                     ckpt_path=str(ckpt),

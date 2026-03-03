@@ -10,6 +10,7 @@ Patches timing hooks into key functions to measure:
 - env.step (per-ply)
 """
 
+import scripts._fix_encoding  # noqa: F401
 import time
 import sys
 import numpy as np

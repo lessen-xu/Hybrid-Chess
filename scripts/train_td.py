@@ -6,6 +6,7 @@ then applies TD(0) updates based on the terminal outcome.
 """
 
 from __future__ import annotations
+import scripts._fix_encoding  # noqa: F401
 import argparse
 import json
 import random
