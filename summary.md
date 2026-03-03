@@ -162,16 +162,16 @@ hybrid-chess/
 
 **GPU engineering profiling** (`scripts/profile_server_path.py`, C++ engine, 200 sims, 2 plies/worker):
 
-| Metric | Baseline (8W) | +VL (8W) | +SHM (8W) |
-|---|---|---|---|
-| Throughput | 221 states/s | 443 states/s | **452 states/s** |
-| Avg batch size | 7.8 (6%) | 45.9 (36%) | **50.2 (39%)** |
-| Max batch size | 8 | 64 | **64** |
-| GPU duty cycle | 41% | 38% | **43%** |
-| Worker IPC wait | 91% | 80% | **77%** |
-| Worker MCTS CPU | 9% | 20% | **23%** |
+| Metric | Baseline (8W) | +VL (8W) | +SHM (8W) | +SHM (16W) |
+|---|---|---|---|---|
+| Throughput | 221 states/s | 443 states/s | 452 states/s | **537 states/s** |
+| Avg batch size | 7.8 (6%) | 45.9 (36%) | 50.2 (39%) | **99.0 (77%)** |
+| Max batch size | 8 | 64 | 64 | **128** |
+| GPU duty cycle | 41% | 38% | 43% | **71%** |
+| Worker IPC wait | 91% | 80% | 77% | 86% |
+| Worker MCTS CPU | 9% | 20% | 23% | 14% |
 
-**Diagnosis:** Virtual-loss leaf batching was the decisive win (2× throughput). SHM added incremental improvement (+2% throughput, +5pp GPU duty) by eliminating pickle overhead. Remaining IPC time is now OS Event latency + actual GPU compute wait. Further scaling requires more workers (linear scaling confirmed).
+**Diagnosis:** Virtual-loss leaf batching was the decisive win (2× throughput). SHM added incremental improvement. Scaling to 16 workers pushes avg batch to 99/128 (77% fill) and GPU duty to 71%. Vectorized policy loss (28× speedup) eliminates training-side bottleneck for the full RL flywheel.
 
 ---
 
@@ -337,6 +337,7 @@ Across evaluations (all **no_queen** ablation), MCTS simulations show a surprisi
 | 33 | Server-path profiler: GPU 3-6% batch fill, 38-41% duty; workers 91-92% IPC-bound → GPU severely starved |
 | 34 | Virtual-loss leaf batching (K=8): avg batch 3.9→27.7 (4W), 7.8→45.9 (8W); throughput 109→202 (4W), 221→443 (8W); 16/16 tests pass |
 | 35 | Zero-copy shared memory IPC: `SharedMemoryPool` + `(wid,K)` signal (~15B Queue payload), throughput 443→452 (8W), GPU duty 38→43%, 16/16 tests pass |
+| 36 | Vectorized policy loss: pad+gather+masked_log_softmax, 28× speedup (B=512), 16W profiler: 537 states/s, 99/128 batch (77% fill), 71% GPU duty, 18/18 tests pass |
 
 ---
 

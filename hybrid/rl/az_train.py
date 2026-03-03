@@ -54,30 +54,36 @@ def train_one_epoch(
 
         policy_logits, value = net(states_t)
 
-        # Policy loss: masked cross-entropy over legal moves
+        # Policy loss: vectorized masked cross-entropy (zero Python loops)
         policy_flat = policy_logits.view(B, -1)  # (B, 8280)
 
-        policy_losses = []
+        # Pad variable-length indices and probs to (B, max_L)
+        max_L = max(len(idx) for idx in pi_indices_list)
+        padded_idx = torch.zeros((B, max_L), dtype=torch.long, device=device)
+        padded_probs = torch.zeros((B, max_L), dtype=torch.float32, device=device)
+        mask = torch.zeros((B, max_L), dtype=torch.bool, device=device)
+
         for i in range(B):
-            indices = torch.from_numpy(
-                pi_indices_list[i].astype(np.int64)
-            ).to(device)
-            target_probs = torch.from_numpy(
-                pi_probs_list[i]
-            ).to(device)
+            L = len(pi_indices_list[i])
+            if L > 0:
+                padded_idx[i, :L] = torch.as_tensor(
+                    pi_indices_list[i].astype(np.int64), device=device
+                )
+                padded_probs[i, :L] = torch.as_tensor(
+                    pi_probs_list[i], dtype=torch.float32, device=device
+                )
+                mask[i, :L] = True
 
-            if len(indices) == 0:
-                continue
+        # Gather all legal logits at once → (B, max_L)
+        gathered = policy_flat.gather(1, padded_idx)
+        # Mask padding to -inf so log_softmax ignores them
+        gathered = gathered.masked_fill(~mask, float('-inf'))
+        log_probs = F.log_softmax(gathered, dim=1)
+        # Kill 0 * -inf = NaN trap: zero out padding positions (out-of-place for autograd)
+        log_probs = log_probs.masked_fill(~mask, 0.0)
 
-            legal_logits = policy_flat[i, indices]
-            log_probs = F.log_softmax(legal_logits, dim=0)
-            ce = -(target_probs * log_probs).sum()
-            policy_losses.append(ce)
-
-        if policy_losses:
-            policy_loss = torch.stack(policy_losses).mean()
-        else:
-            policy_loss = torch.tensor(0.0, device=device)
+        # Vectorized cross-entropy
+        policy_loss = -(padded_probs * log_probs).sum(dim=1).mean()
 
         # Value loss: MSE
         value_loss = F.mse_loss(value.squeeze(-1), z_t)
