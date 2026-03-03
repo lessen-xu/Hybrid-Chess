@@ -115,7 +115,9 @@ hybrid-chess/
     │   ├── config.json                 #     Run configuration
     │   └── game_records/               #     JSON game records for visualization
     ├── az_no_queen_run/                #   V3: 10 iter, no_queen, 100 sims (~12h)
-    ├── az_grand_run_v4/                #   V4: 20 iter, 3phase_v2, 200 sims, C++ engine (running)
+    ├── az_grand_run_v4/                #   V4: 20 iter, 3phase_v2, 200 sims, C++ (~24h)
+    │   ├── ckpt_iter{0..19}.pt         #     Model checkpoints
+    │   └── metrics.csv                 #     Per-iteration training metrics
     ├── ab_tournament_d{1,2}_*.json/png #   AB vs AB tournaments (d1 and d2, 3 conditions × 100 games)
     ├── ab_termination_d2_*.json/png    #   Termination analysis (d2, no_queen, 100 games)
     └── az_vs_ab_showdown_*.json/png    #   AZ Iter16@800sims vs AB-d2 (no_queen, 40 games)
@@ -187,9 +189,9 @@ AB vs AB at two depths × three rule variants. 4 random opening plies to break d
 | **V1** | 20 iter, 3phase, 50 sims | 75% | 10W (iter 2 only) | Gating killed 13/20 iters, draw trap from iter 6 |
 | **V2** | 20 iter, 3phase_v2, 100 sims | 75% | 10W (iter 11, 16) | Breakthrough oscillation (not sustained) |
 | **V3** | 10 iter, no_queen, 100 sims | 55% | 10W (iter 6) | Same oscillation, 5 iters earlier without Queen |
-| **V4** | 20 iter, 3phase_v2, **200 sims**, C++ | — | — | Running |
+| **V4** | 20 iter, 3phase_v2, **200 sims**, C++ | 80% (avg 12.8W) | 10W (8 of 20 iters) | 40% breakthrough rate, 3× more frequent than V2 |
 
-**Breakthrough oscillation is a pipeline property** (small network, catastrophic forgetting, high-variance 20-game evals), not caused by any specific rule variant. Both V2 and V3 show identical pattern: breakthrough → immediate regression.
+**V4 vs V2 comparison:** V4 (200 sims) achieves 40% breakthrough frequency vs AB-d1, compared to V2's ~10% (2/20). However, the breakthrough pattern remains oscillatory—none of the 8 breakthrough iters are consecutive. The overall vs-AB score of 0.438 confirms the fundamental pipeline limitation: the small network (4 blocks, 64 filters) cannot sustainably retain tactical knowledge across training iterations. 200 sims produces sharper policy targets, making breakthroughs more frequent but not more durable.
 
 ### Champion Evaluation: Side-Aware Analysis
 
@@ -304,7 +306,7 @@ Across evaluations, MCTS simulations show a surprising non-linear effect:
 | 27 | Hot-swap `env.py` with `use_cpp=True`: 103 env tests pass, **21× speedup** (85→1,802 plies/s) |
 | 28 | `--use-cpp` pipeline integration + profiling: 1.0× end-to-end speedup — MCTS calls Python rules directly (72%), C++ only touches env (0.2%) |
 | 29 | C++ MCTS integration: `_run_mcts_search_cpp` in `alphazero_stub.py` — **3.2× end-to-end speedup** (selfplay 2.5×, eval 4.6×), 248/248 tests pass |
-| 30 | Grand Run V4 launched: 200 sims, 400 eval sims, C++ engine, 8 workers — running |
+| 30 | Grand Run V4: 200 sims + C++ engine, 20 iter, ~24h — 8/20 iters hit 10W vs AB (40% breakthrough, 3× V2) |
 
 ---
 

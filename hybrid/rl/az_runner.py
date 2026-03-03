@@ -334,6 +334,12 @@ def run_iterations(cfg: AZIterConfig, outdir: Path) -> None:
     print(f"[Runner] Config saved: {config_path}")
 
     csv_path = outdir / "metrics.csv"
+    if csv_path.exists():
+        # Back up stale CSV from a previous (possibly crashed) run
+        backup = outdir / "metrics_prev.csv"
+        import shutil
+        shutil.copy2(csv_path, backup)
+        print(f"[Runner] WARNING: found existing metrics.csv — backed up to {backup.name}")
     _init_csv(str(csv_path))
 
     net = PolicyValueNet().to(device)
