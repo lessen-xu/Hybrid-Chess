@@ -34,12 +34,20 @@ from hybrid.core.config import BOARD_H, BOARD_W
 
 @dataclass
 class InferenceRequest:
-    """Worker → Server inference request."""
+    """Worker → Server inference request.
+
+    Supports K-batched states (leaf batching):
+      board_ids:  (K, 10, 9) int8
+      sides:      (K,) int8
+      action_indices_list: list of K arrays, each (L_k,) uint16
+      batch_count: K (number of states in this request)
+    """
     req_id: int
     worker_id: int
-    board_ids: np.ndarray               # (10, 9), int8 — piece channel IDs, -1=empty
-    side: np.int8                       # 1=Chess, 0=Xiangqi
-    legal_action_indices: np.ndarray    # (L,), uint16
+    board_ids: np.ndarray               # (K, 10, 9), int8
+    sides: np.ndarray                   # (K,), int8
+    action_indices_list: list           # list of K np.ndarray, each (L_k,) uint16
+    batch_count: int = 1               # K: number of states
 
 
 @dataclass
@@ -47,8 +55,8 @@ class InferenceResponse:
     """Server → Worker inference response."""
     req_id: int
     worker_id: int
-    logits: np.ndarray   # (L,), float32 — legal move logits only
-    value: float         # value head output, in [-1, 1]
+    logits_list: list     # list of K np.ndarray, each (L_k,) float32
+    values: np.ndarray    # (K,) float32
 
 
 _STOP_SENTINEL = "STOP"
@@ -111,7 +119,7 @@ class InferenceServer:
                                  dtype=torch.float32, device=dev)
 
         total_batches = 0
-        total_requests = 0
+        total_states = 0
         batch_sizes = []
         queue_wait_time = 0.0
         gpu_compute_time = 0.0
@@ -132,9 +140,10 @@ class InferenceServer:
                 torch.cuda.synchronize(dev)
             gpu_compute_time += (time.perf_counter() - t1)
 
+            batch_state_count = sum(req.batch_count for req in batch)
             total_batches += 1
-            total_requests += len(batch)
-            batch_sizes.append(len(batch))
+            total_states += batch_state_count
+            batch_sizes.append(batch_state_count)
 
         # Drain remaining requests to prevent worker deadlock
         self._drain_remaining(net, dev, use_amp,
@@ -144,13 +153,13 @@ class InferenceServer:
         if self.stats_queue is not None and total_batches > 0:
             self.stats_queue.put({
                 "inference_batches": total_batches,
-                "inference_requests": total_requests,
-                "avg_batch_size": round(total_requests / total_batches, 2),
+                "inference_states": total_states,
+                "avg_batch_size": round(total_states / total_batches, 2),
                 "max_batch_size_seen": max(batch_sizes) if batch_sizes else 0,
                 "queue_wait_s": round(queue_wait_time, 3),
                 "gpu_compute_s": round(gpu_compute_time, 3),
                 "avg_batch_fill_pct": round(
-                    100 * (total_requests / total_batches) / B_max, 1
+                    100 * (total_states / total_batches) / B_max, 1
                 ),
             })
 
@@ -190,42 +199,58 @@ class InferenceServer:
         gpu_ids: torch.Tensor, gpu_sides: torch.Tensor,
         gpu_states: torch.Tensor,
     ) -> None:
-        """Run batch forward and dispatch results (zero-allocation hot path)."""
-        B = len(batch)
+        """Run batch forward and dispatch results (zero-allocation hot path).
 
-        # 1. Copy numpy data into pre-allocated pinned CPU buffers
-        for i, req in enumerate(batch):
-            pinned_ids[i].copy_(torch.from_numpy(req.board_ids))
-            pinned_sides[i] = req.side
+        Unflattens K-batched worker requests into one big GPU batch.
+        """
+        # 1. Flatten all worker requests into contiguous pinned buffers
+        offset = 0
+        req_sizes = []  # (req_index, K) for re-splitting
+        for req in batch:
+            K = req.batch_count
+            req_sizes.append(K)
+            pinned_ids[offset:offset+K].copy_(torch.from_numpy(req.board_ids))
+            pinned_sides[offset:offset+K].copy_(torch.from_numpy(req.sides))
+            offset += K
 
-        # 2. Async DMA transfer to GPU (non_blocking on pinned memory)
-        gpu_ids[:B].copy_(pinned_ids[:B], non_blocking=True)
-        gpu_sides[:B].copy_(pinned_sides[:B], non_blocking=True)
+        total_B = offset  # True GPU batch size
+        if total_B == 0:
+            return
 
-        # 3. In-place GPU feature encoding (reuses gpu_states buffer)
-        encode_batch_gpu(gpu_ids[:B], gpu_sides[:B], dev, out=gpu_states[:B])
+        # 2. Async DMA transfer to GPU
+        gpu_ids[:total_B].copy_(pinned_ids[:total_B], non_blocking=True)
+        gpu_sides[:total_B].copy_(pinned_sides[:total_B], non_blocking=True)
 
-        # 4. AMP forward pass (FP16 on CUDA, no-op on CPU)
+        # 3. In-place GPU feature encoding
+        encode_batch_gpu(gpu_ids[:total_B], gpu_sides[:total_B], dev, out=gpu_states[:total_B])
+
+        # 4. AMP forward pass
         with torch.no_grad(), torch.autocast(
             device_type=dev.type, enabled=use_amp, dtype=torch.float16
         ):
-            policy_logits, values = net(gpu_states[:B])
+            policy_logits, values = net(gpu_states[:total_B])
 
         # 5. Cast back to FP32 and transfer to CPU
-        policy_flat = policy_logits.float().reshape(B, -1).cpu().numpy()
+        policy_flat = policy_logits.float().reshape(total_B, -1).cpu().numpy()
         values_np = values.float().squeeze(-1).cpu().numpy()
 
-        for i, req in enumerate(batch):
-            indices = req.legal_action_indices.astype(np.int64)
-            legal_logits = policy_flat[i][indices]
+        # 6. Re-split results by worker request
+        offset = 0
+        for req, K in zip(batch, req_sizes):
+            logits_list = []
+            for k in range(K):
+                idx = offset + k
+                indices = req.action_indices_list[k].astype(np.int64)
+                logits_list.append(policy_flat[idx][indices].astype(np.float32))
 
             resp = InferenceResponse(
                 req_id=req.req_id,
                 worker_id=req.worker_id,
-                logits=legal_logits.astype(np.float32),
-                value=float(values_np[i]),
+                logits_list=logits_list,
+                values=values_np[offset:offset+K].copy(),
             )
             self.response_queues[req.worker_id].put(resp)
+            offset += K
 
     def _drain_remaining(
         self, net: PolicyValueNet, dev: torch.device, use_amp: bool,
@@ -303,11 +328,11 @@ class InferenceClient:
         side: np.int8,
         legal_action_indices: np.ndarray,
     ) -> Tuple[np.ndarray, float]:
-        """Send inference request and block for result.
+        """Send single-state inference request and block for result.
 
         Args:
-            board_ids: (10, 9) int8 — piece channel IDs, -1=empty
-            side: int8 — 1=Chess, 0=Xiangqi
+            board_ids: (10, 9) int8
+            side: int8
             legal_action_indices: (L,) uint16
 
         Returns:
@@ -319,9 +344,10 @@ class InferenceClient:
         req = InferenceRequest(
             req_id=req_id,
             worker_id=self.worker_id,
-            board_ids=board_ids,
-            side=side,
-            legal_action_indices=legal_action_indices,
+            board_ids=board_ids[np.newaxis],           # (1, 10, 9)
+            sides=np.array([side], dtype=np.int8),     # (1,)
+            action_indices_list=[legal_action_indices], # [array]
+            batch_count=1,
         )
 
         t0 = time.perf_counter()
@@ -334,4 +360,45 @@ class InferenceClient:
         assert resp.req_id == req_id, f"req_id mismatch: expected {req_id}, got {resp.req_id}"
         assert resp.worker_id == self.worker_id
 
-        return resp.logits, resp.value
+        return resp.logits_list[0], float(resp.values[0])
+
+    def predict_batch_raw(
+        self,
+        board_ids_stack: np.ndarray,
+        sides_stack: np.ndarray,
+        action_indices_list: list,
+    ) -> Tuple[list, np.ndarray]:
+        """Send K-batched inference request and block for K results.
+
+        Args:
+            board_ids_stack: (K, 10, 9) int8
+            sides_stack: (K,) int8
+            action_indices_list: list of K arrays, each (L_k,) uint16
+
+        Returns:
+            (logits_list, values) — logits_list: K arrays, values: (K,) float32.
+        """
+        req_id = self._next_req_id
+        self._next_req_id += 1
+        K = len(sides_stack)
+
+        req = InferenceRequest(
+            req_id=req_id,
+            worker_id=self.worker_id,
+            board_ids=board_ids_stack,
+            sides=sides_stack,
+            action_indices_list=action_indices_list,
+            batch_count=K,
+        )
+
+        t0 = time.perf_counter()
+        self.request_queue.put(req)
+
+        resp: InferenceResponse = self.response_queue.get()
+        if self.track_latency:
+            self.latencies_ms.append((time.perf_counter() - t0) * 1000.0)
+
+        assert resp.req_id == req_id
+        assert resp.worker_id == self.worker_id
+
+        return resp.logits_list, resp.values

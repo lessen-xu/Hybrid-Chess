@@ -157,18 +157,20 @@ hybrid-chess/
 - **C++ game engine (`--use-cpp`):** pybind11-wrapped C++ rules engine replaces Python in MCTS inner loop. Profile: 21× raw playout speedup → **3.2× end-to-end training speedup** (selfplay 2.5×, eval 4.6×). NN inference now dominates at 63% of MCTS time.
 - **GPU server-side encoding:** `encode_state` moved from per-worker CPU Python loops to GPU batch `scatter_` inside InferenceServer. Workers send compact `(10,9) int8` board IDs (13.8× smaller than old `(14,10,9) uint8`), server encodes on GPU in batch.
 - **Zero-allocation inference pipeline:** pre-allocated pinned CPU + GPU-resident buffers eliminate all dynamic allocation from the hot loop. Async DMA via `non_blocking=True` on pinned memory. AMP autocast (FP16) for forward pass on CUDA.
+- **Virtual-loss leaf batching:** MCTS gathers K=8 leaves per round via virtual loss diversion before making one batched IPC call. K-batched `InferenceRequest` packs multiple states per worker request, server unflattens into one large GPU batch. DFS assertion verifies zero VL leakage after every search.
 
 **GPU engineering profiling** (`scripts/profile_server_path.py`, C++ engine, 200 sims, 2 plies/worker):
 
-| Metric | 4 Workers | 8 Workers |
-|---|---|---|
-| Throughput | 109 states/s | 221 states/s |
-| Avg batch size | 3.9 / 128 (3% fill) | 7.8 / 128 (6% fill) |
-| GPU duty cycle | 38% compute, 62% idle | 41% compute, 59% idle |
-| Worker IPC wait | 92% of wall time | 91% of wall time |
-| Worker MCTS CPU | 8% of wall time | 9% of wall time |
+| Metric | Before VL (4W) | After VL (4W) | Before VL (8W) | After VL (8W) |
+|---|---|---|---|---|
+| Throughput | 109 states/s | **202 states/s** | 221 states/s | **443 states/s** |
+| Avg batch size | 3.9 (3%) | **27.7 (22%)** | 7.8 (6%) | **45.9 (36%)** |
+| Max batch size | 4 | **32** | 8 | **64** |
+| GPU duty cycle | 38% | 32% | 41% | 38% |
+| Worker IPC wait | 92% | 88% | 91% | **80%** |
+| Worker MCTS CPU | 8% | 12% | 9% | **20%** |
 
-**Diagnosis:** GPU is severely starved. Batch fill never exceeds worker count (max batch = N). Workers block synchronously on `Queue.get()` waiting for server response, so each worker can only have 1 in-flight request at a time. Throughput scales linearly with workers (2× workers = 2× throughput), meaning the system is entirely bottlenecked on Python multiprocessing Queue serialization latency, not GPU compute.
+**Diagnosis:** Virtual-loss leaf batching solved the GPU starvation problem. Batch fill jumped from 3-6% to 22-36%, throughput ~2× at same worker count. MCTS CPU fraction rose from 8-9% to 12-20%, indicating healthier balance. Remaining GPU idle time is IPC serialization overhead.
 
 ---
 
@@ -265,7 +267,7 @@ Across evaluations (all **no_queen** ablation), MCTS simulations show a surprisi
 
 ## Known Limitations
 
-- **GPU severely starved (3–6% batch fill)** — Server-path profiling shows avg batch size = worker count (3.9 at 4W, 7.8 at 8W) against a 128 max. GPU is 59–62% idle. Root cause: Workers block synchronously on `Queue.get()` (92% of wall time), so each can only have 1 in-flight request. Fix requires async/batched MCTS or virtual leaf parallelism.
+- **~~GPU severely starved (3–6% batch fill)~~** — ~~Workers had 1 in-flight request each~~ → **Resolved**: Virtual-loss leaf batching (K=8) raises batch fill to 22–36%, throughput 2×. Remaining idle time is IPC serialization.
 - **~~NN inference dominates MCTS time~~** — ~~63% of single-process self-play time~~ → In multi-worker server mode, NN inference is amortized; the real bottleneck is Python IPC serialization.
 - **~~encode_state CPU bottleneck~~** — ~~Workers ran Python loops to build (14,10,9) tensor per leaf~~ → **Resolved**: `encode_batch_gpu` does GPU scatter on server side; workers send (10,9) int8 IDs.
 - **Breakthrough oscillation** — single breakthrough iteration followed by regression. Caused by small network + catastrophic forgetting + high-variance 20-game evals.
@@ -331,7 +333,8 @@ Across evaluations (all **no_queen** ablation), MCTS simulations show a surprisi
 | 30 | Grand Run V4: 200 sims + C++ engine, 20 iter, ~24h — 8/20 iters hit 10W vs AB (40% breakthrough, 3× V2) |
 | 31 | GPU encode_state migration: `encode_batch_gpu` (scatter), workers send (10,9) int8 → 13.8× IPC shrink, 13/13 tests pass |
 | 32 | Zero-alloc inference server: pinned memory + GPU buffers + AMP (FP16), in-place `encode_batch_gpu`, 15/15 tests pass |
-| 33 | Server-path profiler: GPU 3-6% batch fill, 38-41% duty; workers 91-92% IPC-bound → GPU severely starved, real bottleneck is Python IPC + serialization |
+| 33 | Server-path profiler: GPU 3-6% batch fill, 38-41% duty; workers 91-92% IPC-bound → GPU severely starved |
+| 34 | Virtual-loss leaf batching (K=8): avg batch 3.9→27.7 (4W), 7.8→45.9 (8W); throughput 109→202 (4W), 221→443 (8W); 16/16 tests pass |
 
 ---
 

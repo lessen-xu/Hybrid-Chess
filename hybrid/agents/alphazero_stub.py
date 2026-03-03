@@ -28,6 +28,7 @@ class MCTSConfig:
     dirichlet_alpha: float = 0.3
     dirichlet_eps: float = 0.25
     discount_factor: float = 0.99   # γ: value decay per tree depth to prefer shorter wins
+    leaf_batch_size: int = 8        # K: virtual-loss leaf gathering batch size
 
 
 @dataclass
@@ -40,6 +41,7 @@ class Node:
     N: int = 0       # visit count
     W: float = 0.0   # total value
     Q: float = 0.0   # mean value
+    virtual_loss: int = 0  # in-flight penalty counter for leaf batching
 
     # C++ engine fields (only set when use_cpp=True)
     cpp_board: object = None   # CppBoard or None
@@ -143,14 +145,18 @@ class AlphaZeroMiniAgent(Agent):
 
     def _run_mcts_search_cpp(self, state: GameState, legal_moves: List[Move],
                               add_noise: bool = True) -> Node:
-        """Run MCTS using C++ engine for simulation internals."""
+        """Run MCTS using C++ engine with virtual-loss leaf batching.
+
+        Gathers up to K=leaf_batch_size leaves per round before calling
+        model.predict_batch() once, dramatically reducing IPC round-trips.
+        """
         cpp = self._cpp
         module = cpp.module
+        K = self.cfg.leaf_batch_size
 
         # Build root: sync Python board → C++ board once
         cpp_board = cpp.sync_to_cpp(state.board)
         cpp_side = cpp.PY_TO_CPP_SIDE[state.side_to_move]
-
         root = Node(state=state, cpp_board=cpp_board, cpp_side=cpp_side)
 
         # Expand root: need NN inference → use Python state (already available)
@@ -160,40 +166,55 @@ class AlphaZeroMiniAgent(Agent):
             self._add_dirichlet_noise(priors)
         self._expand_cpp(root, priors)
 
-        for _ in range(self.cfg.simulations):
-            node = root
-            path = [node]
+        sims_done = 0
+        total_sims = self.cfg.simulations
 
-            # Selection (no Python calls needed)
-            while node.is_expanded():
-                mv, node = self._select_child(node)
-                path.append(node)
+        while sims_done < total_sims:
+            current_k = min(K, total_sims - sims_done)
+            leaves_data = []   # (leaf_state, py_moves, path) for NN eval
+            paths_for_vl = []  # paths that have virtual loss applied
 
-            # Evaluation — use C++ terminal_info
-            cpp_info = module.terminal_info(
-                node.cpp_board, node.cpp_side,
-                node.state.repetition, node.state.ply, MAX_PLIES,
-            )
+            # ── Phase 1: Gather up to K leaves ──
+            for _ in range(current_k):
+                node = root
+                path = [node]
 
-            if cpp_info.status != TerminalStatus.ONGOING:
-                if cpp_info.status == TerminalStatus.DRAW:
-                    value = 0.0
-                else:
-                    # cpp_info.winner: 1=CHESS, 2=XIANGQI
-                    cpp_winner = cpp_info.winner
-                    if cpp_winner == 1:
-                        winner = Side.CHESS
-                    elif cpp_winner == 2:
-                        winner = Side.XIANGQI
+                # Selection: traverse using VL-adjusted PUCT
+                while node.is_expanded():
+                    mv, node = self._select_child(node)
+                    path.append(node)
+
+                # Terminal check via C++
+                cpp_info = module.terminal_info(
+                    node.cpp_board, node.cpp_side,
+                    node.state.repetition, node.state.ply, MAX_PLIES,
+                )
+
+                if cpp_info.status != TerminalStatus.ONGOING:
+                    # Terminal: backup immediately, no VL needed
+                    if cpp_info.status == TerminalStatus.DRAW:
+                        value = 0.0
                     else:
-                        winner = None
-                    value = 1.0 if winner == node.state.side_to_move else -1.0
-            else:
-                # Leaf: generate legal moves via C++, then NN inference via Python
+                        cpp_winner = cpp_info.winner
+                        if cpp_winner == 1:
+                            winner = Side.CHESS
+                        elif cpp_winner == 2:
+                            winner = Side.XIANGQI
+                        else:
+                            winner = None
+                        value = 1.0 if winner == node.state.side_to_move else -1.0
+                    self._backup(path, value)
+                    sims_done += 1
+                    continue
+
+                # Non-terminal leaf: apply virtual loss to divert next selection
+                for n in path:
+                    n.virtual_loss += 1
+                paths_for_vl.append(path)
+
+                # Generate legal moves via C++ and sync board for encoding
                 cpp_moves = module.gen_legal(node.cpp_board, node.cpp_side)
                 py_moves = [cpp.cpp_to_py_move(cm) for cm in cpp_moves]
-
-                # Sync C++ board → Python board for encode_state (once per leaf)
                 py_board = cpp.sync_to_py(node.cpp_board)
                 leaf_state = GameState(
                     board=py_board,
@@ -201,17 +222,54 @@ class AlphaZeroMiniAgent(Agent):
                     ply=node.state.ply,
                     repetition=node.state.repetition,
                 )
-                # Update node state so model.predict can encode it
                 node.state = leaf_state
+                leaves_data.append((leaf_state, py_moves, path))
 
-                policy, value = self.model.predict(leaf_state, py_moves)
-                priors = {m: policy.get(m, 0.0) for m in py_moves}
-                self._expand_cpp(node, priors)
+            # ── Phase 2: Batch NN evaluation ──
+            if leaves_data:
+                if hasattr(self.model, 'predict_batch') and len(leaves_data) > 1:
+                    results = self.model.predict_batch(
+                        [(ld[0], ld[1]) for ld in leaves_data]
+                    )
+                else:
+                    # Fallback: serial predict (for TorchPolicyValueModel / K=1)
+                    results = [
+                        self.model.predict(ld[0], ld[1])
+                        for ld in leaves_data
+                    ]
 
-            # Backup
-            self._backup(path, value)
+                # ── Phase 3: Remove VL, expand, backup ──
+                for (leaf_state, py_moves, path), (policy, value) in zip(leaves_data, results):
+                    leaf_node = path[-1]
+
+                    # Remove virtual loss from entire path
+                    for n in path:
+                        n.virtual_loss -= 1
+
+                    # Expand leaf (guard against duplicate expansion from collision)
+                    if not leaf_node.is_expanded():
+                        priors = {m: policy.get(m, 0.0) for m in py_moves}
+                        self._expand_cpp(leaf_node, priors)
+
+                    self._backup(path, value)
+                    sims_done += 1
+
+        # Safety: DFS verify zero virtual loss leakage
+        self._assert_no_vl_leak(root)
 
         return root
+
+    def _assert_no_vl_leak(self, root: Node) -> None:
+        """DFS the entire tree asserting all virtual_loss == 0."""
+        stack = [root]
+        while stack:
+            node = stack.pop()
+            assert node.virtual_loss == 0, (
+                f"VL leak! node.virtual_loss={node.virtual_loss}, "
+                f"N={node.N}, children={len(node.children)}"
+            )
+            for ch in node.children.values():
+                stack.append(ch)
 
     def _expand_cpp(self, node: Node, priors: Dict[Move, float]) -> None:
         """Expand node using C++ apply_move for child boards."""
@@ -309,13 +367,24 @@ class AlphaZeroMiniAgent(Agent):
             node.children[mv] = Node(state=child_state, prior=float(p), parent=node)
 
     def _select_child(self, node: Node) -> Tuple[Move, Node]:
-        """PUCT selection. Uses -child.Q (opponent's value flipped to our perspective)."""
+        """PUCT selection with virtual loss support.
+
+        Uses -effective_Q (opponent's value flipped) where effective_Q accounts
+        for in-flight virtual losses to divert parallel selections.
+        """
         best_score = -1e18
         best = None
-        total_N = sum(ch.N for ch in node.children.values()) + 1
+        total_N = sum(ch.N + ch.virtual_loss for ch in node.children.values()) + 1
+        c_puct = self.cfg.c_puct
         for mv, ch in node.children.items():
-            U = self.cfg.c_puct * ch.prior * math.sqrt(total_N) / (1 + ch.N)
-            score = (-ch.Q) + U
+            effective_N = ch.N + ch.virtual_loss
+            if effective_N > 0:
+                effective_W = ch.W - ch.virtual_loss  # -1 penalty per VL
+                Q = effective_W / effective_N
+            else:
+                Q = 0.0
+            U = c_puct * ch.prior * math.sqrt(total_N) / (1 + effective_N)
+            score = (-Q) + U
             if score > best_score:
                 best_score = score
                 best = (mv, ch)

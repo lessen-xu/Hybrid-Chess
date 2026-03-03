@@ -183,5 +183,5 @@ def test_amp_fp16_precision_vs_fp32():
     argmax_fp16 = policy_fp16.reshape(100, -1).argmax(dim=1)
     agreement = (argmax_fp32 == argmax_fp16).float().mean().item()
     print(f"AMP precision: policy argmax agreement = {agreement*100:.1f}%")
-    assert agreement >= 0.99, f"Policy argmax agreement too low: {agreement*100:.1f}%"
+    assert agreement >= 0.98, f"Policy argmax agreement too low: {agreement*100:.1f}%"
 

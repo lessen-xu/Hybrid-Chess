@@ -210,9 +210,10 @@ def test_communication_size_reduction():
     # New compact request
     new_req = InferenceRequest(
         req_id=0, worker_id=0,
-        board_ids=np.zeros((10, 9), dtype=np.int8),
-        side=np.int8(1),
-        legal_action_indices=legal_indices,
+        board_ids=np.zeros((1, 10, 9), dtype=np.int8),
+        sides=np.array([1], dtype=np.int8),
+        action_indices_list=[legal_indices],
+        batch_count=1,
     )
     new_size = len(pickle.dumps(new_req))
 
