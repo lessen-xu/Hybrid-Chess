@@ -113,14 +113,25 @@ class InferenceServer:
         total_batches = 0
         total_requests = 0
         batch_sizes = []
+        queue_wait_time = 0.0
+        gpu_compute_time = 0.0
 
         while not self.stop_event.is_set():
+            t0 = time.perf_counter()
             batch = self._collect_batch()
+            t1 = time.perf_counter()
+            queue_wait_time += (t1 - t0)
+
             if not batch:
                 continue
+
             self._process_batch(net, dev, batch, use_amp,
                                 pinned_ids, pinned_sides,
                                 gpu_ids, gpu_sides, gpu_states)
+            if dev.type == 'cuda':
+                torch.cuda.synchronize(dev)
+            gpu_compute_time += (time.perf_counter() - t1)
+
             total_batches += 1
             total_requests += len(batch)
             batch_sizes.append(len(batch))
@@ -136,6 +147,11 @@ class InferenceServer:
                 "inference_requests": total_requests,
                 "avg_batch_size": round(total_requests / total_batches, 2),
                 "max_batch_size_seen": max(batch_sizes) if batch_sizes else 0,
+                "queue_wait_s": round(queue_wait_time, 3),
+                "gpu_compute_s": round(gpu_compute_time, 3),
+                "avg_batch_fill_pct": round(
+                    100 * (total_requests / total_batches) / B_max, 1
+                ),
             })
 
     def _collect_batch(self) -> List[InferenceRequest]:

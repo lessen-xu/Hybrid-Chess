@@ -27,6 +27,8 @@ class RemotePolicyValueModel(PolicyValueModel):
 
     def __init__(self, client: InferenceClient):
         self.client = client
+        self.ipc_wait_s = 0.0
+        self.predict_count = 0
 
     def predict(
         self, state: GameState, legal_moves: List[Move]
@@ -45,7 +47,11 @@ class RemotePolicyValueModel(PolicyValueModel):
         )
 
         # Remote forward pass (encoding happens server-side on GPU)
+        import time as _time
+        t0 = _time.perf_counter()
         logits_np, value = self.client.predict_raw(board_ids, side, action_indices)
+        self.ipc_wait_s += (_time.perf_counter() - t0)
+        self.predict_count += 1
 
         # Numerically stable softmax
         logits_t = torch.from_numpy(logits_np).float()

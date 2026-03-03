@@ -318,6 +318,7 @@ Across evaluations (all **no_queen** ablation), MCTS simulations show a surprisi
 | 30 | Grand Run V4: 200 sims + C++ engine, 20 iter, ~24h — 8/20 iters hit 10W vs AB (40% breakthrough, 3× V2) |
 | 31 | GPU encode_state migration: `encode_batch_gpu` (scatter), workers send (10,9) int8 → 13.8× IPC shrink, 13/13 tests pass |
 | 32 | Zero-alloc inference server: pinned memory + GPU buffers + AMP (FP16), in-place `encode_batch_gpu`, 15/15 tests pass |
+| 33 | Server-path profiler: GPU 3-6% batch fill, 38-41% duty; workers 91-92% IPC-bound → GPU severely starved, real bottleneck is Python IPC + serialization |
 
 ---
 
