@@ -127,3 +127,61 @@ def test_inference_server_multi_worker(cpu_model_ckpt):
         server.terminate()
         server.join(timeout=5.0)
 
+
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="AMP FP16 precision test requires CUDA")
+def test_amp_fp16_precision_vs_fp32():
+    """🚩 Checkpoint 2: AMP FP16 must not alter network strategy.
+
+    value max_diff < 0.01, policy argmax agreement >= 99%.
+    """
+    import random
+    from hybrid.core.env import HybridChessEnv
+    from hybrid.rl.az_encoding import board_to_piece_ids, encode_batch_gpu
+
+    dev = torch.device("cuda")
+    net = PolicyValueNet().to(dev).eval()
+
+    # Generate 100 random board states
+    rng = random.Random(42)
+    boards_ids, sides_list = [], []
+    for _ in range(100):
+        env = HybridChessEnv()
+        state = env.reset()
+        for _ in range(rng.randint(0, 20)):
+            legal = env.legal_moves()
+            if not legal:
+                break
+            state, _, done, _ = env.step(rng.choice(legal))
+            if done:
+                break
+        boards_ids.append(board_to_piece_ids(state.board))
+        sides_list.append(1 if state.side_to_move.name == "CHESS" else 0)
+
+    piece_ids = torch.from_numpy(np.stack(boards_ids)).to(dev)
+    sides = torch.tensor(sides_list, dtype=torch.int8).to(dev)
+    states = encode_batch_gpu(piece_ids, sides, dev)
+
+    # FP32 baseline
+    with torch.no_grad():
+        policy_fp32, value_fp32 = net(states)
+
+    # AMP FP16
+    with torch.no_grad(), torch.autocast(device_type="cuda", enabled=True, dtype=torch.float16):
+        policy_fp16, value_fp16 = net(states)
+
+    # Cast both to FP32 for comparison
+    policy_fp16 = policy_fp16.float()
+    value_fp16 = value_fp16.float()
+
+    # Value tolerance
+    val_diff = torch.max(torch.abs(value_fp32 - value_fp16)).item()
+    print(f"\nAMP precision: value max_diff = {val_diff:.6f}")
+    assert val_diff < 0.01, f"Value drift too large: {val_diff}"
+
+    # Policy argmax agreement
+    argmax_fp32 = policy_fp32.reshape(100, -1).argmax(dim=1)
+    argmax_fp16 = policy_fp16.reshape(100, -1).argmax(dim=1)
+    agreement = (argmax_fp32 == argmax_fp16).float().mean().item()
+    print(f"AMP precision: policy argmax agreement = {agreement*100:.1f}%")
+    assert agreement >= 0.99, f"Policy argmax agreement too low: {agreement*100:.1f}%"
+
