@@ -32,7 +32,7 @@ def profile_worker(
     worker_id: int,
     model_ckpt_path: str,
     request_queue: mp.Queue,
-    response_queue: mp.Queue,
+    pool,
     result_queue: mp.Queue,
     num_plies: int,
     simulations: int,
@@ -44,7 +44,7 @@ def profile_worker(
     from hybrid.agents.alphazero_stub import AlphaZeroMiniAgent, MCTSConfig
     from hybrid.core.env import HybridChessEnv
 
-    client = InferenceClient(worker_id, request_queue, response_queue)
+    client = InferenceClient(worker_id, request_queue, pool)
     model = RemotePolicyValueModel(client)
     agent = AlphaZeroMiniAgent(
         model=model,
@@ -105,9 +105,10 @@ def main():
     ckpt_path = os.path.join(tempfile.gettempdir(), "profile_model.pt")
     torch.save({"model": net.state_dict()}, ckpt_path)
 
-    # Queues
+    # Shared memory pool + queues
+    from hybrid.rl.az_shm_pool import SharedMemoryPool
+    pool = SharedMemoryPool(max_workers=N)
     request_queue = mp.Queue()
-    response_queues = {wid: mp.Queue() for wid in range(N)}
     stop_event = mp.Event()
     stats_queue = mp.Queue()
     result_queue = mp.Queue()
@@ -116,7 +117,7 @@ def main():
     from hybrid.rl.az_inference_server import inference_server_process
     server = mp.Process(
         target=inference_server_process,
-        args=(ckpt_path, request_queue, response_queues, stop_event,
+        args=(ckpt_path, request_queue, pool, stop_event,
               args.batch_size, 5.0, args.device, stats_queue),
         daemon=True,
     )
@@ -128,7 +129,7 @@ def main():
     for wid in range(N):
         p = mp.Process(
             target=profile_worker,
-            args=(wid, ckpt_path, request_queue, response_queues[wid],
+            args=(wid, ckpt_path, request_queue, pool,
                   result_queue, args.plies, args.sims, args.use_cpp),
         )
         p.start()

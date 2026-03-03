@@ -40,7 +40,7 @@ def selfplay_worker(
     seed: int,
     ablation: str = "extra_cannon",
     request_queue: Optional[mp.Queue] = None,
-    response_queue: Optional[mp.Queue] = None,
+    pool: object = None,
     track_latency: bool = False,
     endgame_ratio: float = 0.0,
     use_cpp: bool = False,
@@ -51,11 +51,11 @@ def selfplay_worker(
 
     # Build model (Mode B with inference server, or Mode A with local CPU)
     client = None
-    if request_queue is not None and response_queue is not None:
+    if request_queue is not None and pool is not None:
         from hybrid.rl.az_inference_server import InferenceClient
         from hybrid.agents.az_remote_model import RemotePolicyValueModel
         client = InferenceClient(
-            worker_id, request_queue, response_queue,
+            worker_id, request_queue, pool,
             track_latency=track_latency,
         )
         model = RemotePolicyValueModel(client)
@@ -164,9 +164,10 @@ def generate_selfplay_parallel(
 
     if use_inference_server:
         from hybrid.rl.az_inference_server import inference_server_process
+        from hybrid.rl.az_shm_pool import SharedMemoryPool
 
         request_queue = mp.Queue()
-        response_queues = {wid: mp.Queue() for wid in range(num_workers)}
+        pool = SharedMemoryPool(max_workers=num_workers)
         stop_event = mp.Event()
         stats_queue = mp.Queue()
 
@@ -175,7 +176,7 @@ def generate_selfplay_parallel(
             args=(
                 model_ckpt_path,
                 request_queue,
-                response_queues,
+                pool,
                 stop_event,
                 inference_batch_size,
                 inference_timeout_ms,
@@ -204,7 +205,7 @@ def generate_selfplay_parallel(
         )
         if use_inference_server:
             kwargs["request_queue"] = request_queue
-            kwargs["response_queue"] = response_queues[wid]
+            kwargs["pool"] = pool
 
         p = mp.Process(target=selfplay_worker, kwargs=kwargs)
         p.start()

@@ -1,16 +1,11 @@
 # -*- coding: utf-8 -*-
-"""GPU batch inference server + client for parallel self-play.
+"""GPU batch inference server with zero-copy shared memory IPC.
 
-InferenceServer (separate process, holds GPU model):
-  - Collects requests from workers via request_queue
-  - Batches up to max_batch_size or timeout_ms, runs batch forward
-  - Routes results to per-worker response_queues
-
-InferenceClient (in worker processes):
-  - predict_raw(state_u8, legal_action_indices) → (logits, value)
-  - Blocks waiting for response, matched by req_id
-
-All queue data uses numpy/Python native types (no torch tensors across processes).
+Architecture:
+  - SharedMemoryPool holds cross-process tensors (boards, sides, policies, values)
+  - Workers write board state into pool slots, send tiny (wid, K) via Queue
+  - Server reads from pool, runs GPU inference, writes results back, wakes workers
+  - No pickle serialization of tensors — only 8-byte tuples cross the Queue
 """
 
 from __future__ import annotations
@@ -26,37 +21,7 @@ import torch
 from hybrid.rl.az_network import PolicyValueNet
 from hybrid.rl.az_encoding import encode_batch_gpu, NUM_STATE_CHANNELS
 from hybrid.core.config import BOARD_H, BOARD_W
-
-
-# ====================================================================
-# Data protocol (must be picklable)
-# ====================================================================
-
-@dataclass
-class InferenceRequest:
-    """Worker → Server inference request.
-
-    Supports K-batched states (leaf batching):
-      board_ids:  (K, 10, 9) int8
-      sides:      (K,) int8
-      action_indices_list: list of K arrays, each (L_k,) uint16
-      batch_count: K (number of states in this request)
-    """
-    req_id: int
-    worker_id: int
-    board_ids: np.ndarray               # (K, 10, 9), int8
-    sides: np.ndarray                   # (K,), int8
-    action_indices_list: list           # list of K np.ndarray, each (L_k,) uint16
-    batch_count: int = 1               # K: number of states
-
-
-@dataclass
-class InferenceResponse:
-    """Server → Worker inference response."""
-    req_id: int
-    worker_id: int
-    logits_list: list     # list of K np.ndarray, each (L_k,) float32
-    values: np.ndarray    # (K,) float32
+from hybrid.rl.az_shm_pool import SharedMemoryPool
 
 
 _STOP_SENTINEL = "STOP"
@@ -67,7 +32,7 @@ _STOP_SENTINEL = "STOP"
 # ====================================================================
 
 class InferenceServer:
-    """GPU batch inference server.
+    """GPU batch inference server with shared memory IPC.
 
     Model is loaded inside run() (after spawn). Greedy batching strategy:
     block for first request, then drain up to max_batch_size within timeout_ms.
@@ -77,7 +42,7 @@ class InferenceServer:
         self,
         model_ckpt_path: str,
         request_queue: mp.Queue,
-        response_queues: Dict[int, mp.Queue],
+        pool: SharedMemoryPool,
         stop_event: mp.Event,
         max_batch_size: int = 32,
         timeout_ms: float = 5.0,
@@ -86,7 +51,7 @@ class InferenceServer:
     ):
         self.model_ckpt_path = model_ckpt_path
         self.request_queue = request_queue
-        self.response_queues = response_queues
+        self.pool = pool
         self.stop_event = stop_event
         self.max_batch_size = max_batch_size
         self.timeout_ms = timeout_ms
@@ -126,21 +91,21 @@ class InferenceServer:
 
         while not self.stop_event.is_set():
             t0 = time.perf_counter()
-            batch = self._collect_batch()
+            signals = self._collect_batch()
             t1 = time.perf_counter()
             queue_wait_time += (t1 - t0)
 
-            if not batch:
+            if not signals:
                 continue
 
-            self._process_batch(net, dev, batch, use_amp,
+            self._process_batch(net, dev, signals, use_amp,
                                 pinned_ids, pinned_sides,
                                 gpu_ids, gpu_sides, gpu_states)
             if dev.type == 'cuda':
                 torch.cuda.synchronize(dev)
             gpu_compute_time += (time.perf_counter() - t1)
 
-            batch_state_count = sum(req.batch_count for req in batch)
+            batch_state_count = sum(K for _, K in signals)
             total_batches += 1
             total_states += batch_state_count
             batch_sizes.append(batch_state_count)
@@ -163,57 +128,65 @@ class InferenceServer:
                 ),
             })
 
-    def _collect_batch(self) -> List[InferenceRequest]:
-        """Collect a batch: block for first request, then greedily drain."""
-        requests: List[InferenceRequest] = []
+    def _collect_batch(self) -> List[Tuple[int, int]]:
+        """Collect batch signals: block for first, then greedily drain.
+
+        Returns list of (worker_id, K) tuples.
+        """
+        signals: List[Tuple[int, int]] = []
+        total_states = 0
 
         try:
             first = self.request_queue.get(timeout=self.timeout_ms / 1000.0)
             if first == _STOP_SENTINEL:
                 self.stop_event.set()
                 return []
-            requests.append(first)
+            signals.append(first)
+            total_states += first[1]
         except queue.Empty:
             return []
 
         deadline = time.monotonic() + self.timeout_ms / 1000.0
-        while len(requests) < self.max_batch_size:
+        while total_states < self.max_batch_size:
             remaining = deadline - time.monotonic()
             if remaining <= 0:
                 break
             try:
-                req = self.request_queue.get(timeout=max(0.0001, remaining))
-                if req == _STOP_SENTINEL:
+                sig = self.request_queue.get(timeout=max(0.0001, remaining))
+                if sig == _STOP_SENTINEL:
                     self.stop_event.set()
                     break
-                requests.append(req)
+                signals.append(sig)
+                total_states += sig[1]
             except queue.Empty:
                 break
 
-        return requests
+        return signals
 
     def _process_batch(
         self, net: PolicyValueNet, dev: torch.device,
-        batch: List[InferenceRequest], use_amp: bool,
+        signals: List[Tuple[int, int]], use_amp: bool,
         pinned_ids: torch.Tensor, pinned_sides: torch.Tensor,
         gpu_ids: torch.Tensor, gpu_sides: torch.Tensor,
         gpu_states: torch.Tensor,
     ) -> None:
-        """Run batch forward and dispatch results (zero-allocation hot path).
+        """Run batch forward using shared memory (zero-copy hot path).
 
-        Unflattens K-batched worker requests into one big GPU batch.
+        Reads boards/sides from pool, runs GPU inference, writes full policy
+        flat + values back to pool, then wakes workers via events.
         """
-        # 1. Flatten all worker requests into contiguous pinned buffers
+        pool = self.pool
+
+        # 1. Read from shared memory into pinned buffers
         offset = 0
-        req_sizes = []  # (req_index, K) for re-splitting
-        for req in batch:
-            K = req.batch_count
-            req_sizes.append(K)
-            pinned_ids[offset:offset+K].copy_(torch.from_numpy(req.board_ids))
-            pinned_sides[offset:offset+K].copy_(torch.from_numpy(req.sides))
+        job_info = []  # (wid, K, start_offset)
+        for wid, K in signals:
+            pinned_ids[offset:offset+K].copy_(pool.boards[wid, :K])
+            pinned_sides[offset:offset+K].copy_(pool.sides[wid, :K])
+            job_info.append((wid, K, offset))
             offset += K
 
-        total_B = offset  # True GPU batch size
+        total_B = offset
         if total_B == 0:
             return
 
@@ -231,26 +204,14 @@ class InferenceServer:
             policy_logits, values = net(gpu_states[:total_B])
 
         # 5. Cast back to FP32 and transfer to CPU
-        policy_flat = policy_logits.float().reshape(total_B, -1).cpu().numpy()
-        values_np = values.float().squeeze(-1).cpu().numpy()
+        policy_flat_cpu = policy_logits.float().reshape(total_B, -1).cpu()
+        values_cpu = values.float().squeeze(-1).cpu()
 
-        # 6. Re-split results by worker request
-        offset = 0
-        for req, K in zip(batch, req_sizes):
-            logits_list = []
-            for k in range(K):
-                idx = offset + k
-                indices = req.action_indices_list[k].astype(np.int64)
-                logits_list.append(policy_flat[idx][indices].astype(np.float32))
-
-            resp = InferenceResponse(
-                req_id=req.req_id,
-                worker_id=req.worker_id,
-                logits_list=logits_list,
-                values=values_np[offset:offset+K].copy(),
-            )
-            self.response_queues[req.worker_id].put(resp)
-            offset += K
+        # 6. Write results back to shared memory and wake workers
+        for wid, K, start_idx in job_info:
+            pool.policies[wid, :K].copy_(policy_flat_cpu[start_idx:start_idx+K])
+            pool.values[wid, :K].copy_(values_cpu[start_idx:start_idx+K])
+            pool.events[wid].set()
 
     def _drain_remaining(
         self, net: PolicyValueNet, dev: torch.device, use_amp: bool,
@@ -259,12 +220,12 @@ class InferenceServer:
         gpu_states: torch.Tensor,
     ) -> None:
         """Process remaining requests before shutdown."""
-        remaining: List[InferenceRequest] = []
+        remaining: List[Tuple[int, int]] = []
         while True:
             try:
-                req = self.request_queue.get_nowait()
-                if req != _STOP_SENTINEL:
-                    remaining.append(req)
+                sig = self.request_queue.get_nowait()
+                if sig != _STOP_SENTINEL:
+                    remaining.append(sig)
             except queue.Empty:
                 break
         if remaining:
@@ -280,7 +241,7 @@ class InferenceServer:
 def inference_server_process(
     model_ckpt_path: str,
     request_queue: mp.Queue,
-    response_queues: Dict[int, mp.Queue],
+    pool: SharedMemoryPool,
     stop_event: mp.Event,
     max_batch_size: int = 32,
     timeout_ms: float = 5.0,
@@ -291,7 +252,7 @@ def inference_server_process(
     server = InferenceServer(
         model_ckpt_path=model_ckpt_path,
         request_queue=request_queue,
-        response_queues=response_queues,
+        pool=pool,
         stop_event=stop_event,
         max_batch_size=max_batch_size,
         timeout_ms=timeout_ms,
@@ -306,19 +267,18 @@ def inference_server_process(
 # ====================================================================
 
 class InferenceClient:
-    """Client that sends leaf evaluation requests to InferenceServer and blocks for results."""
+    """Client that writes to shared memory and signals the server."""
 
     def __init__(
         self,
         worker_id: int,
         request_queue: mp.Queue,
-        response_queue: mp.Queue,
+        pool: SharedMemoryPool,
         track_latency: bool = False,
     ):
         self.worker_id = worker_id
         self.request_queue = request_queue
-        self.response_queue = response_queue
-        self._next_req_id = 0
+        self.pool = pool
         self.track_latency = track_latency
         self.latencies_ms: List[float] = []
 
@@ -328,39 +288,34 @@ class InferenceClient:
         side: np.int8,
         legal_action_indices: np.ndarray,
     ) -> Tuple[np.ndarray, float]:
-        """Send single-state inference request and block for result.
-
-        Args:
-            board_ids: (10, 9) int8
-            side: int8
-            legal_action_indices: (L,) uint16
+        """Single-state inference via shared memory.
 
         Returns:
-            (logits, value) — logits shape (L,) float32, value is scalar.
+            (logits, value) — logits shape (L,) float32.
         """
-        req_id = self._next_req_id
-        self._next_req_id += 1
+        wid = self.worker_id
+        pool = self.pool
 
-        req = InferenceRequest(
-            req_id=req_id,
-            worker_id=self.worker_id,
-            board_ids=board_ids[np.newaxis],           # (1, 10, 9)
-            sides=np.array([side], dtype=np.int8),     # (1,)
-            action_indices_list=[legal_action_indices], # [array]
-            batch_count=1,
-        )
+        # Write to shared memory
+        pool.boards[wid, 0].copy_(torch.from_numpy(board_ids))
+        pool.sides[wid, 0] = side
 
+        # Signal server (8-byte tuple)
+        pool.events[wid].clear()
         t0 = time.perf_counter()
-        self.request_queue.put(req)
+        self.request_queue.put((wid, 1))
+        pool.events[wid].wait()
 
-        resp: InferenceResponse = self.response_queue.get()
         if self.track_latency:
             self.latencies_ms.append((time.perf_counter() - t0) * 1000.0)
 
-        assert resp.req_id == req_id, f"req_id mismatch: expected {req_id}, got {resp.req_id}"
-        assert resp.worker_id == self.worker_id
+        # Read results and slice locally
+        flat_policy = pool.policies[wid, 0].numpy()
+        indices = legal_action_indices.astype(np.int64)
+        logits = flat_policy[indices].copy().astype(np.float32)
+        value = float(pool.values[wid, 0].item())
 
-        return resp.logits_list[0], float(resp.values[0])
+        return logits, value
 
     def predict_batch_raw(
         self,
@@ -368,37 +323,35 @@ class InferenceClient:
         sides_stack: np.ndarray,
         action_indices_list: list,
     ) -> Tuple[list, np.ndarray]:
-        """Send K-batched inference request and block for K results.
-
-        Args:
-            board_ids_stack: (K, 10, 9) int8
-            sides_stack: (K,) int8
-            action_indices_list: list of K arrays, each (L_k,) uint16
+        """K-batched inference via shared memory.
 
         Returns:
-            (logits_list, values) — logits_list: K arrays, values: (K,) float32.
+            (logits_list, values) — K arrays + (K,) float32.
         """
-        req_id = self._next_req_id
-        self._next_req_id += 1
+        wid = self.worker_id
+        pool = self.pool
         K = len(sides_stack)
 
-        req = InferenceRequest(
-            req_id=req_id,
-            worker_id=self.worker_id,
-            board_ids=board_ids_stack,
-            sides=sides_stack,
-            action_indices_list=action_indices_list,
-            batch_count=K,
-        )
+        # Write to shared memory
+        pool.boards[wid, :K].copy_(torch.from_numpy(board_ids_stack))
+        pool.sides[wid, :K].copy_(torch.from_numpy(sides_stack))
 
+        # Signal server
+        pool.events[wid].clear()
         t0 = time.perf_counter()
-        self.request_queue.put(req)
+        self.request_queue.put((wid, K))
+        pool.events[wid].wait()
 
-        resp: InferenceResponse = self.response_queue.get()
         if self.track_latency:
             self.latencies_ms.append((time.perf_counter() - t0) * 1000.0)
 
-        assert resp.req_id == req_id
-        assert resp.worker_id == self.worker_id
+        # Read results and slice locally
+        logits_list = []
+        pol_view = pool.policies[wid].numpy()
+        for k in range(K):
+            indices = action_indices_list[k].astype(np.int64)
+            logits_list.append(pol_view[k][indices].copy().astype(np.float32))
 
-        return resp.logits_list, resp.values
+        values = pool.values[wid, :K].numpy().copy()
+
+        return logits_list, values

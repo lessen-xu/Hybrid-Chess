@@ -157,20 +157,21 @@ hybrid-chess/
 - **C++ game engine (`--use-cpp`):** pybind11-wrapped C++ rules engine replaces Python in MCTS inner loop. Profile: 21× raw playout speedup → **3.2× end-to-end training speedup** (selfplay 2.5×, eval 4.6×). NN inference now dominates at 63% of MCTS time.
 - **GPU server-side encoding:** `encode_state` moved from per-worker CPU Python loops to GPU batch `scatter_` inside InferenceServer. Workers send compact `(10,9) int8` board IDs (13.8× smaller than old `(14,10,9) uint8`), server encodes on GPU in batch.
 - **Zero-allocation inference pipeline:** pre-allocated pinned CPU + GPU-resident buffers eliminate all dynamic allocation from the hot loop. Async DMA via `non_blocking=True` on pinned memory. AMP autocast (FP16) for forward pass on CUDA.
-- **Virtual-loss leaf batching:** MCTS gathers K=8 leaves per round via virtual loss diversion before making one batched IPC call. K-batched `InferenceRequest` packs multiple states per worker request, server unflattens into one large GPU batch. DFS assertion verifies zero VL leakage after every search.
+- **Virtual-loss leaf batching:** MCTS gathers K=8 leaves per round via virtual loss diversion before making one batched IPC call. DFS assertion verifies zero VL leakage after every search.
+- **Zero-copy shared memory IPC:** `SharedMemoryPool` holds cross-process tensors (`share_memory_()`). Queue carries only `(wid, K)` tuples (~15 bytes). Server reads from pool, writes full policy flat back; workers slice locally. `mp.Event` for wake signaling.
 
 **GPU engineering profiling** (`scripts/profile_server_path.py`, C++ engine, 200 sims, 2 plies/worker):
 
-| Metric | Before VL (4W) | After VL (4W) | Before VL (8W) | After VL (8W) |
-|---|---|---|---|---|
-| Throughput | 109 states/s | **202 states/s** | 221 states/s | **443 states/s** |
-| Avg batch size | 3.9 (3%) | **27.7 (22%)** | 7.8 (6%) | **45.9 (36%)** |
-| Max batch size | 4 | **32** | 8 | **64** |
-| GPU duty cycle | 38% | 32% | 41% | 38% |
-| Worker IPC wait | 92% | 88% | 91% | **80%** |
-| Worker MCTS CPU | 8% | 12% | 9% | **20%** |
+| Metric | Baseline (8W) | +VL (8W) | +SHM (8W) |
+|---|---|---|---|
+| Throughput | 221 states/s | 443 states/s | **452 states/s** |
+| Avg batch size | 7.8 (6%) | 45.9 (36%) | **50.2 (39%)** |
+| Max batch size | 8 | 64 | **64** |
+| GPU duty cycle | 41% | 38% | **43%** |
+| Worker IPC wait | 91% | 80% | **77%** |
+| Worker MCTS CPU | 9% | 20% | **23%** |
 
-**Diagnosis:** Virtual-loss leaf batching solved the GPU starvation problem. Batch fill jumped from 3-6% to 22-36%, throughput ~2× at same worker count. MCTS CPU fraction rose from 8-9% to 12-20%, indicating healthier balance. Remaining GPU idle time is IPC serialization overhead.
+**Diagnosis:** Virtual-loss leaf batching was the decisive win (2× throughput). SHM added incremental improvement (+2% throughput, +5pp GPU duty) by eliminating pickle overhead. Remaining IPC time is now OS Event latency + actual GPU compute wait. Further scaling requires more workers (linear scaling confirmed).
 
 ---
 
@@ -335,6 +336,7 @@ Across evaluations (all **no_queen** ablation), MCTS simulations show a surprisi
 | 32 | Zero-alloc inference server: pinned memory + GPU buffers + AMP (FP16), in-place `encode_batch_gpu`, 15/15 tests pass |
 | 33 | Server-path profiler: GPU 3-6% batch fill, 38-41% duty; workers 91-92% IPC-bound → GPU severely starved |
 | 34 | Virtual-loss leaf batching (K=8): avg batch 3.9→27.7 (4W), 7.8→45.9 (8W); throughput 109→202 (4W), 221→443 (8W); 16/16 tests pass |
+| 35 | Zero-copy shared memory IPC: `SharedMemoryPool` + `(wid,K)` signal (~15B Queue payload), throughput 443→452 (8W), GPU duty 38→43%, 16/16 tests pass |
 
 ---
 

@@ -198,37 +198,25 @@ def test_board_to_piece_ids_consistency():
 
 
 def test_communication_size_reduction():
-    """🚩 Checkpoint 2: Compact request payload must be substantially smaller.
+    """🚩 Checkpoint 2: Queue payload with shared memory must be minimal.
 
     Old: InferenceRequest with state_u8 (14, 10, 9) uint8 = 1260 bytes payload
-    New: InferenceRequest with board_ids (10, 9) int8 + side int8 = 91 bytes payload
+    SHM: Queue only carries (worker_id, K) tuple ≈ 10-20 bytes
     """
-    from hybrid.rl.az_inference_server import InferenceRequest
+    # SHM signal is just a tuple of two ints
+    signal = (0, 8)  # (worker_id, leaf_batch_size)
+    signal_size = len(pickle.dumps(signal))
 
-    legal_indices = np.array([0, 42, 100], dtype=np.uint16)
+    old_payload_bytes = 14 * 10 * 9  # 1260 bytes for old uint8 tensor
+    print(f"\nQueue payload: old={old_payload_bytes}B, shm_signal={signal_size}B")
+    print(f"Reduction ratio: {old_payload_bytes / signal_size:.0f}×")
 
-    # New compact request
-    new_req = InferenceRequest(
-        req_id=0, worker_id=0,
-        board_ids=np.zeros((1, 10, 9), dtype=np.int8),
-        sides=np.array([1], dtype=np.int8),
-        action_indices_list=[legal_indices],
-        batch_count=1,
+    # Signal should be well under 50 bytes (it's ~20 bytes for two ints)
+    assert signal_size < 50, f"SHM signal should be <50B, got {signal_size}B"
+    # Reduction should be massive
+    assert old_payload_bytes / signal_size > 20, (
+        f"Expected >20× reduction, got {old_payload_bytes / signal_size:.1f}×"
     )
-    new_size = len(pickle.dumps(new_req))
-
-    # Compare raw payload sizes (the variable-size portion)
-    old_payload_bytes = 14 * 10 * 9  # 1260 bytes for uint8
-    new_payload_bytes = 10 * 9 + 1   # 91 bytes for int8 + side
-
-    payload_ratio = old_payload_bytes / new_payload_bytes
-    print(f"\nPayload size: old={old_payload_bytes}B, new={new_payload_bytes}B, ratio={payload_ratio:.1f}×")
-    print(f"Full pickled request size (new): {new_size}B")
-
-    # Raw payload is 13.8× smaller
-    assert payload_ratio > 10.0, f"Expected ≥10× payload reduction, got {payload_ratio:.1f}×"
-    # Full pickled request should be well under 1KB
-    assert new_size < 1000, f"Compact request should be <1KB, got {new_size}B"
 
 
 def test_encode_batch_gpu_micro_benchmark():

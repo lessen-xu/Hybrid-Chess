@@ -1,10 +1,11 @@
 # -*- coding: utf-8 -*-
-"""Tests for batched inference server (CPU mode, no GPU required).
+"""Tests for batched inference server with shared memory IPC (CPU mode).
 
 Verifies:
   - Server process starts, handles requests, and returns correct responses
   - Logits shape, dtype, and value range are correct
   - Clean server shutdown
+  - AMP FP16 precision
 """
 
 import multiprocessing as mp
@@ -17,6 +18,7 @@ from hybrid.rl.az_inference_server import (
     InferenceClient,
     inference_server_process,
 )
+from hybrid.rl.az_shm_pool import SharedMemoryPool
 
 
 @pytest.fixture
@@ -35,8 +37,8 @@ def test_inference_server_cpu(cpu_model_ckpt):
     except RuntimeError:
         pass
 
+    pool = SharedMemoryPool(max_workers=1)
     request_queue = mp.Queue()
-    response_queues = {0: mp.Queue()}
     stop_event = mp.Event()
 
     server = mp.Process(
@@ -44,7 +46,7 @@ def test_inference_server_cpu(cpu_model_ckpt):
         args=(
             cpu_model_ckpt,
             request_queue,
-            response_queues,
+            pool,
             stop_event,
         ),
         kwargs={"device": "cpu", "max_batch_size": 8, "timeout_ms": 50.0},
@@ -55,7 +57,7 @@ def test_inference_server_cpu(cpu_model_ckpt):
     client = InferenceClient(
         worker_id=0,
         request_queue=request_queue,
-        response_queue=response_queues[0],
+        pool=pool,
     )
 
     legal_sizes = [4, 10, 1]
@@ -89,8 +91,8 @@ def test_inference_server_multi_worker(cpu_model_ckpt):
     except RuntimeError:
         pass
 
+    pool = SharedMemoryPool(max_workers=2)
     request_queue = mp.Queue()
-    response_queues = {0: mp.Queue(), 1: mp.Queue()}
     stop_event = mp.Event()
 
     server = mp.Process(
@@ -98,7 +100,7 @@ def test_inference_server_multi_worker(cpu_model_ckpt):
         args=(
             cpu_model_ckpt,
             request_queue,
-            response_queues,
+            pool,
             stop_event,
         ),
         kwargs={"device": "cpu", "max_batch_size": 8, "timeout_ms": 50.0},
@@ -107,7 +109,7 @@ def test_inference_server_multi_worker(cpu_model_ckpt):
     server.start()
 
     clients = {
-        wid: InferenceClient(wid, request_queue, response_queues[wid])
+        wid: InferenceClient(wid, request_queue, pool)
         for wid in range(2)
     }
 
@@ -132,7 +134,7 @@ def test_inference_server_multi_worker(cpu_model_ckpt):
 def test_amp_fp16_precision_vs_fp32():
     """🚩 Checkpoint 2: AMP FP16 must not alter network strategy.
 
-    value max_diff < 0.01, policy argmax agreement >= 99%.
+    value max_diff < 0.01, policy argmax agreement >= 98%.
     """
     import random
     from hybrid.core.env import HybridChessEnv
@@ -184,4 +186,3 @@ def test_amp_fp16_precision_vs_fp32():
     agreement = (argmax_fp32 == argmax_fp16).float().mean().item()
     print(f"AMP precision: policy argmax agreement = {agreement*100:.1f}%")
     assert agreement >= 0.98, f"Policy argmax agreement too low: {agreement*100:.1f}%"
-
