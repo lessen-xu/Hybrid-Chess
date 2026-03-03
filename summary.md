@@ -158,6 +158,18 @@ hybrid-chess/
 - **GPU server-side encoding:** `encode_state` moved from per-worker CPU Python loops to GPU batch `scatter_` inside InferenceServer. Workers send compact `(10,9) int8` board IDs (13.8× smaller than old `(14,10,9) uint8`), server encodes on GPU in batch.
 - **Zero-allocation inference pipeline:** pre-allocated pinned CPU + GPU-resident buffers eliminate all dynamic allocation from the hot loop. Async DMA via `non_blocking=True` on pinned memory. AMP autocast (FP16) for forward pass on CUDA.
 
+**GPU engineering profiling** (`scripts/profile_server_path.py`, C++ engine, 200 sims, 2 plies/worker):
+
+| Metric | 4 Workers | 8 Workers |
+|---|---|---|
+| Throughput | 109 states/s | 221 states/s |
+| Avg batch size | 3.9 / 128 (3% fill) | 7.8 / 128 (6% fill) |
+| GPU duty cycle | 38% compute, 62% idle | 41% compute, 59% idle |
+| Worker IPC wait | 92% of wall time | 91% of wall time |
+| Worker MCTS CPU | 8% of wall time | 9% of wall time |
+
+**Diagnosis:** GPU is severely starved. Batch fill never exceeds worker count (max batch = N). Workers block synchronously on `Queue.get()` waiting for server response, so each worker can only have 1 in-flight request at a time. Throughput scales linearly with workers (2× workers = 2× throughput), meaning the system is entirely bottlenecked on Python multiprocessing Queue serialization latency, not GPU compute.
+
 ---
 
 ## Key Results
@@ -253,7 +265,8 @@ Across evaluations (all **no_queen** ablation), MCTS simulations show a surprisi
 
 ## Known Limitations
 
-- **NN inference dominates MCTS time** — After C++ MCTS integration, neural network forward pass is 63% of self-play time. Further speedup requires larger batch sizes, async pipelining, or mixed-precision inference.
+- **GPU severely starved (3–6% batch fill)** — Server-path profiling shows avg batch size = worker count (3.9 at 4W, 7.8 at 8W) against a 128 max. GPU is 59–62% idle. Root cause: Workers block synchronously on `Queue.get()` (92% of wall time), so each can only have 1 in-flight request. Fix requires async/batched MCTS or virtual leaf parallelism.
+- **~~NN inference dominates MCTS time~~** — ~~63% of single-process self-play time~~ → In multi-worker server mode, NN inference is amortized; the real bottleneck is Python IPC serialization.
 - **~~encode_state CPU bottleneck~~** — ~~Workers ran Python loops to build (14,10,9) tensor per leaf~~ → **Resolved**: `encode_batch_gpu` does GPU scatter on server side; workers send (10,9) int8 IDs.
 - **Breakthrough oscillation** — single breakthrough iteration followed by regression. Caused by small network + catastrophic forgetting + high-variance 20-game evals.
 - **AZ still draws 68% vs AB-d2** — even at 800 sims, AZ cannot always break through AB-d2's repetition lock.
