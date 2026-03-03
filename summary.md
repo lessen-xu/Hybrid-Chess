@@ -98,7 +98,7 @@ hybrid-chess/
 │   ├── fuzz_dual_engine.py            #   ★ Differential fuzz: Python vs C++ (500 games, 156k pos, 0 mismatch)
 │   ├── test_env_cpp.py                #   ★ Env-level C++ vs Python comparison (100 games + 3 sanity)
 │   ├── test_basic.py                   #   Board init, turn switching (2 tests)
-│   ├── test_az_encoding.py             #   State encoding, policy planes, GPU batch verify (11 tests)
+│   ├── test_az_encoding.py             #   State encoding, GPU batch, in-place, cache pollution (13 tests)
 │   ├── test_az_train_step.py           #   Network forward/backward (3 tests)
 │   ├── test_az_replay.py               #   Replay buffer add/sample (3 tests)
 │   ├── test_az_inference_server.py     #   GPU inference server (2 tests)
@@ -156,6 +156,7 @@ hybrid-chess/
   - `3phase_v2`: endgame 80%→40%→15%, gating always off. Better: permanent endgame anchor + unrestricted model evolution.
 - **C++ game engine (`--use-cpp`):** pybind11-wrapped C++ rules engine replaces Python in MCTS inner loop. Profile: 21× raw playout speedup → **3.2× end-to-end training speedup** (selfplay 2.5×, eval 4.6×). NN inference now dominates at 63% of MCTS time.
 - **GPU server-side encoding:** `encode_state` moved from per-worker CPU Python loops to GPU batch `scatter_` inside InferenceServer. Workers send compact `(10,9) int8` board IDs (13.8× smaller than old `(14,10,9) uint8`), server encodes on GPU in batch.
+- **Zero-allocation inference pipeline:** pre-allocated pinned CPU + GPU-resident buffers eliminate all dynamic allocation from the hot loop. Async DMA via `non_blocking=True` on pinned memory. AMP autocast (FP16) for forward pass on CUDA.
 
 ---
 
@@ -316,6 +317,7 @@ Across evaluations (all **no_queen** ablation), MCTS simulations show a surprisi
 | 29 | C++ MCTS integration: `_run_mcts_search_cpp` in `alphazero_stub.py` — **3.2× end-to-end speedup** (selfplay 2.5×, eval 4.6×), 248/248 tests pass |
 | 30 | Grand Run V4: 200 sims + C++ engine, 20 iter, ~24h — 8/20 iters hit 10W vs AB (40% breakthrough, 3× V2) |
 | 31 | GPU encode_state migration: `encode_batch_gpu` (scatter), workers send (10,9) int8 → 13.8× IPC shrink, 13/13 tests pass |
+| 32 | Zero-alloc inference server: pinned memory + GPU buffers + AMP (FP16), in-place `encode_batch_gpu`, 15/15 tests pass |
 
 ---
 

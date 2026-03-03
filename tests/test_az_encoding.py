@@ -271,3 +271,58 @@ def test_encode_batch_gpu_micro_benchmark():
     # Even on CPU, vectorized scatter should beat Python loops substantially
     assert speedup > 5.0, f"Expected ≥5× speedup, got {speedup:.1f}×"
 
+
+def test_encode_batch_gpu_inplace():
+    """🚩 In-place out= mode must be pixel-exact with allocating mode."""
+    states = _generate_random_states(32, seed=7777)
+    ids_list = [board_to_piece_ids(s.board) for s in states]
+    sides_list = [1 if s.side_to_move == Side.CHESS else 0 for s in states]
+    piece_ids = torch.from_numpy(np.stack(ids_list))
+    sides = torch.tensor(sides_list, dtype=torch.int8)
+    dev = torch.device("cpu")
+
+    # Allocating mode
+    alloc_result = encode_batch_gpu(piece_ids, sides, dev)
+
+    # In-place mode with pre-allocated buffer
+    out_buf = torch.zeros(32, 14, 10, 9, dtype=torch.float32, device=dev)
+    inplace_result = encode_batch_gpu(piece_ids, sides, dev, out=out_buf)
+
+    assert inplace_result is out_buf, "In-place should return the same buffer"
+    max_diff = torch.max(torch.abs(alloc_result - inplace_result)).item()
+    assert max_diff == 0.0, f"In-place differs from allocating! max_diff={max_diff}"
+
+
+def test_encode_batch_gpu_cache_pollution():
+    """🚩 Checkpoint 1: Large batch followed by small batch must not leak residual data.
+
+    Process 32 full boards into a buffer, then 4 sparse boards into the SAME buffer.
+    The small batch result must match a fresh computation.
+    """
+    full_states = _generate_random_states(32, seed=1111)
+    sparse_states = _generate_random_states(4, seed=2222)
+
+    dev = torch.device("cpu")
+    B_max = 32
+
+    # Pre-allocate shared buffer (like the server does)
+    shared_buf = torch.zeros(B_max, 14, 10, 9, dtype=torch.float32, device=dev)
+
+    # Process large batch A into shared buffer
+    ids_a = torch.from_numpy(np.stack([board_to_piece_ids(s.board) for s in full_states]))
+    sides_a = torch.tensor([1 if s.side_to_move == Side.CHESS else 0 for s in full_states], dtype=torch.int8)
+    encode_batch_gpu(ids_a, sides_a, dev, out=shared_buf[:32])
+
+    # Process small batch B into the SAME buffer (only first 4 slots)
+    ids_b = torch.from_numpy(np.stack([board_to_piece_ids(s.board) for s in sparse_states]))
+    sides_b = torch.tensor([1 if s.side_to_move == Side.CHESS else 0 for s in sparse_states], dtype=torch.int8)
+    encode_batch_gpu(ids_b, sides_b, dev, out=shared_buf[:4])
+
+    # Fresh computation for batch B (no shared buffer history)
+    fresh_result = encode_batch_gpu(ids_b, sides_b, dev)
+
+    max_diff = torch.max(torch.abs(shared_buf[:4] - fresh_result)).item()
+    assert max_diff == 0.0, (
+        f"Cache pollution detected! Batch B result differs from fresh. max_diff={max_diff}"
+    )
+

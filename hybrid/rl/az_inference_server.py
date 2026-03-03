@@ -24,7 +24,8 @@ import numpy as np
 import torch
 
 from hybrid.rl.az_network import PolicyValueNet
-from hybrid.rl.az_encoding import encode_batch_gpu
+from hybrid.rl.az_encoding import encode_batch_gpu, NUM_STATE_CHANNELS
+from hybrid.core.config import BOARD_H, BOARD_W
 
 
 # ====================================================================
@@ -93,6 +94,22 @@ class InferenceServer:
         net.to(dev)
         net.eval()
 
+        use_amp = dev.type == 'cuda'
+        B_max = self.max_batch_size
+
+        # --- Pre-allocate pinned CPU buffers (DMA-ready) ---
+        pinned_ids = torch.zeros((B_max, BOARD_H, BOARD_W), dtype=torch.int8)
+        pinned_sides = torch.zeros((B_max,), dtype=torch.int8)
+        if dev.type == 'cuda':
+            pinned_ids = pinned_ids.pin_memory()
+            pinned_sides = pinned_sides.pin_memory()
+
+        # --- Pre-allocate GPU-resident buffers ---
+        gpu_ids = torch.zeros((B_max, BOARD_H, BOARD_W), dtype=torch.int8, device=dev)
+        gpu_sides = torch.zeros((B_max,), dtype=torch.int8, device=dev)
+        gpu_states = torch.zeros((B_max, NUM_STATE_CHANNELS, BOARD_H, BOARD_W),
+                                 dtype=torch.float32, device=dev)
+
         total_batches = 0
         total_requests = 0
         batch_sizes = []
@@ -101,13 +118,17 @@ class InferenceServer:
             batch = self._collect_batch()
             if not batch:
                 continue
-            self._process_batch(net, dev, batch)
+            self._process_batch(net, dev, batch, use_amp,
+                                pinned_ids, pinned_sides,
+                                gpu_ids, gpu_sides, gpu_states)
             total_batches += 1
             total_requests += len(batch)
             batch_sizes.append(len(batch))
 
         # Drain remaining requests to prevent worker deadlock
-        self._drain_remaining(net, dev)
+        self._drain_remaining(net, dev, use_amp,
+                              pinned_ids, pinned_sides,
+                              gpu_ids, gpu_sides, gpu_states)
 
         if self.stats_queue is not None and total_batches > 0:
             self.stats_queue.put({
@@ -147,25 +168,36 @@ class InferenceServer:
         return requests
 
     def _process_batch(
-        self, net: PolicyValueNet, dev: torch.device, batch: List[InferenceRequest],
+        self, net: PolicyValueNet, dev: torch.device,
+        batch: List[InferenceRequest], use_amp: bool,
+        pinned_ids: torch.Tensor, pinned_sides: torch.Tensor,
+        gpu_ids: torch.Tensor, gpu_sides: torch.Tensor,
+        gpu_states: torch.Tensor,
     ) -> None:
-        """Run batch forward and dispatch results."""
+        """Run batch forward and dispatch results (zero-allocation hot path)."""
         B = len(batch)
 
-        # Stack compact board IDs and sides from all requests
-        ids_np = np.stack([req.board_ids for req in batch])  # (B, 10, 9)
-        sides_np = np.array([req.side for req in batch], dtype=np.int8)  # (B,)
+        # 1. Copy numpy data into pre-allocated pinned CPU buffers
+        for i, req in enumerate(batch):
+            pinned_ids[i].copy_(torch.from_numpy(req.board_ids))
+            pinned_sides[i] = req.side
 
-        # GPU batch encoding: (B, 10, 9) int8 → (B, 14, 10, 9) float32
-        ids_t = torch.from_numpy(ids_np).to(dev)
-        sides_t = torch.from_numpy(sides_np).to(dev)
-        states_t = encode_batch_gpu(ids_t, sides_t, dev)
+        # 2. Async DMA transfer to GPU (non_blocking on pinned memory)
+        gpu_ids[:B].copy_(pinned_ids[:B], non_blocking=True)
+        gpu_sides[:B].copy_(pinned_sides[:B], non_blocking=True)
 
-        with torch.no_grad():
-            policy_logits, values = net(states_t)
+        # 3. In-place GPU feature encoding (reuses gpu_states buffer)
+        encode_batch_gpu(gpu_ids[:B], gpu_sides[:B], dev, out=gpu_states[:B])
 
-        policy_flat = policy_logits.reshape(B, -1).cpu().numpy()
-        values_np = values.squeeze(-1).cpu().numpy()
+        # 4. AMP forward pass (FP16 on CUDA, no-op on CPU)
+        with torch.no_grad(), torch.autocast(
+            device_type=dev.type, enabled=use_amp, dtype=torch.float16
+        ):
+            policy_logits, values = net(gpu_states[:B])
+
+        # 5. Cast back to FP32 and transfer to CPU
+        policy_flat = policy_logits.float().reshape(B, -1).cpu().numpy()
+        values_np = values.float().squeeze(-1).cpu().numpy()
 
         for i, req in enumerate(batch):
             indices = req.legal_action_indices.astype(np.int64)
@@ -179,7 +211,12 @@ class InferenceServer:
             )
             self.response_queues[req.worker_id].put(resp)
 
-    def _drain_remaining(self, net: PolicyValueNet, dev: torch.device) -> None:
+    def _drain_remaining(
+        self, net: PolicyValueNet, dev: torch.device, use_amp: bool,
+        pinned_ids: torch.Tensor, pinned_sides: torch.Tensor,
+        gpu_ids: torch.Tensor, gpu_sides: torch.Tensor,
+        gpu_states: torch.Tensor,
+    ) -> None:
         """Process remaining requests before shutdown."""
         remaining: List[InferenceRequest] = []
         while True:
@@ -190,7 +227,9 @@ class InferenceServer:
             except queue.Empty:
                 break
         if remaining:
-            self._process_batch(net, dev, remaining)
+            self._process_batch(net, dev, remaining, use_amp,
+                                pinned_ids, pinned_sides,
+                                gpu_ids, gpu_sides, gpu_states)
 
 
 # ====================================================================

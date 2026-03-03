@@ -89,6 +89,7 @@ def encode_batch_gpu(
     piece_ids: torch.Tensor,
     sides: torch.Tensor,
     device: torch.device,
+    out: torch.Tensor | None = None,
 ) -> torch.Tensor:
     """GPU batch one-hot encoding of board states.
 
@@ -96,6 +97,9 @@ def encode_batch_gpu(
         piece_ids: (B, 10, 9) int8/long — channel IDs 0–12, -1 = empty.
         sides:     (B,) int8/long — 0 = Xiangqi's turn, 1 = Chess's turn.
         device:    target device (cuda / cpu).
+        out:       optional pre-allocated (B, 14, 10, 9) float32 tensor.
+                   When provided, writes in-place (zero-allocation hot path).
+                   When None, allocates a fresh tensor.
 
     Returns:
         (B, 14, 10, 9) float32 tensor equivalent to stacking
@@ -103,20 +107,21 @@ def encode_batch_gpu(
     """
     B, H, W = piece_ids.shape
 
-    # 1. Pre-allocate output on target device
-    out = torch.zeros((B, NUM_STATE_CHANNELS, H, W), device=device, dtype=torch.float32)
+    if out is None:
+        out = torch.zeros((B, NUM_STATE_CHANNELS, H, W), device=device, dtype=torch.float32)
+    else:
+        out.zero_()  # Critical: clear previous batch's residual data
 
-    # 2. Mask of occupied squares
+    # Mask of occupied squares
     mask = piece_ids >= 0  # (B, H, W)
 
-    # 3. Clamp -1→0 to prevent scatter_ index error
-    #    (masked positions will receive 0.0 from src anyway)
+    # Clamp -1→0 to prevent scatter_ index error
     valid_ids = piece_ids.clamp(min=0).unsqueeze(1).long()  # (B, 1, H, W)
 
-    # 4. Scatter one-hot along channel dim
+    # Scatter one-hot along channel dim
     out.scatter_(dim=1, index=valid_ids, src=mask.unsqueeze(1).float())
 
-    # 5. Side-to-move channel (index 13): 1.0 when Chess moves
+    # Side-to-move channel (index 13): 1.0 when Chess moves
     out[:, SIDE_TO_MOVE_CHANNEL, :, :] = sides.view(B, 1, 1).expand(B, H, W).float()
 
     return out
