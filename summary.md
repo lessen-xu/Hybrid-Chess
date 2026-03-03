@@ -76,7 +76,8 @@ hybrid-chess/
 │   ├── analyze_games.py                #   Batch game record analysis
 │   ├── overfit_micro.py                #   Sanity check: overfit network on 1 position
 │   ├── mcts_sanity_check.py            #   Sanity check: MCTS captures/avoids material
-│   └── action_mask_check.py            #   Sanity check: policy output respects legal moves
+│   ├── action_mask_check.py            #   Sanity check: policy output respects legal moves
+│   └── _fix_encoding.py                #   UTF-8 stdout/stderr guard for Windows (auto-imported)
 ├── cpp/                                # C++ game engine (pybind11)
 │   ├── build.ps1                       #   Build script (MSYS2 ucrt64 g++ 15.2.0)
 │   └── src/
@@ -108,19 +109,21 @@ hybrid-chess/
 │   ├── test_gating_wilson.py           #   Wilson CI gating (5 tests)
 │   └── test_runner_game_split.py       #   Game distribution across workers (1 test)
 └── runs/                               # Experiment outputs (not in repo)
-    ├── az_grand_run/                   #   V1: 20 iter, 3phase, 50 sims (~21.5h)
-    ├── az_grand_run_v2/                #   V2: 20 iter, 3phase_v2, 100 sims (~27h) ← best models here
+    ├── az_grand_run/                   #   V1: 20 iter, 3phase, 50 sims, extra_cannon (~21.5h)
+    ├── az_grand_run_v2/                #   V2: 20 iter, 3phase_v2, 100 sims, extra_cannon (~27h) ← best models
     │   ├── ckpt_iter{0..19}.pt         #     Model checkpoints (iter 16 = best stable model)
     │   ├── metrics.csv                 #     Per-iteration training metrics
     │   ├── config.json                 #     Run configuration
     │   └── game_records/               #     JSON game records for visualization
     ├── az_no_queen_run/                #   V3: 10 iter, no_queen, 100 sims (~12h)
-    ├── az_grand_run_v4/                #   V4: 20 iter, 3phase_v2, 200 sims, C++ (~24h)
+    ├── az_grand_run_v4/                #   V4: 20 iter, 3phase_v2, 200 sims, extra_cannon, C++ (~24h)
     │   ├── ckpt_iter{0..19}.pt         #     Model checkpoints
     │   └── metrics.csv                 #     Per-iteration training metrics
-    ├── ab_tournament_d{1,2}_*.json/png #   AB vs AB tournaments (d1 and d2, 3 conditions × 100 games)
-    ├── ab_termination_d2_*.json/png    #   Termination analysis (d2, no_queen, 100 games)
-    └── az_vs_ab_showdown_*.json/png    #   AZ Iter16@800sims vs AB-d2 (no_queen, 40 games)
+    ├── ab_tournaments/                 #   AB vs AB dashboards + termination analysis
+    │   ├── ab_tournament_d{1,2}_*.png/json  # d1/d2 × 3 conditions
+    │   └── ab_termination_d2_*.png/json     # no_queen termination breakdown
+    └── az_grand_run_v2/
+        └── az_vs_ab_showdown_*.png/json #   AZ Iter16@800sims vs AB-d2 (no_queen, 40 games)
 ```
 
 ---
@@ -132,7 +135,7 @@ hybrid-chess/
 | **Random** | Uniform random legal move | Baseline |
 | **AlphaBeta** | Minimax + alpha-beta + hand-crafted eval (material + mobility). Configurable depth (d1/d2). | d1: tactical but shallow. d2: sees 2-ply ahead, extremely defensive. |
 | **TD** | Linear value function trained via TD(0) self-play. Requires ε-greedy exploration (ε=0.2) to learn anything. | Slightly above Random |
-| **AlphaZero-Mini** | Small ResNet (4 blocks, 64 filters) + MCTS. Configurable simulations (50–800). Dirichlet noise for exploration. | Best agent. Beats AB-d2 at 800 sims (13W/27D/0L). |
+| **AlphaZero-Mini** | Small ResNet (4 blocks, 64 filters) + MCTS. Configurable simulations (50–800). Dirichlet noise for exploration. | Best agent. Beats AB-d2 at 800 sims **no_queen** (13W/27D/0L). |
 
 ---
 
@@ -172,7 +175,7 @@ AB vs AB at two depths × three rule variants. 4 random opening plies to break d
 2. Queen amplifies weak defense — at d2 it's perfectly neutralized.
 3. Chess has a natural edge even without Queen (24% at d1 from Bishop diagonals + Pawn promotion).
 
-### AB-d2 Termination Analysis (No Queen, 100 games)
+### AB-d2 Termination Analysis (**no_queen**, 100 games)
 
 | Termination Reason | Count | Avg Ply |
 |---|---|---|
@@ -186,16 +189,16 @@ AB vs AB at two depths × three rule variants. 4 random opening plies to break d
 
 | Run | Config | vs Random (final) | vs AlphaBeta (best) | Key Issue |
 |---|---|---|---|---|
-| **V1** | 20 iter, 3phase, 50 sims | 75% | 10W (iter 2 only) | Gating killed 13/20 iters, draw trap from iter 6 |
-| **V2** | 20 iter, 3phase_v2, 100 sims | 75% | 10W (iter 11, 16) | Breakthrough oscillation (not sustained) |
-| **V3** | 10 iter, no_queen, 100 sims | 55% | 10W (iter 6) | Same oscillation, 5 iters earlier without Queen |
-| **V4** | 20 iter, 3phase_v2, **200 sims**, C++ | 80% (avg 12.8W) | 10W (8 of 20 iters) | 40% breakthrough rate, 3× more frequent than V2 |
+| **V1** | 20 iter, 3phase, 50 sims, **extra_cannon** | 75% | 10W (iter 2 only) | Gating killed 13/20 iters, draw trap from iter 6 |
+| **V2** | 20 iter, 3phase_v2, 100 sims, **extra_cannon** | 75% | 10W (iter 11, 16) | Breakthrough oscillation (not sustained) |
+| **V3** | 10 iter, **no_queen**, 100 sims | 55% | 10W (iter 6) | Same oscillation, 5 iters earlier without Queen |
+| **V4** | 20 iter, 3phase_v2, **200 sims**, **extra_cannon**, C++ | 80% (avg 12.8W) | 10W (8 of 20 iters) | 40% breakthrough rate, 3× more frequent than V2 |
 
 **V4 vs V2 comparison:** V4 (200 sims) achieves 40% breakthrough frequency vs AB-d1, compared to V2's ~10% (2/20). However, the breakthrough pattern remains oscillatory—none of the 8 breakthrough iters are consecutive. The overall vs-AB score of 0.438 confirms the fundamental pipeline limitation: the small network (4 blocks, 64 filters) cannot sustainably retain tactical knowledge across training iterations. 200 sims produces sharper policy targets, making breakthroughs more frequent but not more durable.
 
-### Champion Evaluation: Side-Aware Analysis
+### Champion Evaluation: Side-Aware Analysis (V2, extra_cannon)
 
-Iter 16 (V2) evaluated with side-swapping (games 0–9 AZ=Chess, 10–19 AZ=Xiangqi):
+Iter 16 (V2, trained with **extra_cannon**) evaluated with side-swapping (games 0–9 AZ=Chess, 10–19 AZ=Xiangqi):
 
 | Condition | AZ as Chess | AZ as Xiangqi | Interpretation |
 |---|---|---|---|
@@ -204,7 +207,7 @@ Iter 16 (V2) evaluated with side-swapping (games 0–9 AZ=Chess, 10–19 AZ=Xian
 
 The Queen imbalance is **side-deterministic**: when AZ holds the Queen, it survives; when it faces the Queen, it collapses in ~18 moves. This implies **AZ's tactical defense level ≈ AB-d1**: the Queen is devastating to AZ (just as it is to AB-d1, which loses 33% of games to it) but harmless against AB-d2 (which neutralizes it completely). The policy network has not yet learned the deep defensive patterns that exhaustive 2-ply search discovers automatically.
 
-### AZ vs AB-d2 Showdown (Iter 16 @ 800 sims, No Queen, 40 games)
+### AZ vs AB-d2 Showdown (V2 Iter 16 @ 800 sims, **no_queen**, 40 games)
 
 | | W | D | L |
 |---|---|---|---|
@@ -216,9 +219,9 @@ Score: **0.662** | Termination: 13 checkmate (32%), 27 threefold repetition (68%
 
 AZ is **undefeated** against AB-d2. It breaks the cowardice lock (95%→68% draws, 5%→32% checkmates) and wins from both sides, confirming genuine learned strategy.
 
-### Simulation Scaling: Non-Linear Breakthrough
+### Simulation Scaling: Non-Linear Breakthrough (V2 Iter 16, no_queen)
 
-Across evaluations, MCTS simulations show a surprising non-linear effect:
+Across evaluations (all **no_queen** ablation), MCTS simulations show a surprising non-linear effect:
 
 | Sims | Opponent | Result | Score |
 |---|---|---|---|
@@ -240,6 +243,9 @@ Across evaluations, MCTS simulations show a surprising non-linear effect:
 6. **No sense of urgency** — mate-in-3 and mate-in-20 both propagate +1.0. Fix: MCTS value discounting (γ=0.99) makes shorter wins strictly better.
 7. **Gating killed curriculum progress** — new model tested against old model on full-game starts → looks "weaker" → rejected. Fix: disable gating during curriculum.
 8. **Endgame knowledge forgetting** — Phase 3 dropped endgame ratio to 0% → model forgot how to checkmate. Fix: permanent 15% endgame anchor.
+9. **C++ env speedup didn't help end-to-end** — C++ gave 21× raw playout speedup, but MCTS called Python rules directly (72% of time), bypassing the C++ env entirely. Fix: integrate C++ into MCTS internals (`_run_mcts_search_cpp`), achieving 3.2× real speedup.
+10. **Crash-restart corrupted metrics CSV** — restarting a run in the same `outdir` appended new data after stale rows from the crashed run. Fix: `az_runner.py` now backs up existing `metrics.csv` to `metrics_prev.csv` before overwriting.
+11. **Windows GBK encoding crash** — `Start-Process -RedirectStandardOutput` uses system ANSI codepage (GBK on Chinese Windows); any emoji or em-dash in `print()` crashes the script. Fix: `scripts/_fix_encoding.py` forces `stdout/stderr` to UTF-8 with `errors="replace"`, imported by all 15 scripts.
 
 ---
 
@@ -307,7 +313,6 @@ Across evaluations, MCTS simulations show a surprising non-linear effect:
 | 28 | `--use-cpp` pipeline integration + profiling: 1.0× end-to-end speedup — MCTS calls Python rules directly (72%), C++ only touches env (0.2%) |
 | 29 | C++ MCTS integration: `_run_mcts_search_cpp` in `alphazero_stub.py` — **3.2× end-to-end speedup** (selfplay 2.5×, eval 4.6×), 248/248 tests pass |
 | 30 | Grand Run V4: 200 sims + C++ engine, 20 iter, ~24h — 8/20 iters hit 10W vs AB (40% breakthrough, 3× V2) |
-| 31 | V4 champion eval: iter 5/15/19 vs AB-d1 @400sims + iter 15 vs AB-d2 @800sims (no_queen, side-swap) — running |
 
 ---
 
