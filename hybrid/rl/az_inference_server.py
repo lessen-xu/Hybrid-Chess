@@ -24,6 +24,7 @@ import numpy as np
 import torch
 
 from hybrid.rl.az_network import PolicyValueNet
+from hybrid.rl.az_encoding import encode_batch_gpu
 
 
 # ====================================================================
@@ -35,8 +36,9 @@ class InferenceRequest:
     """Worker → Server inference request."""
     req_id: int
     worker_id: int
-    state_u8: np.ndarray              # (14, 10, 9), uint8
-    legal_action_indices: np.ndarray  # (L,), uint16
+    board_ids: np.ndarray               # (10, 9), int8 — piece channel IDs, -1=empty
+    side: np.int8                       # 1=Chess, 0=Xiangqi
+    legal_action_indices: np.ndarray    # (L,), uint16
 
 
 @dataclass
@@ -150,8 +152,14 @@ class InferenceServer:
         """Run batch forward and dispatch results."""
         B = len(batch)
 
-        states_np = np.stack([req.state_u8.astype(np.float32) for req in batch])
-        states_t = torch.from_numpy(states_np).to(dev)
+        # Stack compact board IDs and sides from all requests
+        ids_np = np.stack([req.board_ids for req in batch])  # (B, 10, 9)
+        sides_np = np.array([req.side for req in batch], dtype=np.int8)  # (B,)
+
+        # GPU batch encoding: (B, 10, 9) int8 → (B, 14, 10, 9) float32
+        ids_t = torch.from_numpy(ids_np).to(dev)
+        sides_t = torch.from_numpy(sides_np).to(dev)
+        states_t = encode_batch_gpu(ids_t, sides_t, dev)
 
         with torch.no_grad():
             policy_logits, values = net(states_t)
@@ -236,13 +244,15 @@ class InferenceClient:
 
     def predict_raw(
         self,
-        state_u8: np.ndarray,
+        board_ids: np.ndarray,
+        side: np.int8,
         legal_action_indices: np.ndarray,
     ) -> Tuple[np.ndarray, float]:
         """Send inference request and block for result.
 
         Args:
-            state_u8: (14, 10, 9) uint8
+            board_ids: (10, 9) int8 — piece channel IDs, -1=empty
+            side: int8 — 1=Chess, 0=Xiangqi
             legal_action_indices: (L,) uint16
 
         Returns:
@@ -254,7 +264,8 @@ class InferenceClient:
         req = InferenceRequest(
             req_id=req_id,
             worker_id=self.worker_id,
-            state_u8=state_u8,
+            board_ids=board_ids,
+            side=side,
             legal_action_indices=legal_action_indices,
         )
 

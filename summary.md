@@ -49,10 +49,10 @@ hybrid-chess/
 │   │   └── eval.py                     #   Hand-crafted evaluation function for AB agent
 │   └── rl/                             # AlphaZero training pipeline
 │       ├── az_network.py               #   PolicyValueNet (small ResNet: 4 blocks, 64 filters)
-│       ├── az_encoding.py              #   State → tensor (14×10×9), move → policy plane (92×10×9)
+│       ├── az_encoding.py              #   State → tensor (14×10×9), GPU batch encoding, move → policy plane (92×10×9)
 │       ├── az_selfplay.py              #   Single-process self-play with MCTS
 │       ├── az_selfplay_parallel.py     #   Multi-worker parallel self-play
-│       ├── az_inference_server.py      #   Centralized GPU inference server (batched)
+│       ├── az_inference_server.py      #   Centralized GPU inference server (batched, server-side encoding)
 │       ├── az_replay.py                #   Replay buffer (state/policy/value targets)
 │       ├── az_train.py                 #   Network training (MSE value + CE policy loss)
 │       ├── az_eval.py                  #   Evaluation: play_one_game(), score_ci()
@@ -98,7 +98,7 @@ hybrid-chess/
 │   ├── fuzz_dual_engine.py            #   ★ Differential fuzz: Python vs C++ (500 games, 156k pos, 0 mismatch)
 │   ├── test_env_cpp.py                #   ★ Env-level C++ vs Python comparison (100 games + 3 sanity)
 │   ├── test_basic.py                   #   Board init, turn switching (2 tests)
-│   ├── test_az_encoding.py             #   State encoding, policy planes (6 tests)
+│   ├── test_az_encoding.py             #   State encoding, policy planes, GPU batch verify (11 tests)
 │   ├── test_az_train_step.py           #   Network forward/backward (3 tests)
 │   ├── test_az_replay.py               #   Replay buffer add/sample (3 tests)
 │   ├── test_az_inference_server.py     #   GPU inference server (2 tests)
@@ -155,6 +155,7 @@ hybrid-chess/
   - `3phase`: endgame 60%→20%→0%, gating on. Failed: gating rejected 13/20 iterations, endgame knowledge forgotten.
   - `3phase_v2`: endgame 80%→40%→15%, gating always off. Better: permanent endgame anchor + unrestricted model evolution.
 - **C++ game engine (`--use-cpp`):** pybind11-wrapped C++ rules engine replaces Python in MCTS inner loop. Profile: 21× raw playout speedup → **3.2× end-to-end training speedup** (selfplay 2.5×, eval 4.6×). NN inference now dominates at 63% of MCTS time.
+- **GPU server-side encoding:** `encode_state` moved from per-worker CPU Python loops to GPU batch `scatter_` inside InferenceServer. Workers send compact `(10,9) int8` board IDs (13.8× smaller than old `(14,10,9) uint8`), server encodes on GPU in batch.
 
 ---
 
@@ -251,7 +252,8 @@ Across evaluations (all **no_queen** ablation), MCTS simulations show a surprisi
 
 ## Known Limitations
 
-- **NN inference dominates MCTS time** — After C++ MCTS integration, neural network forward pass is 63% of self-play time. Further speedup requires GPU batching or moving `encode_state` to C++.
+- **NN inference dominates MCTS time** — After C++ MCTS integration, neural network forward pass is 63% of self-play time. Further speedup requires larger batch sizes, async pipelining, or mixed-precision inference.
+- **~~encode_state CPU bottleneck~~** — ~~Workers ran Python loops to build (14,10,9) tensor per leaf~~ → **Resolved**: `encode_batch_gpu` does GPU scatter on server side; workers send (10,9) int8 IDs.
 - **Breakthrough oscillation** — single breakthrough iteration followed by regression. Caused by small network + catastrophic forgetting + high-variance 20-game evals.
 - **AZ still draws 68% vs AB-d2** — even at 800 sims, AZ cannot always break through AB-d2's repetition lock.
 - **AB-d2 draws are deterministic cowardice** — 100% threefold repetition at avg 36 ply, 0% move limit. Classical AI refuses any move that looks like material loss.
@@ -313,6 +315,7 @@ Across evaluations (all **no_queen** ablation), MCTS simulations show a surprisi
 | 28 | `--use-cpp` pipeline integration + profiling: 1.0× end-to-end speedup — MCTS calls Python rules directly (72%), C++ only touches env (0.2%) |
 | 29 | C++ MCTS integration: `_run_mcts_search_cpp` in `alphazero_stub.py` — **3.2× end-to-end speedup** (selfplay 2.5×, eval 4.6×), 248/248 tests pass |
 | 30 | Grand Run V4: 200 sims + C++ engine, 20 iter, ~24h — 8/20 iters hit 10W vs AB (40% breakthrough, 3× V2) |
+| 31 | GPU encode_state migration: `encode_batch_gpu` (scatter), workers send (10,9) int8 → 13.8× IPC shrink, 13/13 tests pass |
 
 ---
 

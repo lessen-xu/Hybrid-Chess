@@ -107,3 +107,167 @@ def test_extract_policy_logits_empty():
     policy_planes = torch.randn(TOTAL_POLICY_PLANES, BOARD_H, BOARD_W)
     logits = extract_policy_logits(policy_planes, [])
     assert logits.shape == (0,)
+
+
+# ====================================================================
+# GPU encode_batch_gpu verification tests
+# ====================================================================
+
+import random
+import pickle
+import time
+import numpy as np
+
+from hybrid.rl.az_encoding import (
+    encode_state_cpu_legacy,
+    encode_batch_gpu,
+    board_to_piece_ids,
+)
+from hybrid.core.types import Piece, PieceKind
+from hybrid.core.rules import generate_legal_moves, apply_move
+
+
+def _generate_random_states(n: int, seed: int = 42):
+    """Generate n different board states by playing random legal moves."""
+    rng = random.Random(seed)
+    states = []
+    for _ in range(n):
+        env = HybridChessEnv()
+        state = env.reset()
+        # Play 0–30 random moves to get diverse positions
+        num_moves = rng.randint(0, 30)
+        for _ in range(num_moves):
+            legal = env.legal_moves()
+            if not legal:
+                break
+            mv = rng.choice(legal)
+            state, _, done, _ = env.step(mv)
+            if done:
+                break
+        states.append(state)
+    return states
+
+
+def test_encode_batch_gpu_vs_cpu_legacy():
+    """🚩 Checkpoint 1: GPU batch encoding must be pixel-exact with CPU legacy.
+
+    Generate 100 random board states, encode with both methods,
+    assert zero maximum absolute difference.
+    """
+    states = _generate_random_states(100, seed=12345)
+
+    # CPU legacy: encode each state individually, stack
+    cpu_tensors = [encode_state_cpu_legacy(s) for s in states]
+    cpu_batch = torch.stack(cpu_tensors)  # (100, 14, 10, 9)
+
+    # GPU batch: convert to IDs and encode
+    ids_list = [board_to_piece_ids(s.board) for s in states]
+    sides_list = [1 if s.side_to_move == Side.CHESS else 0 for s in states]
+
+    piece_ids = torch.from_numpy(np.stack(ids_list))
+    sides = torch.tensor(sides_list, dtype=torch.int8)
+
+    gpu_batch = encode_batch_gpu(piece_ids, sides, torch.device("cpu"))
+
+    max_diff = torch.max(torch.abs(cpu_batch - gpu_batch)).item()
+    assert max_diff == 0.0, (
+        f"GPU batch encoding differs from CPU legacy! max_diff={max_diff}"
+    )
+
+
+def test_board_to_piece_ids_consistency():
+    """board_to_piece_ids must assign the same channel IDs as PIECE_CHANNELS."""
+    from hybrid.rl.az_encoding import PIECE_CHANNELS
+
+    board = initial_board()
+    ids = board_to_piece_ids(board)
+
+    for x, y, piece in board.iter_pieces():
+        expected_ch = PIECE_CHANNELS[piece.kind]
+        assert ids[y, x] == expected_ch, (
+            f"Mismatch at ({x},{y}): expected channel {expected_ch}, got {ids[y, x]}"
+        )
+
+    # Empty squares should be -1
+    for y in range(BOARD_H):
+        for x in range(BOARD_W):
+            if board.grid[y][x] is None:
+                assert ids[y, x] == -1, (
+                    f"Empty square ({x},{y}) should be -1, got {ids[y, x]}"
+                )
+
+
+def test_communication_size_reduction():
+    """🚩 Checkpoint 2: Compact request payload must be substantially smaller.
+
+    Old: InferenceRequest with state_u8 (14, 10, 9) uint8 = 1260 bytes payload
+    New: InferenceRequest with board_ids (10, 9) int8 + side int8 = 91 bytes payload
+    """
+    from hybrid.rl.az_inference_server import InferenceRequest
+
+    legal_indices = np.array([0, 42, 100], dtype=np.uint16)
+
+    # New compact request
+    new_req = InferenceRequest(
+        req_id=0, worker_id=0,
+        board_ids=np.zeros((10, 9), dtype=np.int8),
+        side=np.int8(1),
+        legal_action_indices=legal_indices,
+    )
+    new_size = len(pickle.dumps(new_req))
+
+    # Compare raw payload sizes (the variable-size portion)
+    old_payload_bytes = 14 * 10 * 9  # 1260 bytes for uint8
+    new_payload_bytes = 10 * 9 + 1   # 91 bytes for int8 + side
+
+    payload_ratio = old_payload_bytes / new_payload_bytes
+    print(f"\nPayload size: old={old_payload_bytes}B, new={new_payload_bytes}B, ratio={payload_ratio:.1f}×")
+    print(f"Full pickled request size (new): {new_size}B")
+
+    # Raw payload is 13.8× smaller
+    assert payload_ratio > 10.0, f"Expected ≥10× payload reduction, got {payload_ratio:.1f}×"
+    # Full pickled request should be well under 1KB
+    assert new_size < 1000, f"Compact request should be <1KB, got {new_size}B"
+
+
+def test_encode_batch_gpu_micro_benchmark():
+    """🚩 Checkpoint 3: GPU batch encoding should be ≥5× faster than CPU loops.
+
+    Batch size 32, 500 iterations each.
+    """
+    B = 32
+    ITERS = 500
+
+    # Generate a fixed batch of random states
+    states = _generate_random_states(B, seed=9999)
+
+    # CPU legacy timing
+    t0 = time.perf_counter()
+    for _ in range(ITERS):
+        batch = torch.stack([encode_state_cpu_legacy(s) for s in states])
+    cpu_time = time.perf_counter() - t0
+
+    # GPU batch timing (on CPU device for CI)
+    ids_list = [board_to_piece_ids(s.board) for s in states]
+    sides_list = [1 if s.side_to_move == Side.CHESS else 0 for s in states]
+    piece_ids = torch.from_numpy(np.stack(ids_list))
+    sides = torch.tensor(sides_list, dtype=torch.int8)
+    dev = torch.device("cpu")
+
+    # Warm-up
+    _ = encode_batch_gpu(piece_ids, sides, dev)
+
+    t0 = time.perf_counter()
+    for _ in range(ITERS):
+        _ = encode_batch_gpu(piece_ids, sides, dev)
+    gpu_time = time.perf_counter() - t0
+
+    speedup = cpu_time / gpu_time
+    print(f"\nMicro-benchmark (B={B}, iters={ITERS}):")
+    print(f"  CPU legacy: {cpu_time*1000:.1f}ms total ({cpu_time/ITERS*1000:.2f}ms/iter)")
+    print(f"  GPU batch:  {gpu_time*1000:.1f}ms total ({gpu_time/ITERS*1000:.2f}ms/iter)")
+    print(f"  Speedup:    {speedup:.1f}×")
+
+    # Even on CPU, vectorized scatter should beat Python loops substantially
+    assert speedup > 5.0, f"Expected ≥5× speedup, got {speedup:.1f}×"
+

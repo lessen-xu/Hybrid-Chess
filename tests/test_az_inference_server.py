@@ -60,10 +60,11 @@ def test_inference_server_cpu(cpu_model_ckpt):
 
     legal_sizes = [4, 10, 1]
     for i, L in enumerate(legal_sizes):
-        state_u8 = np.random.randint(0, 2, size=(14, 10, 9), dtype=np.uint8)
+        board_ids = np.random.randint(-1, 13, size=(10, 9)).astype(np.int8)
+        side = np.int8(i % 2)
         legal_indices = np.random.choice(8280, size=L, replace=False).astype(np.uint16)
 
-        logits, value = client.predict_raw(state_u8, legal_indices)
+        logits, value = client.predict_raw(board_ids, side, legal_indices)
 
         assert logits.shape == (L,), f"Request {i}: expected logits shape ({L},), got {logits.shape}"
         assert logits.dtype == np.float32, f"Request {i}: expected dtype float32, got {logits.dtype}"
@@ -112,9 +113,10 @@ def test_inference_server_multi_worker(cpu_model_ckpt):
 
     for req_i in range(2):
         for wid in range(2):
-            state_u8 = np.random.randint(0, 2, size=(14, 10, 9), dtype=np.uint8)
+            board_ids = np.random.randint(-1, 13, size=(10, 9)).astype(np.int8)
+            side = np.int8(req_i % 2)
             legal_indices = np.array([0, 42, 100], dtype=np.uint16)
-            logits, value = clients[wid].predict_raw(state_u8, legal_indices)
+            logits, value = clients[wid].predict_raw(board_ids, side, legal_indices)
 
             assert logits.shape == (3,)
             assert np.isfinite(value)
@@ -124,3 +126,4 @@ def test_inference_server_multi_worker(cpu_model_ckpt):
     if server.is_alive():
         server.terminate()
         server.join(timeout=5.0)
+

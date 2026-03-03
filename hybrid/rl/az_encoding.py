@@ -15,6 +15,7 @@ Action encoding (92 move-planes):
 from __future__ import annotations
 from typing import List, Tuple, Dict
 
+import numpy as np
 import torch
 
 from hybrid.core.env import GameState
@@ -46,8 +47,11 @@ SIDE_TO_MOVE_CHANNEL = 13
 NUM_STATE_CHANNELS = 14
 
 
-def encode_state(state: GameState) -> torch.Tensor:
-    """Encode GameState as (C, H, W) = (14, 10, 9) float32 tensor."""
+def encode_state_cpu_legacy(state: GameState) -> torch.Tensor:
+    """Encode GameState as (C, H, W) = (14, 10, 9) float32 tensor.
+
+    Original CPU implementation kept as reference/baseline.
+    """
     tensor = torch.zeros(NUM_STATE_CHANNELS, BOARD_H, BOARD_W, dtype=torch.float32)
 
     for x, y, piece in state.board.iter_pieces():
@@ -58,6 +62,64 @@ def encode_state(state: GameState) -> torch.Tensor:
         tensor[SIDE_TO_MOVE_CHANNEL, :, :] = 1.0
 
     return tensor
+
+
+def encode_state(state: GameState) -> torch.Tensor:
+    """Encode GameState as (C, H, W) = (14, 10, 9) float32 tensor.
+
+    Thin wrapper over encode_state_cpu_legacy for backward compatibility.
+    """
+    return encode_state_cpu_legacy(state)
+
+
+def board_to_piece_ids(board) -> np.ndarray:
+    """Convert a Board to a compact (10, 9) int8 grid of piece channel IDs.
+
+    Returns:
+        (BOARD_H, BOARD_W) int8 array.  Values 0–12 map to PIECE_CHANNELS;
+        -1 = empty square.
+    """
+    ids = np.full((BOARD_H, BOARD_W), -1, dtype=np.int8)
+    for x, y, piece in board.iter_pieces():
+        ids[y, x] = PIECE_CHANNELS[piece.kind]
+    return ids
+
+
+def encode_batch_gpu(
+    piece_ids: torch.Tensor,
+    sides: torch.Tensor,
+    device: torch.device,
+) -> torch.Tensor:
+    """GPU batch one-hot encoding of board states.
+
+    Args:
+        piece_ids: (B, 10, 9) int8/long — channel IDs 0–12, -1 = empty.
+        sides:     (B,) int8/long — 0 = Xiangqi's turn, 1 = Chess's turn.
+        device:    target device (cuda / cpu).
+
+    Returns:
+        (B, 14, 10, 9) float32 tensor equivalent to stacking
+        encode_state_cpu_legacy for each board.
+    """
+    B, H, W = piece_ids.shape
+
+    # 1. Pre-allocate output on target device
+    out = torch.zeros((B, NUM_STATE_CHANNELS, H, W), device=device, dtype=torch.float32)
+
+    # 2. Mask of occupied squares
+    mask = piece_ids >= 0  # (B, H, W)
+
+    # 3. Clamp -1→0 to prevent scatter_ index error
+    #    (masked positions will receive 0.0 from src anyway)
+    valid_ids = piece_ids.clamp(min=0).unsqueeze(1).long()  # (B, 1, H, W)
+
+    # 4. Scatter one-hot along channel dim
+    out.scatter_(dim=1, index=valid_ids, src=mask.unsqueeze(1).float())
+
+    # 5. Side-to-move channel (index 13): 1.0 when Chess moves
+    out[:, SIDE_TO_MOVE_CHANNEL, :, :] = sides.view(B, 1, 1).expand(B, H, W).float()
+
+    return out
 
 
 # ====================================================================
