@@ -307,6 +307,7 @@ Across evaluations, MCTS simulations show a surprising non-linear effect:
 | 28 | `--use-cpp` pipeline integration + profiling: 1.0× end-to-end speedup — MCTS calls Python rules directly (72%), C++ only touches env (0.2%) |
 | 29 | C++ MCTS integration: `_run_mcts_search_cpp` in `alphazero_stub.py` — **3.2× end-to-end speedup** (selfplay 2.5×, eval 4.6×), 248/248 tests pass |
 | 30 | Grand Run V4: 200 sims + C++ engine, 20 iter, ~24h — 8/20 iters hit 10W vs AB (40% breakthrough, 3× V2) |
+| 31 | V4 champion eval: iter 5/15/19 vs AB-d1 @400sims + iter 15 vs AB-d2 @800sims (no_queen, side-swap) — running |
 
 ---
 

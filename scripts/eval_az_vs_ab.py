@@ -70,10 +70,11 @@ def play_one_game(
     max_ply: int,
     random_plies: int,
     seed: int,
+    use_cpp: bool = False,
 ):
     """Play one game with random opening + AZ vs AB. Returns (winner, plies, reason, az_outcome)."""
     rng = random.Random(seed)
-    env = HybridChessEnv(max_plies=max_ply)
+    env = HybridChessEnv(max_plies=max_ply, use_cpp=use_cpp)
     state = env.reset()
 
     agents = {}
@@ -135,6 +136,8 @@ def main():
                         choices=list(ABLATION_PRESETS.keys()))
     parser.add_argument("--tag", type=str, default="az_vs_ab_showdown")
     parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument("--use-cpp", action="store_true", default=False,
+                        help="Use C++ engine for MCTS")
     args = parser.parse_args()
 
     apply_ablation(args.ablation)
@@ -151,6 +154,7 @@ def main():
         model=model,
         cfg=MCTSConfig(simulations=args.eval_simulations, dirichlet_eps=0.0),
         seed=args.seed,
+        use_cpp=args.use_cpp,
     )
 
     ab_agent = AlphaBetaAgent(SearchConfig(depth=args.ab_depth))
@@ -218,6 +222,7 @@ def main():
             max_ply=args.max_ply,
             random_plies=args.random_plies,
             seed=args.seed + gi * 31337,
+            use_cpp=args.use_cpp,
         )
 
         # Update stats

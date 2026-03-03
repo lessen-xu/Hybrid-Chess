@@ -60,6 +60,7 @@ def _eval_worker(
     game_offset: int,
     total_games: int,
     result_queue: mp.Queue,
+    use_cpp: bool = False,
 ) -> None:
     """Worker: load model, create agent, play games, report EACH game via queue."""
     import torch
@@ -85,6 +86,7 @@ def _eval_worker(
         model=model,
         cfg=MCTSConfig(simulations=simulations, dirichlet_eps=0.0),
         seed=seed,
+        use_cpp=use_cpp,
     )
 
     if opponent_type == "random":
@@ -108,7 +110,8 @@ def _eval_worker(
 
         t0 = time.time()
         winner, plies, _ = play_one_game(
-            agent_chess, agent_xiangqi, seed=seed + local_i
+            agent_chess, agent_xiangqi, seed=seed + local_i,
+            use_cpp=use_cpp,
         )
         elapsed = time.time() - t0
 
@@ -149,6 +152,7 @@ def run_eval(
     seed: int = 42,
     progress_path: str | None = None,
     all_progress: dict | None = None,
+    use_cpp: bool = False,
 ) -> dict:
     """Run parallel evaluation with live progress updates."""
     ctx = mp.get_context("spawn")
@@ -181,6 +185,7 @@ def run_eval(
                 offsets[i],
                 games,
                 result_queue,
+                use_cpp,
             ),
         )
         p.start()
@@ -297,6 +302,8 @@ def main():
     parser.add_argument("--num-workers", type=int, default=8,
                         help="Parallel workers (default: 8)")
     parser.add_argument("--ablation", type=str, default="extra_cannon")
+    parser.add_argument("--use-cpp", action="store_true", default=False,
+                        help="Use C++ engine for MCTS")
     parser.add_argument("--opponents", type=str, nargs="+",
                         default=["ab_d1", "random"],
                         help="Opponents to test against (default: ab_d1 random)")
@@ -380,6 +387,7 @@ def main():
                     ablation=args.ablation,
                     progress_path=progress_path,
                     all_progress=all_progress,
+                    use_cpp=args.use_cpp,
                 )
                 elapsed = time.time() - t0
                 log(fmt_result(f"vs {opp_label}", res, sims))
