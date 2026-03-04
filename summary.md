@@ -59,7 +59,6 @@ hybrid-chess/
 │       └── endgame_spawner.py          #   Generates random endgame positions (K+pieces vs G+pieces)
 ├── scripts/                            # CLI tools
 │   ├── train_az_iter.py                #   Main AZ training entrypoint (--iterations, --curriculum, --use-cpp)
-│   ├── run_experiment.py               #   Three-universe experiment launcher (vanilla/extra_cannon/no_queen)
 │   ├── play_match.py                   #   Agent vs agent batch match
 │   ├── ab_tournament.py                #   AB vs AB rule balance tournament (3 conditions × N games)
 │   ├── eval_champions.py               #   Evaluate AZ checkpoints vs baselines (parallel, side-swap)
@@ -67,7 +66,6 @@ hybrid-chess/
 │   ├── eval_arena.py                   #   Side-switching evaluation arena (forced A=Chess/Xiangqi pairing)
 │   ├── analyze_experiment.py           #   Generate 4 protocol figures (imbalance, branching, depth, equilibrium)
 │   ├── monitor_training.py             #   Live training dashboard (reads metrics.csv → PNG)
-│   ├── monitor_experiment.py           #   Live 2×3 experiment dashboard (3 runs × 6 panels)
 │   ├── monitor_tournament.py           #   Live tournament dashboard
 │   ├── visualize_game.py               #   Game replay → HTML/GIF visualization
 │   ├── overfit_micro.py                #   Sanity check: overfit network on 1 position
@@ -105,11 +103,7 @@ hybrid-chess/
 │   ├── test_gating_wilson.py           #   Wilson CI gating (5 tests)
 │   └── test_runner_game_split.py       #   Game distribution across workers (1 test)
 └── runs/                               # Experiment outputs (not in repo)
-    ├── az_grand_run_v4/                #   V4: 200 sims, C++ engine, extra_cannon (~24h)
-    ├── experiment_vanilla/             #   Run 0: vanilla rules (control)
-    ├── experiment_extra_cannon/        #   Run 1: extra cannon (material compensation)
-    ├── experiment_no_queen/            #   Run 2: no queen (topological constraint)
-    └── analysis/                       #   Generated paper figures
+    └── az_grand_run_v4/                #   V4: 200 sims, C++ engine, extra_cannon (~24h)
 ```
 
 ---
@@ -342,20 +336,9 @@ python -m scripts.train_az_iter --iterations 20 \
     --use-cpp --ablation extra_cannon \
     --outdir runs/az_run
 
-# Three-universe experiment (vanilla / extra_cannon / no_queen)
-python -m scripts.run_experiment
-
-# Live experiment dashboard (2×3 panels)
-python -m scripts.monitor_experiment --interval 120
-
 # Side-switching evaluation arena
 python -m scripts.eval_arena --model-a runs/az_run/ckpt_iter19.pt --model-b ab_d1 \
     --games 20 --simulations 200 --use-cpp
-
-# Generate paper figures from experiment data
-python -m scripts.analyze_experiment \
-    --run-dirs runs/experiment_vanilla runs/experiment_extra_cannon runs/experiment_no_queen \
-    --labels "Vanilla" "Extra Cannon" "No Queen" --outdir runs/analysis
 
 # Run tests
 pytest -q
