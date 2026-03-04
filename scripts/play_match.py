@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Run a batch of games and report win rates for Random / AlphaBeta / TD agents."""
+"""Run a batch of games and report win rates for Random / AlphaBeta agents."""
 
 from __future__ import annotations
 import scripts._fix_encoding  # noqa: F401
@@ -13,9 +13,6 @@ from hybrid.core.env import HybridChessEnv
 from hybrid.core.types import Side
 from hybrid.agents.random_agent import RandomAgent
 from hybrid.agents.alphabeta_agent import AlphaBetaAgent, SearchConfig
-from hybrid.agents.td_agent import TDAgent, TDSearchConfig
-from hybrid.rl.td_learning import LinearValueFunction
-from hybrid.rl.features import feature_dim
 
 
 ABLATION_PRESETS = {
@@ -42,19 +39,12 @@ def apply_ablation(name: str):
         setattr(cfg, key, val)
 
 
-def build_agent(name: str, depth: int = 3, td_weights: str = ""):
+def build_agent(name: str, depth: int = 3):
     name = name.lower()
     if name == "random":
         return RandomAgent(seed=0)
     if name == "alphabeta":
         return AlphaBetaAgent(SearchConfig(depth=depth))
-    if name == "td":
-        if td_weights:
-            with open(td_weights, "r", encoding="utf-8") as f:
-                vf = LinearValueFunction.from_dict(json.load(f))
-        else:
-            vf = LinearValueFunction(feature_dim())
-        return TDAgent(vf, TDSearchConfig(depth=depth))
     raise ValueError(f"unknown agent: {name}")
 
 
@@ -74,18 +64,16 @@ def main():
     parser.add_argument("--games", type=int, default=50)
     parser.add_argument("--p1", type=str, default="alphabeta", help="agent for CHESS side")
     parser.add_argument("--p2", type=str, default="random", help="agent for XIANGQI side")
-    parser.add_argument("--depth", type=int, default=3, help="search depth for alphabeta/td agents")
+    parser.add_argument("--depth", type=int, default=3, help="search depth for alphabeta agents")
     parser.add_argument("--ablation", type=str, default="none",
                         choices=list(ABLATION_PRESETS),
                         help="ablation preset to apply")
-    parser.add_argument("--td-weights", type=str, default="",
-                        help="path to trained TD value function json (for td agent)")
     args = parser.parse_args()
 
     apply_ablation(args.ablation)
 
-    a_chess = build_agent(args.p1, depth=args.depth, td_weights=args.td_weights)
-    a_xq = build_agent(args.p2, depth=args.depth, td_weights=args.td_weights)
+    a_chess = build_agent(args.p1, depth=args.depth)
+    a_xq = build_agent(args.p2, depth=args.depth)
 
     env = HybridChessEnv()
     stats = {"chess_win": 0, "xiangqi_win": 0, "draw": 0}

@@ -120,6 +120,9 @@ class GameRecord:
     rootv_p05: float = 0.0
     low_rootv_steps: int = 0
     rootv_steps: int = 0
+    # --- Telemetry for evaluation protocol ---
+    winner_side: Optional[str] = None       # "chess" / "xiangqi" / None (draw)
+    legal_move_counts: List[int] = field(default_factory=list)  # per-ply |legal_moves|
 
 
 @dataclass
@@ -165,6 +168,7 @@ def self_play_game(
         state = env.reset()
     examples: List[Example] = []
     info = None
+    legal_move_counts: List[int] = []
 
     resign_counter = 0
     draw_adjudicate_counter = 0
@@ -174,6 +178,7 @@ def self_play_game(
         legal_moves = env.legal_moves()
         if len(legal_moves) == 0:
             break
+        legal_move_counts.append(len(legal_moves))
 
         current_ply = state.ply
         temp = cfg.temperature if current_ply < cfg.temp_cutoff_ply else 0.0
@@ -217,6 +222,7 @@ def self_play_game(
                 )
                 for ex in examples:
                     ex.z = 1.0 if ex.side_to_move == winner else -1.0
+                _winner_side = "chess" if winner == Side.CHESS else "xiangqi"
                 record = GameRecord(
                     result="chess_win" if winner == Side.CHESS else "xiangqi_win",
                     termination_reason="Resign",
@@ -226,6 +232,8 @@ def self_play_game(
                     resign_side="chess" if loser == Side.CHESS else "xiangqi",
                     rootv_min=rootv_min, rootv_p05=rootv_p05,
                     low_rootv_steps=low_rootv_steps, rootv_steps=rootv_steps,
+                    winner_side=_winner_side,
+                    legal_move_counts=legal_move_counts,
                 )
                 return examples, record
 
@@ -250,6 +258,8 @@ def self_play_game(
                     resigned=False,
                     rootv_min=rootv_min, rootv_p05=rootv_p05,
                     low_rootv_steps=low_rootv_steps, rootv_steps=rootv_steps,
+                    winner_side=None,
+                    legal_move_counts=legal_move_counts,
                 )
                 return examples, record
 
@@ -286,16 +296,21 @@ def self_play_game(
             ex.z = -1.0
 
     result_str = "draw"
+    winner_side_str: Optional[str] = None
     if winner == Side.CHESS:
         result_str = "chess_win"
+        winner_side_str = "chess"
     elif winner == Side.XIANGQI:
         result_str = "xiangqi_win"
+        winner_side_str = "xiangqi"
 
     record = GameRecord(
         result=result_str, termination_reason=reason,
         ply_count=state.ply, material_diff=material_diff, resigned=False,
         rootv_min=rootv_min, rootv_p05=rootv_p05,
         low_rootv_steps=low_rootv_steps, rootv_steps=rootv_steps,
+        winner_side=winner_side_str,
+        legal_move_counts=legal_move_counts,
     )
 
     return examples, record

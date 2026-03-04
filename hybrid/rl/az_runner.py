@@ -140,17 +140,28 @@ def _split_games_evenly(total_games: int, num_workers: int) -> List[int]:
 
 def _apply_ablation(ablation: str) -> None:
     """Apply ablation experiment settings."""
-    from scripts.play_match import apply_ablation, ABLATION_PRESETS
-    if ablation in ABLATION_PRESETS:
-        apply_ablation(ablation)
+    import hybrid.core.config as cfg
+    if ablation == "none":
+        cfg.ABLATION_NO_QUEEN = False
+        cfg.ABLATION_NO_QUEEN_PROMOTION = False
+        cfg.ABLATION_EXTRA_CANNON = False
+        cfg.ABLATION_REMOVE_EXTRA_PAWN = False
     elif ablation == "extra_cannon":
-        import hybrid.core.config as cfg
         cfg.ABLATION_NO_QUEEN = False
         cfg.ABLATION_NO_QUEEN_PROMOTION = False
         cfg.ABLATION_EXTRA_CANNON = True
         cfg.ABLATION_REMOVE_EXTRA_PAWN = False
+    elif ablation == "no_queen":
+        cfg.ABLATION_NO_QUEEN = True
+        cfg.ABLATION_NO_QUEEN_PROMOTION = False
+        cfg.ABLATION_EXTRA_CANNON = False
+        cfg.ABLATION_REMOVE_EXTRA_PAWN = False
     else:
-        print(f"[WARNING] Unknown ablation: {ablation!r}, using default (no ablation)")
+        from scripts.play_match import apply_ablation, ABLATION_PRESETS
+        if ablation in ABLATION_PRESETS:
+            apply_ablation(ablation)
+        else:
+            print(f"[WARNING] Unknown ablation: {ablation!r}, using default (no ablation)")
 
 
 def _save_checkpoint(
@@ -197,6 +208,24 @@ def _aggregate_game_records(records: List[GameRecord]) -> Dict[str, Any]:
     decisive = sum(1 for r in records if r.result != "draw")
     resign_count = sum(1 for r in records if r.resigned)
 
+    # --- Faction outcome telemetry ---
+    chess_wins = sum(1 for r in records if r.winner_side == "chess")
+    xiangqi_wins = sum(1 for r in records if r.winner_side == "xiangqi")
+    draws = n - chess_wins - xiangqi_wins
+
+    # --- Branching factor telemetry ---
+    # Even plies (0,2,4,...) = Chess moves, odd plies (1,3,5,...) = Xiangqi moves
+    chess_legal, xiangqi_legal = [], []
+    for r in records:
+        for ply_i, count in enumerate(r.legal_move_counts):
+            if ply_i % 2 == 0:
+                chess_legal.append(count)
+            else:
+                xiangqi_legal.append(count)
+
+    avg_legal_chess = round(sum(chess_legal) / max(len(chess_legal), 1), 2)
+    avg_legal_xiangqi = round(sum(xiangqi_legal) / max(len(xiangqi_legal), 1), 2)
+
     mat_diffs = [r.material_diff for r in records]
     rootv_mins = [r.rootv_min for r in records]
     rootv_mins_sorted = sorted(rootv_mins)
@@ -226,6 +255,12 @@ def _aggregate_game_records(records: List[GameRecord]) -> Dict[str, Any]:
         "sp_low_rootv_steps_rate": round(
             total_low_rootv_steps / max(total_rootv_steps, 1), 4
         ),
+        # --- Faction / branching telemetry ---
+        "sp_chess_wins": chess_wins,
+        "sp_xiangqi_wins": xiangqi_wins,
+        "sp_draws": draws,
+        "sp_avg_legal_chess": avg_legal_chess,
+        "sp_avg_legal_xiangqi": avg_legal_xiangqi,
     }
 
 
@@ -256,6 +291,9 @@ CSV_COLUMNS = [
     "sp_avg_mat_diff",
     "sp_rootv_min_mean", "sp_rootv_min_p10",
     "sp_low_rootv_steps_sum", "sp_low_rootv_steps_rate",
+    # --- Faction / branching telemetry ---
+    "sp_chess_wins", "sp_xiangqi_wins", "sp_draws",
+    "sp_avg_legal_chess", "sp_avg_legal_xiangqi",
 ]
 
 

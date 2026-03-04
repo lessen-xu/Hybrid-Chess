@@ -1,9 +1,8 @@
 # Hybrid Chess ♔♚ — Project Summary
 
-**International Chess vs Chinese Chess: Reinforcement Learning on an Asymmetric Board Game**
+**Self-Play Reinforcement Learning for Asymmetric Cross-Species Board Games**
 
-> Course project for *Reinforcement Learning* (FS2026).
-> A two-player zero-sum game where one side plays with Chess pieces and the other with Xiangqi pieces on a shared 9×10 board. We built agents from random baselines up to a mini AlphaZero to study rule balance and learn strategies through self-play.
+> A two-player zero-sum game where one side plays with International Chess pieces and the other with Chinese Chess (Xiangqi) pieces on a shared 9×10 board. We train AlphaZero-style agents via self-play to study the game-theoretic implications of asymmetric rule sets, diagnose systematic faction imbalance, and evaluate balance-restoration mechanisms.
 
 ---
 
@@ -42,7 +41,6 @@ hybrid-chess/
 │   │   ├── base.py                     #   BaseAgent abstract class
 │   │   ├── random_agent.py             #   RandomAgent (uniform random legal move)
 │   │   ├── alphabeta_agent.py          #   AlphaBetaAgent (minimax + alpha-beta pruning)
-│   │   ├── td_agent.py                 #   TDAgent (linear value function + TD(0))
 │   │   ├── alphazero_stub.py           #   AlphaZeroMiniAgent (MCTS + neural network)
 │   │   │                               #     _run_mcts_search_cpp: C++ MCTS path (use_cpp=True)
 │   │   ├── az_remote_model.py          #   Remote model proxy for inference server
@@ -50,7 +48,7 @@ hybrid-chess/
 │   └── rl/                             # AlphaZero training pipeline
 │       ├── az_network.py               #   PolicyValueNet (small ResNet: 4 blocks, 64 filters)
 │       ├── az_encoding.py              #   State → tensor (14×10×9), GPU batch encoding, move → policy plane (92×10×9)
-│       ├── az_selfplay.py              #   Single-process self-play with MCTS
+│       ├── az_selfplay.py              #   Single-process self-play with MCTS + telemetry
 │       ├── az_selfplay_parallel.py     #   Multi-worker parallel self-play
 │       ├── az_inference_server.py      #   Centralized GPU inference server (batched, server-side encoding)
 │       ├── az_replay.py                #   Replay buffer (state/policy/value targets)
@@ -58,26 +56,24 @@ hybrid-chess/
 │       ├── az_eval.py                  #   Evaluation: play_one_game(), score_ci()
 │       ├── az_eval_parallel.py         #   Parallel evaluation with side-swapping
 │       ├── az_runner.py                #   Full iterative loop: selfplay→train→eval→gating
-│       ├── endgame_spawner.py          #   Generates random endgame positions (K+pieces vs G+pieces)
-│       ├── td_learning.py              #   TD(0) linear value function training
-│       └── features.py                 #   Feature extraction for TD agent
+│       └── endgame_spawner.py          #   Generates random endgame positions (K+pieces vs G+pieces)
 ├── scripts/                            # CLI tools
 │   ├── train_az_iter.py                #   Main AZ training entrypoint (--iterations, --curriculum, --use-cpp)
-│   ├── profile_mcts.py                 #   MCTS time distribution profiler (Python vs C++ comparison)
-│   ├── train_td.py                     #   TD-learning training script
-│   ├── play_match.py                   #   Agent vs agent batch match (Random/AB/TD)
+│   ├── run_experiment.py               #   Three-universe experiment launcher (vanilla/extra_cannon/no_queen)
+│   ├── play_match.py                   #   Agent vs agent batch match
 │   ├── ab_tournament.py                #   AB vs AB rule balance tournament (3 conditions × N games)
-│   │                                   #     Supports --condition, --tag, --depth; tracks termination reasons
-│   ├── eval_champions.py              #   Evaluate AZ checkpoints vs baselines (parallel, side-swap)
+│   ├── eval_champions.py               #   Evaluate AZ checkpoints vs baselines (parallel, side-swap)
 │   ├── eval_az_vs_ab.py                #   AZ vs AB-d2 showdown (800 sims, termination tracking)
+│   ├── eval_arena.py                   #   Side-switching evaluation arena (forced A=Chess/Xiangqi pairing)
+│   ├── analyze_experiment.py           #   Generate 4 protocol figures (imbalance, branching, depth, equilibrium)
 │   ├── monitor_training.py             #   Live training dashboard (reads metrics.csv → PNG)
-│   ├── monitor_tournament.py           #   Live tournament dashboard (4-col: donut, termination, histogram, stats)
+│   ├── monitor_experiment.py           #   Live 2×3 experiment dashboard (3 runs × 6 panels)
+│   ├── monitor_tournament.py           #   Live tournament dashboard
 │   ├── visualize_game.py               #   Game replay → HTML/GIF visualization
-│   ├── analyze_games.py                #   Batch game record analysis
 │   ├── overfit_micro.py                #   Sanity check: overfit network on 1 position
 │   ├── mcts_sanity_check.py            #   Sanity check: MCTS captures/avoids material
 │   ├── action_mask_check.py            #   Sanity check: policy output respects legal moves
-│   └── _fix_encoding.py                #   UTF-8 stdout/stderr guard for Windows (auto-imported)
+│   └── _fix_encoding.py                #   UTF-8 stdout/stderr guard for Windows
 ├── cpp/                                # C++ game engine (pybind11)
 │   ├── build.ps1                       #   Build script (MSYS2 ucrt64 g++ 15.2.0)
 │   └── src/
@@ -109,21 +105,11 @@ hybrid-chess/
 │   ├── test_gating_wilson.py           #   Wilson CI gating (5 tests)
 │   └── test_runner_game_split.py       #   Game distribution across workers (1 test)
 └── runs/                               # Experiment outputs (not in repo)
-    ├── az_grand_run/                   #   V1: 20 iter, 3phase, 50 sims, extra_cannon (~21.5h)
-    ├── az_grand_run_v2/                #   V2: 20 iter, 3phase_v2, 100 sims, extra_cannon (~27h) ← best models
-    │   ├── ckpt_iter{0..19}.pt         #     Model checkpoints (iter 16 = best stable model)
-    │   ├── metrics.csv                 #     Per-iteration training metrics
-    │   ├── config.json                 #     Run configuration
-    │   └── game_records/               #     JSON game records for visualization
-    ├── az_no_queen_run/                #   V3: 10 iter, no_queen, 100 sims (~12h)
-    ├── az_grand_run_v4/                #   V4: 20 iter, 3phase_v2, 200 sims, extra_cannon, C++ (~24h)
-    │   ├── ckpt_iter{0..19}.pt         #     Model checkpoints
-    │   └── metrics.csv                 #     Per-iteration training metrics
-    ├── ab_tournaments/                 #   AB vs AB dashboards + termination analysis
-    │   ├── ab_tournament_d{1,2}_*.png/json  # d1/d2 × 3 conditions
-    │   └── ab_termination_d2_*.png/json     # no_queen termination breakdown
-    └── az_grand_run_v2/
-        └── az_vs_ab_showdown_*.png/json #   AZ Iter16@800sims vs AB-d2 (no_queen, 40 games)
+    ├── az_grand_run_v4/                #   V4: 200 sims, C++ engine, extra_cannon (~24h)
+    ├── experiment_vanilla/             #   Run 0: vanilla rules (control)
+    ├── experiment_extra_cannon/        #   Run 1: extra cannon (material compensation)
+    ├── experiment_no_queen/            #   Run 2: no queen (topological constraint)
+    └── analysis/                       #   Generated paper figures
 ```
 
 ---
@@ -132,10 +118,9 @@ hybrid-chess/
 
 | Agent | Description | Strength |
 |---|---|---|
-| **Random** | Uniform random legal move | Baseline |
-| **AlphaBeta** | Minimax + alpha-beta + hand-crafted eval (material + mobility). Configurable depth (d1/d2). | d1: tactical but shallow. d2: sees 2-ply ahead, extremely defensive. |
-| **TD** | Linear value function trained via TD(0) self-play. Requires ε-greedy exploration (ε=0.2) to learn anything. | Slightly above Random |
-| **AlphaZero-Mini** | Small ResNet (4 blocks, 64 filters) + MCTS. Configurable simulations (50–800). Dirichlet noise for exploration. | Best agent. Beats AB-d2 at 800 sims **no_queen** (13W/27D/0L). |
+| **Random** | Uniform random legal move | Baseline anchor (Elo reference) |
+| **AlphaBeta** | Minimax + alpha-beta + hand-crafted eval (material + mobility). Configurable depth (d1/d2). | d1: tactical but shallow. d2: 2-ply, defensive. |
+| **AlphaZero-Mini** | Small ResNet (4 blocks, 64 filters) + MCTS. Configurable simulations (50–800). Dirichlet noise. | Best agent. Beats AB-d2 at 800 sims **no_queen** (13W/27D/0L). |
 
 ---
 
@@ -159,6 +144,7 @@ hybrid-chess/
 - **Zero-allocation inference pipeline:** pre-allocated pinned CPU + GPU-resident buffers eliminate all dynamic allocation from the hot loop. Async DMA via `non_blocking=True` on pinned memory. AMP autocast (FP16) for forward pass on CUDA.
 - **Virtual-loss leaf batching:** MCTS gathers K=8 leaves per round via virtual loss diversion before making one batched IPC call. DFS assertion verifies zero VL leakage after every search.
 - **Zero-copy shared memory IPC:** `SharedMemoryPool` holds cross-process tensors (`share_memory_()`). Queue carries only `(wid, K)` tuples (~15 bytes). Server reads from pool, writes full policy flat back; workers slice locally. `mp.Event` for wake signaling.
+- **Evaluation protocol telemetry:** `GameRecord` tracks per-ply legal move counts and explicit winner faction (`chess`/`xiangqi`). Runner aggregates into per-iteration CSV columns: `sp_chess_wins`, `sp_xiangqi_wins`, `sp_draws`, `sp_avg_legal_chess`, `sp_avg_legal_xiangqi`. These enable faction win-rate curves and branching factor analysis without post-hoc log parsing.
 
 **GPU engineering profiling** (`scripts/profile_server_path.py`, C++ engine, 200 sims, 2 plies/worker):
 
@@ -308,7 +294,6 @@ Across evaluations (all **no_queen** ablation), MCTS simulations show a surprisi
 |---|---|
 | 0–1 | Rule design + environment + validation |
 | 2–3 | Baseline balance analysis + `extra_cannon` compensation |
-| 3 | TD-learning (discovered exploration necessity) |
 | 4–6 | AlphaZero inference / encoding / training loop |
 | 7–8 | Parallel self-play + GPU inference server |
 | 9 | CI gating + eval speedup |
@@ -340,6 +325,7 @@ Across evaluations (all **no_queen** ablation), MCTS simulations show a surprisi
 | 35 | Zero-copy shared memory IPC: `SharedMemoryPool` + `(wid,K)` signal (~15B Queue payload), throughput 443→452 (8W), GPU duty 38→43%, 16/16 tests pass |
 | 36 | Vectorized policy loss: pad+gather+masked_log_softmax, 28× speedup (B=512), 18/18 tests pass |
 | 37 | Static batching + TF32: always full B_max forward, GPU compute 46ms→23ms; 16W: **667 states/s** (3× baseline); torch.compile disabled on Windows (Triton hangs), 18/18 tests pass |
+| 38 | Evaluation protocol: `GameRecord` telemetry (per-ply legal_move_counts + winner_side), 5 new CSV columns, `eval_arena.py` (side-switching evaluation), `analyze_experiment.py` (4 paper figures), `--ablation none/no_queen` support |
 
 ---
 
@@ -348,27 +334,28 @@ Across evaluations (all **no_queen** ablation), MCTS simulations show a surprisi
 ```bash
 pip install -r requirements.txt
 
-# Run AlphaZero training
+# Single AlphaZero training run
 python -m scripts.train_az_iter --iterations 20 \
     --curriculum-schedule 3phase_v2 \
     --simulations 200 --eval-simulations 400 \
     --num-workers 8 --use-inference-server --inference-device cuda \
-    --use-cpp \
+    --use-cpp --ablation extra_cannon \
     --outdir runs/az_run
 
-# Monitor training
-python -m scripts.monitor_training --run-dir runs/az_run
+# Three-universe experiment (vanilla / extra_cannon / no_queen)
+python -m scripts.run_experiment
 
-# AB tournament with termination tracking
-python -m scripts.ab_tournament --depth 2 --games 100 --condition no_queen --tag my_test
+# Live experiment dashboard (2×3 panels)
+python -m scripts.monitor_experiment --interval 120
 
-# Monitor tournament
-python -m scripts.monitor_tournament --tag my_test --watch 60
+# Side-switching evaluation arena
+python -m scripts.eval_arena --model-a runs/az_run/ckpt_iter19.pt --model-b ab_d1 \
+    --games 20 --simulations 200 --use-cpp
 
-# AZ vs AB showdown
-python -m scripts.eval_az_vs_ab \
-    --ckpt runs/az_grand_run_v2/ckpt_iter16.pt \
-    --eval-simulations 800 --games 40 --ablation no_queen
+# Generate paper figures from experiment data
+python -m scripts.analyze_experiment \
+    --run-dirs runs/experiment_vanilla runs/experiment_extra_cannon runs/experiment_no_queen \
+    --labels "Vanilla" "Extra Cannon" "No Queen" --outdir runs/analysis
 
 # Run tests
 pytest -q
