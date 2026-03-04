@@ -47,7 +47,7 @@ from hybrid.agents.base import Agent
 # Agent factory
 # ====================================================================
 
-BASELINE_AGENTS = {"random", "ab_d1", "ab_d2"}
+BASELINE_AGENTS = {"random", "ab_d1", "ab_d2", "ab_d4"}
 
 
 def _create_agent(
@@ -65,11 +65,23 @@ def _create_agent(
         from hybrid.agents.random_agent import RandomAgent
         return RandomAgent(seed=seed)
     if spec == "ab_d1":
+        if use_cpp:
+            from hybrid.agents.alphabeta_cpp_agent import AlphaBetaCppAgent, SearchConfig
+            return AlphaBetaCppAgent(SearchConfig(depth=1))
         from hybrid.agents.alphabeta_agent import AlphaBetaAgent, SearchConfig
         return AlphaBetaAgent(SearchConfig(depth=1))
     if spec == "ab_d2":
+        if use_cpp:
+            from hybrid.agents.alphabeta_cpp_agent import AlphaBetaCppAgent, SearchConfig
+            return AlphaBetaCppAgent(SearchConfig(depth=2))
         from hybrid.agents.alphabeta_agent import AlphaBetaAgent, SearchConfig
         return AlphaBetaAgent(SearchConfig(depth=2))
+    if spec == "ab_d4":
+        if use_cpp:
+            from hybrid.agents.alphabeta_cpp_agent import AlphaBetaCppAgent, SearchConfig
+            return AlphaBetaCppAgent(SearchConfig(depth=4))
+        from hybrid.agents.alphabeta_agent import AlphaBetaAgent, SearchConfig
+        return AlphaBetaAgent(SearchConfig(depth=4))
 
     # AZ checkpoint
     import torch
@@ -81,7 +93,7 @@ def _create_agent(
     ckpt = torch.load(spec, map_location="cpu", weights_only=True)
     net.load_state_dict(ckpt["model"])
     net.eval()
-    model = TorchPolicyValueModel(net, device="cpu")
+    model = TorchPolicyValueModel(net, device="cuda")
     return AlphaZeroMiniAgent(
         model=model,
         cfg=MCTSConfig(simulations=simulations, dirichlet_eps=0.0),

@@ -40,7 +40,8 @@ hybrid-chess/
 │   ├── agents/                         # All agent implementations
 │   │   ├── base.py                     #   BaseAgent abstract class
 │   │   ├── random_agent.py             #   RandomAgent (uniform random legal move)
-│   │   ├── alphabeta_agent.py          #   AlphaBetaAgent (minimax + alpha-beta pruning)
+│   │   ├── alphabeta_agent.py          #   AlphaBetaAgent (minimax + alpha-beta pruning, Python rules)
+│   │   ├── alphabeta_cpp_agent.py      #   AlphaBetaCppAgent (same logic, C++ rules, ~80× faster)
 │   │   ├── alphazero_stub.py           #   AlphaZeroMiniAgent (MCTS + neural network)
 │   │   │                               #     _run_mcts_search_cpp: C++ MCTS path (use_cpp=True)
 │   │   ├── az_remote_model.py          #   Remote model proxy for inference server
@@ -61,9 +62,10 @@ hybrid-chess/
 │   ├── train_az_iter.py                #   Main AZ training entrypoint (--iterations, --curriculum, --use-cpp)
 │   ├── play_match.py                   #   Agent vs agent batch match
 │   ├── ab_tournament.py                #   AB vs AB rule balance tournament (3 conditions × N games)
+│   ├── egta_tournament.py              #   EGTA dual-matrix round-robin + Nash equilibrium (V3/V4 ablation)
 │   ├── eval_champions.py               #   Evaluate AZ checkpoints vs baselines (parallel, side-swap)
 │   ├── eval_az_vs_ab.py                #   AZ vs AB-d2 showdown (800 sims, termination tracking)
-│   ├── eval_arena.py                   #   Side-switching evaluation arena (forced A=Chess/Xiangqi pairing)
+│   ├── eval_arena.py                   #   Side-switching evaluation arena + agent factory (ab_d1/d2/d4 + AZ)
 │   ├── analyze_experiment.py           #   Generate 4 protocol figures (imbalance, branching, depth, equilibrium)
 │   ├── monitor_training.py             #   Live training dashboard (reads metrics.csv → PNG)
 │   ├── monitor_tournament.py           #   Live tournament dashboard
@@ -113,7 +115,7 @@ hybrid-chess/
 | Agent | Description | Strength |
 |---|---|---|
 | **Random** | Uniform random legal move | Baseline anchor (Elo reference) |
-| **AlphaBeta** | Minimax + alpha-beta + hand-crafted eval (material + mobility). Configurable depth (d1/d2). | d1: tactical but shallow. d2: 2-ply, defensive. |
+| **AlphaBeta** | Minimax + alpha-beta + hand-crafted eval (material + mobility). Configurable depth (d1/d2/d4). C++ variant (`AlphaBetaCppAgent`) uses pybind11 engine for ~80× speedup. | d1: tactical but shallow. d2: defensive. d4: strong but slow (Python). |
 | **AlphaZero-Mini** | Small ResNet (4 blocks, 64 filters) + MCTS. Configurable simulations (50–800). Dirichlet noise. | Best agent. Beats AB-d2 at 800 sims **no_queen** (13W/27D/0L). |
 
 ---
@@ -229,6 +231,27 @@ Across evaluations (all **no_queen** ablation), MCTS simulations show a surprisi
 
 400 sims vs AB-d1 *regressed* relative to 200 sims (likely seed variance + different game trajectories), yet 800 sims vs the *stronger* AB-d2 produced the best result of all. This suggests a **phase transition** in MCTS search quality: below a threshold, deeper search exposes the network's evaluation inaccuracies (more accurate search surface + inaccurate value → worse moves); above a threshold, the search becomes deep enough to find genuinely winning tactical sequences that the network alone cannot see.
 
+### EGTA Dual-Matrix Ablation (Pending Results)
+
+**Motivation:** Standard AlphaZero self-play implicitly assumes strategy evolution is **transitive** (strictly improving over time). But in asymmetric games like Hybrid Chess, later generations may lose to earlier "wild" strategies — a sign of **non-transitive** (rock-paper-scissors-like) dynamics and **catastrophic strategy forgetting**.
+
+**Method:** Empirical Game-Theoretic Analysis (EGTA). Extract AZ checkpoints from the training trajectory, pit all agents against each other in a round-robin tournament, and build an N×N **empirical payoff matrix** M where M[i,j] = win rate of agent i vs agent j (averaged over 100 side-swapped games). Solve the resulting zero-sum meta-game for the **Nash Equilibrium** mixed strategy via linear programming.
+
+**Dual-matrix design** — two independent 7×7 tournaments under different rule variants:
+
+| | Universe A: V4 (extra_cannon) | Universe B: V3 (no_queen) |
+|---|---|---|
+| **Hypothesis** | Queen + Cannon firepower → simplistic rush strategies, transitive | Without Queen → complex piece synergies, non-transitive |
+| **Agents** | Random, AB-d2, AB-d4, AZ V4 iter 0/6/13/19 | Random, AB-d2, AB-d4, AZ V3 iter 0/3/6/9 |
+| **Rules** | extra_cannon (3 cannons, Queen retained) | no_queen (Queen removed, cannons only) |
+
+**Key metrics for comparison:**
+
+1. **Game value (v):** In the Nash solution, v = the row player's expected score under optimal mixed play. If v ≈ 0, the game is fair; if v >> 0, first-mover advantage dominates.
+2. **Nash support size:** Number of agents with non-zero Nash probability. Support = 1 means the latest agent dominates (transitive). Support ≥ 2 means multiple agent "eras" must be mixed to avoid exploitation (non-transitive, cyclic meta-game).
+
+**Controls:** 400 MCTS sims, τ→0 argmax (no exploration), Dirichlet noise off, 100 games/pair (50 per side), C++ engine for all agents. Script: `scripts/egta_tournament.py --preset both`.
+
 ---
 
 ## Challenges & Solutions
@@ -320,6 +343,7 @@ Across evaluations (all **no_queen** ablation), MCTS simulations show a surprisi
 | 36 | Vectorized policy loss: pad+gather+masked_log_softmax, 28× speedup (B=512), 18/18 tests pass |
 | 37 | Static batching + TF32: always full B_max forward, GPU compute 46ms→23ms; 16W: **667 states/s** (3× baseline); torch.compile disabled on Windows (Triton hangs), 18/18 tests pass |
 | 38 | Evaluation protocol: `GameRecord` telemetry (per-ply legal_move_counts + winner_side), 5 new CSV columns, `eval_arena.py` (side-switching evaluation), `analyze_experiment.py` (4 paper figures), `--ablation none/no_queen` support |
+| 39 | EGTA dual-matrix tournament: `egta_tournament.py` (7×7 round-robin, Nash equilibrium via LP, payoff heatmap), `alphabeta_cpp_agent.py` (C++ AB search, **~80× speedup** over Python AB: 3.4s vs 803s for d2 game), `eval_arena.py` gains `ab_d4` + CUDA inference |
 
 ---
 
@@ -339,6 +363,9 @@ python -m scripts.train_az_iter --iterations 20 \
 # Side-switching evaluation arena
 python -m scripts.eval_arena --model-a runs/az_run/ckpt_iter19.pt --model-b ab_d1 \
     --games 20 --simulations 200 --use-cpp
+
+# EGTA dual-matrix tournament (V4 extra_cannon + V3 no_queen)
+python -m scripts.egta_tournament --preset both --outdir runs/egta
 
 # Run tests
 pytest -q
