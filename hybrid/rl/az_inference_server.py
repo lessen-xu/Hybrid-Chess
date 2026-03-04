@@ -70,6 +70,14 @@ class InferenceServer:
         use_amp = dev.type == 'cuda'
         B_max = self.max_batch_size
 
+        # --- TF32 for Ampere+ GPUs ---
+        if dev.type == 'cuda':
+            torch.backends.cuda.matmul.allow_tf32 = True
+            torch.backends.cudnn.allow_tf32 = True
+
+        # NOTE: torch.compile disabled — hangs on Windows (Triton/Inductor issues).
+        # Static batching (always full B_max forward) already eliminates shape-change overhead.
+
         # --- Pre-allocate pinned CPU buffers (DMA-ready) ---
         pinned_ids = torch.zeros((B_max, BOARD_H, BOARD_W), dtype=torch.int8)
         pinned_sides = torch.zeros((B_max,), dtype=torch.int8)
@@ -82,6 +90,17 @@ class InferenceServer:
         gpu_sides = torch.zeros((B_max,), dtype=torch.int8, device=dev)
         gpu_states = torch.zeros((B_max, NUM_STATE_CHANNELS, BOARD_H, BOARD_W),
                                  dtype=torch.float32, device=dev)
+
+        # --- Warmup: force graph capture before first real request ---
+        if dev.type == 'cuda':
+            print("[Server] Warming up (3 rounds)...")
+            with torch.no_grad(), torch.autocast(
+                device_type=dev.type, enabled=True, dtype=torch.float16
+            ):
+                for _ in range(3):
+                    _ = net(gpu_states)
+                    torch.cuda.synchronize(dev)
+            print("[Server] Warmup complete. Ready.")
 
         total_batches = 0
         total_states = 0
@@ -147,7 +166,7 @@ class InferenceServer:
             return []
 
         deadline = time.monotonic() + self.timeout_ms / 1000.0
-        while total_states < self.max_batch_size:
+        while True:
             remaining = deadline - time.monotonic()
             if remaining <= 0:
                 break
@@ -156,8 +175,13 @@ class InferenceServer:
                 if sig == _STOP_SENTINEL:
                     self.stop_event.set()
                     break
+                wid, K = sig
+                if total_states + K > self.max_batch_size:
+                    # Put it back — doesn't fit in this batch
+                    self.request_queue.put(sig)
+                    break
                 signals.append(sig)
-                total_states += sig[1]
+                total_states += K
             except queue.Empty:
                 break
 
@@ -197,15 +221,16 @@ class InferenceServer:
         # 3. In-place GPU feature encoding
         encode_batch_gpu(gpu_ids[:total_B], gpu_sides[:total_B], dev, out=gpu_states[:total_B])
 
-        # 4. AMP forward pass
+        # 4. Static-batch AMP forward pass (always full B_max for CUDA Graphs)
+        B_max = gpu_states.shape[0]
         with torch.no_grad(), torch.autocast(
             device_type=dev.type, enabled=use_amp, dtype=torch.float16
         ):
-            policy_logits, values = net(gpu_states[:total_B])
+            policy_logits_full, values_full = net(gpu_states)
 
-        # 5. Cast back to FP32 and transfer to CPU
-        policy_flat_cpu = policy_logits.float().reshape(total_B, -1).cpu()
-        values_cpu = values.float().squeeze(-1).cpu()
+        # 5. Slice valid results, cast to FP32, transfer to CPU
+        policy_flat_cpu = policy_logits_full[:total_B].float().reshape(total_B, -1).cpu()
+        values_cpu = values_full[:total_B].float().squeeze(-1).cpu()
 
         # 6. Write results back to shared memory and wake workers
         for wid, K, start_idx in job_info:

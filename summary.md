@@ -162,16 +162,17 @@ hybrid-chess/
 
 **GPU engineering profiling** (`scripts/profile_server_path.py`, C++ engine, 200 sims, 2 plies/worker):
 
-| Metric | Baseline (8W) | +VL (8W) | +SHM (8W) | +SHM (16W) |
+| Metric | Baseline (8W) | +VL (8W) | +SHM (8W) | +Static (16W) |
 |---|---|---|---|---|
-| Throughput | 221 states/s | 443 states/s | 452 states/s | **537 states/s** |
-| Avg batch size | 7.8 (6%) | 45.9 (36%) | 50.2 (39%) | **99.0 (77%)** |
+| Throughput | 221 states/s | 443 states/s | 452 states/s | **667 states/s** |
+| Avg batch size | 7.8 (6%) | 45.9 (36%) | 50.2 (39%) | 83.5 (65%) |
 | Max batch size | 8 | 64 | 64 | **128** |
-| GPU duty cycle | 41% | 38% | 43% | **71%** |
-| Worker IPC wait | 91% | 80% | 77% | 86% |
-| Worker MCTS CPU | 9% | 20% | 23% | 14% |
+| GPU compute | — | — | — | **1.80s** |
+| GPU duty cycle | 41% | 38% | 43% | **57%** |
+| Worker IPC wait | 91% | 80% | 77% | **75%** |
+| Worker MCTS CPU | 9% | 20% | 23% | **25%** |
 
-**Diagnosis:** Virtual-loss leaf batching was the decisive win (2× throughput). SHM added incremental improvement. Scaling to 16 workers pushes avg batch to 99/128 (77% fill) and GPU duty to 71%. Vectorized policy loss (28× speedup) eliminates training-side bottleneck for the full RL flywheel.
+**Diagnosis:** Static batching + TF32 halved per-batch GPU compute time (~46ms→23ms). GPU duty dropped to 57% because GPU now outpaces worker request generation. `torch.compile` disabled on Windows (Triton backend hangs). Further scaling limited by Python multiprocessing spawn overhead for >16 workers.
 
 ---
 
@@ -337,7 +338,8 @@ Across evaluations (all **no_queen** ablation), MCTS simulations show a surprisi
 | 33 | Server-path profiler: GPU 3-6% batch fill, 38-41% duty; workers 91-92% IPC-bound → GPU severely starved |
 | 34 | Virtual-loss leaf batching (K=8): avg batch 3.9→27.7 (4W), 7.8→45.9 (8W); throughput 109→202 (4W), 221→443 (8W); 16/16 tests pass |
 | 35 | Zero-copy shared memory IPC: `SharedMemoryPool` + `(wid,K)` signal (~15B Queue payload), throughput 443→452 (8W), GPU duty 38→43%, 16/16 tests pass |
-| 36 | Vectorized policy loss: pad+gather+masked_log_softmax, 28× speedup (B=512), 16W profiler: 537 states/s, 99/128 batch (77% fill), 71% GPU duty, 18/18 tests pass |
+| 36 | Vectorized policy loss: pad+gather+masked_log_softmax, 28× speedup (B=512), 18/18 tests pass |
+| 37 | Static batching + TF32: always full B_max forward, GPU compute 46ms→23ms; 16W: **667 states/s** (3× baseline); torch.compile disabled on Windows (Triton hangs), 18/18 tests pass |
 
 ---
 
