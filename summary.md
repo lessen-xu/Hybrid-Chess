@@ -77,7 +77,9 @@ hybrid-chess/
 │   ├── analyze_experiment.py           #   Generate protocol figures
 │   ├── eval_champions.py               #   Evaluate AZ checkpoints vs baselines
 │   ├── eval_az_vs_ab.py                #   AZ vs AB showdown
-│   └── monitor_training.py             #   Live training dashboard
+│   ├── visualize_game.py               #   Game replay → HTML/ASCII visualization
+│   ├── monitor_training.py             #   Live training dashboard
+│   └── _fix_encoding.py                #   UTF-8 stdout/stderr guard for Windows
 ├── tests/                              # pytest test suite (~150 tests)
 │   ├── test_rules.py                   #   Rules oracle: move gen + terminal (40 tests)
 │   ├── test_rules_cpp.py              #   C++ engine: same 40 oracle tests via pybind11
@@ -164,29 +166,72 @@ The C++ engine (`hybrid_cpp_engine.pyd`) provides both a rules engine and a full
 
 ### AB Rule Balance Tournament (2×3 matrix, 100 games each)
 
+AB vs AB at two depths × three rule variants. 4 random opening plies to break determinism.
+
 | Rule variant | AB-d1 (Chess/XQ/Draw) | AB-d2 (Chess/XQ/Draw) |
 |---|---|---|
 | **Vanilla** | **33**/5/62 | 0/10/90 |
 | **Extra Cannon** | **28**/6/66 | 0/10/90 |
 | **No Queen** | **24**/7/69 | 0/5/95 |
 
-**Key finding:** d1→d2 eliminates ALL Chess wins (33%→0%). Search depth >> rule variant. AB-d2 draws are 100% threefold repetition at avg 36 ply — deterministic cowardice loops.
+**Conclusions:**
+1. d1→d2 eliminates ALL Chess wins (33%→0%). Search depth >> rule variant.
+2. Queen amplifies weak defense — at d2 it's perfectly neutralized.
+3. Chess has a natural edge even without Queen (24% at d1 from Bishop diagonals + Pawn promotion).
+
+### AB-d2 Termination Analysis (no_queen, 100 games)
+
+| Termination Reason | Count | Avg Ply |
+|---|---|---|
+| **Threefold repetition** | 95 (95%) | 36.3 |
+| Checkmate (Xiangqi wins) | 5 (5%) | 11.2 |
+| Move limit (400 ply) | **0 (0%)** | — |
+
+**100% of AB-d2 draws are true deadlocks (threefold repetition), 0% time pressure.** AB-d2 enters deterministic cowardice loops ~36 plies in. The 400-ply limit is never approached (max observed: 98 ply).
 
 ### AlphaZero Training Runs
 
-| Run | Config | vs AB (best) | Key Finding |
+| Run | Config | vs Random (final) | vs AlphaBeta (best) | Key Issue |
+|---|---|---|---|---|
+| **V1** | 20 iter, 3phase, 50 sims, **extra_cannon** | 75% | 10W (iter 2 only) | Gating killed 13/20 iters, draw trap from iter 6 |
+| **V2** | 20 iter, 3phase_v2, 100 sims, **extra_cannon** | 75% | 10W (iter 11, 16) | Breakthrough oscillation (not sustained) |
+| **V3** | 10 iter, **no_queen**, 100 sims | 55% | 10W (iter 6) | Same oscillation, 5 iters earlier without Queen |
+| **V4** | 20 iter, 3phase_v2, **200 sims**, **extra_cannon**, C++ | 80% (avg 12.8W) | 10W (8 of 20 iters) | 40% breakthrough rate, 3× more frequent than V2 |
+
+**V4 vs V2 comparison:** V4 (200 sims) achieves 40% breakthrough frequency vs AB-d1, compared to V2's ~10% (2/20). However, the breakthrough pattern remains oscillatory—none of the 8 breakthrough iters are consecutive. The overall vs-AB score of 0.438 confirms the fundamental pipeline limitation: the small network (4 blocks, 64 filters) cannot sustainably retain tactical knowledge across training iterations.
+
+### Champion Evaluation: Side-Aware Analysis (V2, extra_cannon)
+
+Iter 16 (V2, trained with **extra_cannon**) evaluated with side-swapping (games 0–9 AZ=Chess, 10–19 AZ=Xiangqi):
+
+| Condition | AZ as Chess | AZ as Xiangqi | Interpretation |
 |---|---|---|---|
-| **V2** | 20 iter, 100 sims, **extra_cannon** | 10W (iter 11, 16) | Breakthrough oscillation (not sustained) |
-| **V3** | 10 iter, **no_queen**, 100 sims | 10W (iter 6) | Same oscillation, 5 iters earlier without Queen |
-| **V4** | 20 iter, **200 sims**, **extra_cannon**, C++ | 10W (8 of 20 iters) | 40% breakthrough rate, 3× more frequent than V2 |
+| With Queen (400 sims) | 10 Draw | 10 Loss | Queen defense is impenetrable; Queen attack crushes AZ |
+| **No Queen (400 sims)** | **10 Win** | 0 Win / 10 Draw | Removing Queen unlocks wins on Chess side |
+
+The Queen imbalance is **side-deterministic**: when AZ holds the Queen, it survives; when it faces the Queen, it collapses in ~18 moves.
 
 ### AZ vs AB-d2 Showdown (V2 Iter 16 @ 800 sims, no_queen, 40 games)
 
 | | W | D | L |
 |---|---|---|---|
 | **AZ total** | **13** | 27 | **0** |
+| AZ as Chess | 8 | 12 | 0 |
+| AZ as Xiangqi | 5 | 15 | 0 |
 
-Score: **0.662** | AZ is **undefeated**. Breaks AB-d2's repetition lock (95%→68% draws, 5%→32% checkmates).
+Score: **0.662** | Termination: 13 checkmate (32%), 27 threefold repetition (68%), 0 move limit.
+
+AZ is **undefeated** against AB-d2. It breaks the cowardice lock (95%→68% draws, 5%→32% checkmates) and wins from both sides, confirming genuine learned strategy.
+
+### Simulation Scaling: Non-Linear Breakthrough (V2 Iter 16, no_queen)
+
+| Sims | Opponent | Result | Score |
+|---|---|---|---|
+| 200 | AB-d1 | 10W/10D/0L | 0.750 |
+| 400 | AB-d1 | 0W/20D/0L | 0.500 |
+| **800** | **AB-d2** (stronger) | **13W/27D/0L** | **0.662** |
+
+400 sims vs AB-d1 *regressed* relative to 200 sims, yet 800 sims vs the *stronger* AB-d2 produced the best result — suggesting a **phase transition** in MCTS search quality.
 
 ### EGTA Dual-Matrix Ablation (Pending)
 
@@ -194,10 +239,18 @@ Score: **0.662** | AZ is **undefeated**. Breaks AB-d2's repetition lock (95%→6
 
 | | Universe A: V4 (extra_cannon) | Universe B: V3 (no_queen) |
 |---|---|---|
-| **Hypothesis** | High firepower → transitive | Without Queen → non-transitive |
+| **Hypothesis** | Queen + Cannon firepower → transitive | Without Queen → non-transitive |
 | **Agents** | Random, AB-d2, AB-d4, AZ V4 iter 0/6/13/19 | Random, AB-d2, AB-d4, AZ V3 iter 0/3/6/9 |
 
 **Key metrics:** game value (v), Nash support size (support ≥ 2 = non-transitive / cyclic dynamics).
+
+### GPU Engineering Profiling (C++ engine, 200 sims)
+
+| Metric | Baseline (8W) | +VL (8W) | +SHM (8W) | +Static (16W) |
+|---|---|---|---|---|
+| Throughput | 221 states/s | 443 states/s | 452 states/s | **667 states/s** |
+| Avg batch size | 7.8 (6%) | 45.9 (36%) | 50.2 (39%) | 83.5 (65%) |
+| GPU duty cycle | 41% | 38% | 43% | **57%** |
 
 ---
 
