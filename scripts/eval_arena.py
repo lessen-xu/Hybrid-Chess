@@ -29,6 +29,7 @@ Usage:
 
 from __future__ import annotations
 
+import re
 import scripts._fix_encoding  # noqa: F401
 import argparse
 import json
@@ -47,7 +48,7 @@ from hybrid.agents.base import Agent
 # Agent factory
 # ====================================================================
 
-BASELINE_AGENTS = {"random", "ab_d1", "ab_d2", "ab_d4"}
+BASELINE_AGENTS = {"random", "greedy", "ab_d1", "ab_d2", "ab_d4"}
 
 
 class _CppABAgent(Agent):
@@ -84,6 +85,22 @@ def _create_agent(
     if spec == "random":
         from hybrid.agents.random_agent import RandomAgent
         return RandomAgent(seed=seed)
+    if spec == "greedy":
+        from hybrid.agents.greedy_agent import GreedyAgent
+        return GreedyAgent(seed=seed)
+    # Pure MCTS: e.g. "pure_mcts_100"
+    m = re.match(r"pure_mcts_(\d+)", spec)
+    if m:
+        sims = int(m.group(1))
+        from hybrid.agents.rollout_model import RolloutModel
+        from hybrid.agents.alphazero_stub import AlphaZeroMiniAgent, MCTSConfig
+        model = RolloutModel(seed=seed)
+        return AlphaZeroMiniAgent(
+            model=model,
+            cfg=MCTSConfig(simulations=sims, dirichlet_eps=0.0),
+            seed=seed,
+            use_cpp=use_cpp,  # C++ MCTS tree; RolloutModel.predict() receives synced Python state
+        )
     # AB agents: use C++ best_move when use_cpp=True
     ab_depths = {"ab_d1": 1, "ab_d2": 2, "ab_d4": 4}
     if spec in ab_depths:
@@ -115,6 +132,9 @@ def _create_agent(
 def _agent_label(spec: str) -> str:
     """Human-readable label for an agent spec."""
     if spec in BASELINE_AGENTS:
+        return spec.upper()
+    # pure_mcts_100 → PURE_MCTS_100
+    if re.match(r"pure_mcts_\d+", spec):
         return spec.upper()
     return Path(spec).stem
 

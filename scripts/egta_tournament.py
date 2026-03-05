@@ -51,14 +51,17 @@ import hybrid.core.config as cfg
 # Strategy Pools — two parallel universes
 # ====================================================================
 
+# ── Frozen 9-Agent Pool (DO NOT MODIFY — paper-critical) ──
 V4_AGENTS = [
     "random",
+    "greedy",
+    "pure_mcts_100",
+    "ab_d1",
     "ab_d2",
     "ab_d4",
-    "runs/az_grand_run_v4/ckpt_iter0.pt",
-    "runs/az_grand_run_v4/ckpt_iter6.pt",
-    "runs/az_grand_run_v4/ckpt_iter13.pt",
-    "runs/az_grand_run_v4/ckpt_iter19.pt",
+    "runs/az_grand_run_v4/ckpt_iter2.pt",   # AZ-Early
+    "runs/az_grand_run_v4/ckpt_iter9.pt",   # AZ-Mid
+    "runs/az_grand_run_v4/ckpt_iter19.pt",  # AZ-Best
 ]
 
 V3_AGENTS = [
