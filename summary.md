@@ -59,15 +59,16 @@ hybrid-chess/
 │   ├── build.ps1                       #   Build script → hybrid_cpp_engine.pyd
 │   └── src/
 │       ├── types.h                     #   Side, PieceKind, Piece, Move
-│       ├── board.h / board.cpp         #   Board class (9×10 grid, SHA1 hash)
+│       ├── board.h / board.cpp         #   Board class (9×10 grid, SHA1 hash, Zobrist 128-bit)
+│       ├── zobrist.h                   #   ZKey128 type, deterministic Zobrist random table
 │       ├── rules.h / rules.cpp         #   Move gen, check, terminal, make/unmake (~450 LOC)
 │       │                               #     make_move / unmake_move: in-place board mutation
 │       │                               #     generate_legal_moves_inplace: zero-clone legal filter
-│       ├── ab_search.h / ab_search.cpp #   Full C++ negamax α-β search (~280 LOC)
+│       ├── ab_search.h / ab_search.cpp #   Full C++ negamax α-β search (~500 LOC)
 │       │                               #     best_move(): single-call entry, SearchResult return
-│       │                               #     Inline terminal detection (no terminal_info call)
+│       │                               #     Dual-mode: Zobrist fast path (zero SHA1) + SHA1 legacy
 │       │                               #     Zero Board clones during search (1 clone at entry)
-│       │                               #     1× movegen + 1× board_hash per node
+│       │                               #     Zobrist mode: 1× movegen + O(1) XOR key per node
 │       └── bindings.cpp                #   pybind11 module: Board, Move, best_move, etc.
 ├── scripts/                            # CLI tools
 │   ├── train_az_iter.py                #   Main AZ training entrypoint
@@ -125,23 +126,24 @@ The C++ engine (`hybrid_cpp_engine.pyd`) provides both a rules engine and a full
 
 **Entry point:** `best_move(board, side, depth, rep_table, ply, max_plies) → SearchResult{move, score, nodes}`
 
-**Performance optimizations (Steps 1–3):**
+**Performance optimizations (Steps 1–3, 5):**
 
 | Optimization | Before | After |
 |---|---|---|
 | Board clones / search node | 3+ (`terminal_info` + `legal_moves` + `apply_move`) | **0** (single clone at `best_move` entry) |
 | `generate_legal_moves` / node | 2× (`terminal_info` + search) | **1×** (`generate_legal_moves_inplace`) |
-| `board_hash` (SHA1) / node | 2× (RepGuard + `terminal_info`) | **1×** (parent computes, passed via `stm_hash_key`) |
+| Board hash / node | 2× SHA1 (RepGuard + `terminal_info`) | **O(1) Zobrist XOR** (incremental, zero SHA1 in fast path) |
 | Terminal detection | `terminal_info()` call (clones board) | Inline `has_royal` + ply/rep/moves-empty check |
 | Move ordering check detection | `apply_move` clone per move | `make_move` / `unmake_move` per move |
 | `iter_pieces` vector alloc | Every `find_royal`, `pseudo_legal`, `is_square_attacked` | Direct `board.grid[y][x]` scan |
 
-**Search features (Step 4):**
+**Search features (Steps 4–5):**
 - Negamax + alpha-beta pruning
-- **Transposition Table** (512K entries, 128-bit key from SHA1, `rep_bucket` prevents repetition pollution, generation-based isolation for determinism, mate-score pack/unpack for path-independent TT storage)
+- **Zobrist 128-bit hashing** (incremental XOR in `Board::set`/`move_piece`, splitmix64 deterministic table, 32-hex key format)
+- **Transposition Table** (512K entries, Zobrist 128-bit key, `rep_bucket` prevents repetition pollution, generation-based isolation for determinism, mate-score pack/unpack for path-independent TT storage)
+- **Dual-mode repetition:** Zobrist fast path (32-hex keys, zero SHA1) + SHA1 legacy (40-hex keys, backward compatible)
 - **Iterative Deepening** (depth 1..D, TT PV reuse across iterations, cumulative nodes)
 - **Move ordering:** TT PV move → captures (by victim value) + checks → killer moves (2 slots/ply) → history heuristic (`depth²` bonus) → deterministic tie-break
-- Repetition detection via `RepGuard` (RAII, move semantics)
 - Evaluation: material + mobility (0.05×) + check bonus (0.3)
 - Win score with ply correction (prefers faster wins)
 
@@ -273,6 +275,7 @@ AZ is **undefeated** against AB-d2. It breaks the cowardice lock (95%→68% draw
 | 41 | **Make/unmake refactor:** `make_move`/`unmake_move` in-place mutation, `generate_legal_moves_inplace` (zero-clone), eliminated `iter_pieces` from hot paths |
 | 42 | **Inline terminal detection:** negamax bypasses `terminal_info()`, 1× movegen + 1× board_hash per node, `stm_hash_key` parameter threading |
 | 43 | **TT + Iterative Deepening + Killer/History:** 512K-entry transposition table (128-bit key, rep_bucket, generation isolation, mate-score pack/unpack), iterative deepening (depth 1..D), killer moves (2 slots/ply), history heuristic (depth² bonus), move ordering (TT PV > captures+checks > killers > history > tie-break), ~420 LOC, 14 tests pass |
+| 44 | **Zobrist 128-bit hashing:** incremental ZKey128 in Board (`set`/`move_piece` XOR), dual-mode AB search (`negamax_z` zero SHA1 + `negamax_sha1` legacy), TT switched to Zobrist keys, 24 tests pass |
 
 ---
 

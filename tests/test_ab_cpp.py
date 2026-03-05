@@ -106,3 +106,105 @@ class TestNoMutation:
         eng.generate_legal_moves(board, eng.Side.XIANGQI)
         assert board.board_hash(eng.Side.CHESS) == h
 
+
+# ═══════════════════════════════════════════════════════════════
+# Zobrist 128-bit hashing tests
+# ═══════════════════════════════════════════════════════════════
+
+class TestZobristCorrectness:
+    """Incremental Zobrist key must match full-board recompute."""
+
+    def test_initial_board_matches_recompute(self):
+        board = _initial_board()
+        for side in [eng.Side.CHESS, eng.Side.XIANGQI]:
+            inc = board.zobrist_key_hex(side)
+            rec = board.zobrist_key_hex_recompute(side)
+            assert inc == rec, f"mismatch for {side}: {inc} vs {rec}"
+            assert len(inc) == 32, f"expected 32 hex chars, got {len(inc)}"
+
+    def test_after_apply_move(self):
+        board = _initial_board()
+        moves = eng.generate_legal_moves(board, eng.Side.CHESS)
+        assert len(moves) > 0
+        b2 = eng.apply_move(board, moves[0])
+        for side in [eng.Side.CHESS, eng.Side.XIANGQI]:
+            inc = b2.zobrist_key_hex(side)
+            rec = b2.zobrist_key_hex_recompute(side)
+            assert inc == rec, f"after move, mismatch for {side}"
+
+    def test_different_sides_different_keys(self):
+        """CHESS and XIANGQI keys should differ (due to side-to-move toggle)."""
+        board = _initial_board()
+        kc = board.zobrist_key_hex(eng.Side.CHESS)
+        kx = board.zobrist_key_hex(eng.Side.XIANGQI)
+        assert kc != kx, "same key for both sides — side toggle missing"
+
+
+class TestZobristInvariance:
+    """best_move must not mutate Zobrist key."""
+
+    @pytest.mark.parametrize("depth", [1, 2])
+    def test_zobrist_unchanged_after_best_move(self, depth):
+        board = _initial_board()
+        z0_c = board.zobrist_key_hex(eng.Side.CHESS)
+        z0_x = board.zobrist_key_hex(eng.Side.XIANGQI)
+        eng.best_move(board, eng.Side.CHESS, depth, {}, 0, 400)
+        assert board.zobrist_key_hex(eng.Side.CHESS) == z0_c
+        assert board.zobrist_key_hex(eng.Side.XIANGQI) == z0_x
+
+
+class TestZobristRepetitionFastPath:
+    """best_move with Zobrist-keyed (32-hex) repetition table must work."""
+
+    def test_zobrist_rep_table_accepted(self):
+        """Pass a 32-hex Zobrist key as rep table — should not crash."""
+        board = _initial_board()
+        zkey = board.zobrist_key_hex(eng.Side.CHESS)
+        assert len(zkey) == 32
+        rep = {zkey: 1}
+        r = eng.best_move(board, eng.Side.CHESS, 1, rep, 0, 400)
+        assert r.nodes > 0
+
+    def test_zobrist_deterministic(self):
+        """Same input with Zobrist rep table → same output."""
+        board = _initial_board()
+        zkey = board.zobrist_key_hex(eng.Side.CHESS)
+        rep = {zkey: 1}
+        r1 = eng.best_move(board, eng.Side.CHESS, 2, rep, 0, 400)
+        r2 = eng.best_move(board, eng.Side.CHESS, 2, rep, 0, 400)
+        assert r1.best_move == r2.best_move
+        assert r1.score == r2.score
+        assert r1.nodes == r2.nodes
+
+    def test_empty_rep_uses_zobrist_path(self):
+        """Empty rep table defaults to Zobrist fast path — must be deterministic."""
+        board = _initial_board()
+        r1 = eng.best_move(board, eng.Side.CHESS, 2, {}, 0, 400)
+        r2 = eng.best_move(board, eng.Side.CHESS, 2, {}, 0, 400)
+        assert r1.best_move == r2.best_move
+        assert r1.score == r2.score
+        assert r1.nodes == r2.nodes
+
+
+class TestLegacySHA1Repetition:
+    """best_move with SHA1-keyed (40-hex) repetition table must still work."""
+
+    def test_sha1_rep_table(self):
+        board = _initial_board()
+        sha_key = board.board_hash(eng.Side.CHESS)
+        assert len(sha_key) == 40
+        rep = {sha_key: 1}
+        r = eng.best_move(board, eng.Side.CHESS, 1, rep, 0, 400)
+        assert r.nodes > 0
+
+    def test_sha1_deterministic(self):
+        board = _initial_board()
+        sha_key = board.board_hash(eng.Side.CHESS)
+        rep = {sha_key: 1}
+        r1 = eng.best_move(board, eng.Side.CHESS, 2, rep, 0, 400)
+        r2 = eng.best_move(board, eng.Side.CHESS, 2, rep, 0, 400)
+        assert r1.best_move == r2.best_move
+        assert r1.score == r2.score
+        assert r1.nodes == r2.nodes
+
+

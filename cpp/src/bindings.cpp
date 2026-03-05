@@ -96,7 +96,9 @@ PYBIND11_MODULE(hybrid_cpp_engine, m) {
         }, py::arg("x"), py::arg("y"), py::arg("piece"))
         .def("move_piece", &Board::move_piece)
         .def("iter_pieces", &Board::iter_pieces)
-        .def("board_hash", &Board::board_hash, py::arg("side_to_move"));
+        .def("board_hash", &Board::board_hash, py::arg("side_to_move"))
+        .def("zobrist_key_hex", &Board::zobrist_key_hex, py::arg("side_to_move"))
+        .def("zobrist_key_hex_recompute", &Board::zobrist_key_hex_recompute, py::arg("side_to_move"));
 
     // ── Free functions ──
     m.def("generate_pseudo_legal_moves", &generate_pseudo_legal_moves);

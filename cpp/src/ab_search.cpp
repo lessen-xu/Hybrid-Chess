@@ -1,14 +1,16 @@
 // ab_search.cpp — Full Alpha-Beta (Negamax) search in C++.
+// Step 5: Zobrist 128-bit hash replaces SHA1 in hot path.
 // Step 4: TT + Iterative Deepening + Killer/History heuristics.
 //
 // Performance: zero Board clones during search. Uses make_move/unmake_move.
-// Each node: 1× generate_legal_moves_inplace, 1× board_hash per child.
-// Inline terminal detection — no call to terminal_info().
+// Zobrist mode: each node O(1) ZKey XOR — zero SHA1 calls in hot path.
+// SHA1 legacy mode: each node 1× board_hash (backward compatible).
 // Transposition Table with generation-based isolation (deterministic).
 // Iterative Deepening from depth 1 to requested depth.
 
 #include "ab_search.h"
 #include "rules.h"
+#include "zobrist.h"
 
 #include <algorithm>
 #include <array>
@@ -110,7 +112,7 @@ struct TTEntry {
     Move     best_move{0, 0, 0, 0, PieceKind::NONE};
 };
 
-// Parse first 32 hex chars of SHA1 string into two uint64_t
+// Parse first 32 hex chars of SHA1 string into two uint64_t (legacy only)
 static void parse_hash_key(const std::string& hex, uint64_t& k1, uint64_t& k2) {
     // hex is 40 chars; we use first 32 (128 bits)
     auto hex4 = [](char c) -> uint64_t {
@@ -208,6 +210,10 @@ struct SearchContext {
     // History heuristic: from_sq * 90 + to_sq
     int history[90 * 90];
 
+    // Zobrist-mode repetition tables
+    std::unordered_map<ZKey128,int> base_rep_z;
+    std::unordered_map<ZKey128,int> path_rep_z;
+
     SearchContext() {
         Move empty{0, 0, 0, 0, PieceKind::NONE};
         for (int i = 0; i < MAX_SEARCH_PLY; ++i) {
@@ -247,6 +253,16 @@ struct SearchContext {
                    k.promotion == mv.promotion;
         };
         return match(killer1[sply]) || match(killer2[sply]);
+    }
+
+    // Zobrist repetition total count
+    int rep_count_z(const ZKey128& key) const {
+        int c = 0;
+        auto it1 = base_rep_z.find(key);
+        if (it1 != base_rep_z.end()) c += it1->second;
+        auto it2 = path_rep_z.find(key);
+        if (it2 != path_rep_z.end()) c += it2->second;
+        return c;
     }
 };
 
@@ -342,9 +358,10 @@ static std::vector<Move> order_moves(Board& board, Side stm,
 }
 
 // ═══════════════════════════════════════════════════════════════
-// Repetition guard — RAII push/pop
+// Repetition guards — RAII push/pop
 // ═══════════════════════════════════════════════════════════════
 
+// Legacy SHA1 repetition guard
 struct RepGuard {
     std::unordered_map<std::string,int>& rep;
     std::string key;
@@ -358,17 +375,146 @@ struct RepGuard {
     }
 };
 
+// Zobrist repetition guard
+struct RepGuardZ {
+    std::unordered_map<ZKey128,int>& rep;
+    ZKey128 key;
+
+    RepGuardZ(std::unordered_map<ZKey128,int>& r, ZKey128 k)
+        : rep(r), key(k) {
+        rep[key]++;
+    }
+    ~RepGuardZ() {
+        if (--rep[key] <= 0) rep.erase(key);
+    }
+};
+
 // ═══════════════════════════════════════════════════════════════
-// Negamax with alpha-beta, TT, killer/history
+// Negamax — ZOBRIST fast path (zero SHA1 in hot path)
 // ═══════════════════════════════════════════════════════════════
 
-static double negamax(Board& board, Side stm, int depth,
-                      double alpha, double beta,
-                      std::unordered_map<std::string,int>& rep,
-                      const std::string& stm_hash_key,
-                      int ply, int max_plies,
-                      Side root_perspective, int64_t& nodes,
-                      SearchContext& ctx, int sply) {
+static double negamax_z(Board& board, Side stm, int depth,
+                        double alpha, double beta,
+                        SearchContext& ctx,
+                        ZKey128 stm_key,  // board.zobrist_key(stm)
+                        int ply, int max_plies,
+                        Side root_perspective, int64_t& nodes,
+                        int sply) {
+    nodes++;
+
+    // ── Inline terminal detection ──
+
+    // 1) Royal existence
+    if (!has_royal(board, Side::CHESS)) {
+        double score = WIN_SCORE - static_cast<double>(ply);
+        return (Side::XIANGQI == root_perspective) ? score : -score;
+    }
+    if (!has_royal(board, Side::XIANGQI)) {
+        double score = WIN_SCORE - static_cast<double>(ply);
+        return (Side::CHESS == root_perspective) ? score : -score;
+    }
+
+    // 2) Move limit
+    if (ply >= max_plies) return 0.0;
+
+    // 3) Threefold repetition (MUST check before TT probe)
+    int rep_count = ctx.rep_count_z(stm_key);
+    if (rep_count >= 3) return 0.0;
+
+    // ── TT probe (Zobrist key) ──
+    uint64_t k1 = stm_key.lo, k2 = stm_key.hi;
+    uint8_t rb = static_cast<uint8_t>(std::min(rep_count, 3));
+
+    Move tt_best{0, 0, 0, 0, PieceKind::NONE};
+    double alpha0 = alpha;
+
+    const TTEntry* tte = g_tt.probe(k1, k2, rb);
+    if (tte) {
+        tt_best = tte->best_move;
+        if (tte->depth >= depth) {
+            double v = tt_unpack(tte->value, ply);
+            if (tte->flag == TT_EXACT) return v;
+            if (tte->flag == TT_LOWER) alpha = std::max(alpha, v);
+            if (tte->flag == TT_UPPER) beta  = std::min(beta, v);
+            if (alpha >= beta) return v;
+        }
+    }
+
+    // ── Generate legal moves ──
+    std::vector<Move> moves;
+    generate_legal_moves_inplace(board, stm, moves);
+
+    if (moves.empty()) {
+        if (is_in_check(board, stm)) {
+            Side winner = opponent(stm);
+            double score = WIN_SCORE - static_cast<double>(ply);
+            return (winner == root_perspective) ? score : -score;
+        }
+        return 0.0;  // stalemate
+    }
+
+    // ── Leaf evaluation ──
+    if (depth <= 0) {
+        return evaluate(board, root_perspective);
+    }
+
+    // ── Search ──
+    auto ordered = order_moves(board, stm, moves, tt_best, ctx, sply);
+    Side opp = opponent(stm);
+    double best = -INF;
+    Move best_mv = ordered[0];
+
+    for (auto& mv : ordered) {
+        UndoInfo u;
+        make_move(board, mv, u);
+        ZKey128 child_key = board.zobrist_key(opp);
+        RepGuardZ guard(ctx.path_rep_z, child_key);
+
+        double v = -negamax_z(board, opp, depth - 1, -beta, -alpha,
+                              ctx, child_key,
+                              ply + 1, max_plies,
+                              root_perspective, nodes,
+                              sply + 1);
+        unmake_move(board, mv, u);
+
+        if (v > best) {
+            best = v;
+            best_mv = mv;
+        }
+        alpha = std::max(alpha, v);
+        if (alpha >= beta) {
+            // Beta cutoff: update killer/history for quiet moves
+            bool is_capture = board.get(mv.tx, mv.ty).has_value();
+            if (!is_capture) {
+                ctx.update_killers(sply, mv);
+                ctx.update_history(mv, depth);
+            }
+            break;
+        }
+    }
+
+    // ── TT store ──
+    uint8_t flag;
+    if (best <= alpha0)     flag = TT_UPPER;
+    else if (best >= beta)  flag = TT_LOWER;
+    else                    flag = TT_EXACT;
+
+    g_tt.store(k1, k2, rb, depth, tt_pack(best, ply), flag, best_mv);
+
+    return best;
+}
+
+// ═══════════════════════════════════════════════════════════════
+// Negamax — SHA1 legacy path (backward compatible)
+// ═══════════════════════════════════════════════════════════════
+
+static double negamax_sha1(Board& board, Side stm, int depth,
+                           double alpha, double beta,
+                           std::unordered_map<std::string,int>& rep,
+                           const std::string& stm_hash_key,
+                           int ply, int max_plies,
+                           Side root_perspective, int64_t& nodes,
+                           SearchContext& ctx, int sply) {
     nodes++;
 
     // ── Inline terminal detection ──
@@ -396,13 +542,13 @@ static double negamax(Board& board, Side stm, int depth,
         }
     }
 
-    // ── TT probe ──
-    uint64_t k1, k2;
-    parse_hash_key(stm_hash_key, k1, k2);
+    // ── TT probe (use Zobrist key even in SHA1 mode) ──
+    ZKey128 zk = board.zobrist_key(stm);
+    uint64_t k1 = zk.lo, k2 = zk.hi;
     uint8_t rb = static_cast<uint8_t>(std::min(rep_count, 3));
 
     Move tt_best{0, 0, 0, 0, PieceKind::NONE};
-    double alpha0 = alpha;  // save original alpha for TT flag computation
+    double alpha0 = alpha;
 
     const TTEntry* tte = g_tt.probe(k1, k2, rb);
     if (tte) {
@@ -445,11 +591,11 @@ static double negamax(Board& board, Side stm, int depth,
         make_move(board, mv, u);
         RepGuard guard(rep, board.board_hash(opp));
 
-        double v = -negamax(board, opp, depth - 1, -beta, -alpha,
-                            rep, guard.key,
-                            ply + 1, max_plies,
-                            root_perspective, nodes,
-                            ctx, sply + 1);
+        double v = -negamax_sha1(board, opp, depth - 1, -beta, -alpha,
+                                 rep, guard.key,
+                                 ply + 1, max_plies,
+                                 root_perspective, nodes,
+                                 ctx, sply + 1);
         unmake_move(board, mv, u);
 
         if (v > best) {
@@ -458,7 +604,6 @@ static double negamax(Board& board, Side stm, int depth,
         }
         alpha = std::max(alpha, v);
         if (alpha >= beta) {
-            // Beta cutoff: update killer/history for quiet moves
             bool is_capture = board.get(mv.tx, mv.ty).has_value();
             if (!is_capture) {
                 ctx.update_killers(sply, mv);
@@ -480,6 +625,46 @@ static double negamax(Board& board, Side stm, int depth,
 }
 
 // ═══════════════════════════════════════════════════════════════
+// Helper: detect repetition table mode
+// ═══════════════════════════════════════════════════════════════
+
+enum class RepMode { ZOBRIST, SHA1 };
+
+static RepMode detect_rep_mode(const std::unordered_map<std::string,int>& rep) {
+    if (rep.empty()) return RepMode::ZOBRIST;  // default fast path
+    // Check first key
+    const auto& key = rep.begin()->first;
+    auto is_hex = [](const std::string& s) {
+        for (char c : s) {
+            if (!((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F')))
+                return false;
+        }
+        return true;
+    };
+    if (key.size() == 32 && is_hex(key)) return RepMode::ZOBRIST;
+    if (key.size() == 40 && is_hex(key)) return RepMode::SHA1;
+    // Fallback SHA1 for unknown formats
+    return RepMode::SHA1;
+}
+
+// Parse a 32-hex Zobrist key string back to ZKey128
+static ZKey128 parse_zkey_hex(const std::string& hex) {
+    auto hex4 = [](char c) -> uint64_t {
+        if (c >= '0' && c <= '9') return c - '0';
+        if (c >= 'a' && c <= 'f') return c - 'a' + 10;
+        if (c >= 'A' && c <= 'F') return c - 'A' + 10;
+        return 0;
+    };
+    ZKey128 k{0, 0};
+    // hi first (chars 0..15), lo second (chars 16..31)
+    for (int i = 0; i < 16; ++i)
+        k.hi = (k.hi << 4) | hex4(hex[i]);
+    for (int i = 16; i < 32; ++i)
+        k.lo = (k.lo << 4) | hex4(hex[i]);
+    return k;
+}
+
+// ═══════════════════════════════════════════════════════════════
 // Public API: best_move() — Iterative Deepening wrapper
 // ═══════════════════════════════════════════════════════════════
 
@@ -496,9 +681,6 @@ SearchResult best_move(
 
     // New TT generation for this call (isolates from previous calls)
     g_tt.new_search();
-
-    // Root hash
-    std::string root_key = b.board_hash(side_to_move);
 
     // Root terminal checks
     if (!has_royal(b, Side::CHESS) || !has_royal(b, Side::XIANGQI))
@@ -519,52 +701,105 @@ SearchResult best_move(
     double best_val = -INF;
     Side opp = opponent(side_to_move);
 
-    // ── Iterative deepening: depth 1..depth ──
-    for (int d = 1; d <= depth; ++d) {
-        // Mutable copy of repetition table (reset per ID iteration for consistency
-        // with previous behavior — rep state should reflect game history only)
-        auto rep = repetition_table;
+    // Detect repetition mode
+    RepMode mode = detect_rep_mode(repetition_table);
 
-        double alpha = -INF, beta = INF;
-        Move iter_best = moves[0];
-        double iter_val = -INF;
-
-        // Use TT PV from previous iteration for root move ordering
-        uint64_t rk1, rk2;
-        parse_hash_key(root_key, rk1, rk2);
-        int root_rep = 0;
-        {
-            auto it = rep.find(root_key);
-            if (it != rep.end()) root_rep = it->second;
+    if (mode == RepMode::ZOBRIST) {
+        // ── ZOBRIST fast path ──
+        // Parse base repetition table
+        for (auto& [k, v] : repetition_table) {
+            ctx.base_rep_z[parse_zkey_hex(k)] = v;
         }
-        uint8_t root_rb = static_cast<uint8_t>(std::min(root_rep, 3));
-        Move root_tt_mv{0, 0, 0, 0, PieceKind::NONE};
-        const TTEntry* root_tte = g_tt.probe(rk1, rk2, root_rb);
-        if (root_tte) root_tt_mv = root_tte->best_move;
 
-        auto ordered = order_moves(b, side_to_move, moves, root_tt_mv, ctx, 0);
+        ZKey128 root_key = b.zobrist_key(side_to_move);
 
-        for (auto& mv : ordered) {
-            UndoInfo u;
-            make_move(b, mv, u);
-            RepGuard guard(rep, b.board_hash(opp));
+        for (int d = 1; d <= depth; ++d) {
+            // Reset path_rep each iteration
+            ctx.path_rep_z.clear();
 
-            double v = -negamax(b, opp, d - 1, -beta, -alpha,
-                                rep, guard.key,
-                                ply + 1, max_plies,
-                                side_to_move, total_nodes,
-                                ctx, 1);
-            unmake_move(b, mv, u);
+            double alpha = -INF, beta = INF;
+            Move iter_best = moves[0];
+            double iter_val = -INF;
 
-            if (v > iter_val) {
-                iter_val = v;
-                iter_best = mv;
+            // TT PV from previous iteration for root move ordering
+            int root_rep = ctx.rep_count_z(root_key);
+            uint8_t root_rb = static_cast<uint8_t>(std::min(root_rep, 3));
+            Move root_tt_mv{0, 0, 0, 0, PieceKind::NONE};
+            const TTEntry* root_tte = g_tt.probe(root_key.lo, root_key.hi, root_rb);
+            if (root_tte) root_tt_mv = root_tte->best_move;
+
+            auto ordered = order_moves(b, side_to_move, moves, root_tt_mv, ctx, 0);
+
+            for (auto& mv : ordered) {
+                UndoInfo u;
+                make_move(b, mv, u);
+                ZKey128 child_key = b.zobrist_key(opp);
+                RepGuardZ guard(ctx.path_rep_z, child_key);
+
+                double v = -negamax_z(b, opp, d - 1, -beta, -alpha,
+                                      ctx, child_key,
+                                      ply + 1, max_plies,
+                                      side_to_move, total_nodes,
+                                      1);
+                unmake_move(b, mv, u);
+
+                if (v > iter_val) {
+                    iter_val = v;
+                    iter_best = mv;
+                }
+                alpha = std::max(alpha, v);
             }
-            alpha = std::max(alpha, v);
-        }
 
-        best_mv = iter_best;
-        best_val = iter_val;
+            best_mv = iter_best;
+            best_val = iter_val;
+        }
+    } else {
+        // ── SHA1 legacy path ──
+        std::string root_key = b.board_hash(side_to_move);
+
+        for (int d = 1; d <= depth; ++d) {
+            auto rep = repetition_table;
+
+            double alpha = -INF, beta = INF;
+            Move iter_best = moves[0];
+            double iter_val = -INF;
+
+            // TT PV (use Zobrist key for TT)
+            ZKey128 root_zk = b.zobrist_key(side_to_move);
+            int root_rep = 0;
+            {
+                auto it = rep.find(root_key);
+                if (it != rep.end()) root_rep = it->second;
+            }
+            uint8_t root_rb = static_cast<uint8_t>(std::min(root_rep, 3));
+            Move root_tt_mv{0, 0, 0, 0, PieceKind::NONE};
+            const TTEntry* root_tte = g_tt.probe(root_zk.lo, root_zk.hi, root_rb);
+            if (root_tte) root_tt_mv = root_tte->best_move;
+
+            auto ordered = order_moves(b, side_to_move, moves, root_tt_mv, ctx, 0);
+
+            for (auto& mv : ordered) {
+                UndoInfo u;
+                make_move(b, mv, u);
+                RepGuard guard(rep, b.board_hash(opp));
+
+                double v = -negamax_sha1(b, opp, d - 1, -beta, -alpha,
+                                         rep, guard.key,
+                                         ply + 1, max_plies,
+                                         side_to_move, total_nodes,
+                                         ctx, 1);
+                unmake_move(b, mv, u);
+
+                if (v > iter_val) {
+                    iter_val = v;
+                    iter_best = mv;
+                }
+                alpha = std::max(alpha, v);
+            }
+
+            best_mv = iter_best;
+            best_val = iter_val;
+        }
     }
 
     return SearchResult{best_mv, best_val, total_nodes};
