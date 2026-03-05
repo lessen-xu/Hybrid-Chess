@@ -362,6 +362,15 @@ void unmake_move(Board& board, const Move& mv, const UndoInfo& undo) {
     }
     // Restore target square: captured piece or empty
     board.set(mv.tx, mv.ty, undo.captured);
+
+#ifndef NDEBUG
+    // Debug-only: verify royal cache consistency after undo.
+    // Catches future grid mutations that bypass set/move_piece.
+    for (int si = 0; si < 2; ++si) {
+        Side s = (si == 0) ? Side::CHESS : Side::XIANGQI;
+        assert(board.royal_square(s) == board.royal_square_recompute(s));
+    }
+#endif
 }
 
 // ── Apply move (clone-based, for external/pybind API) ──
@@ -405,6 +414,10 @@ bool is_square_attacked_slow(const Board& board, int x, int y, Side by_side) {
 }
 
 // ── Attack detection (FAST — reverse ray/offset from target square) ──
+//
+// Semantics: pseudo-legal reachability (not textbook "control").
+// See rules.h for full docstring and the three exception cases
+// (Chess Pawn, Xiangqi Cannon, Flying General).
 
 static inline bool ib(int x, int y) {
     return x >= 0 && x < BOARD_W && y >= 0 && y < BOARD_H;

@@ -255,25 +255,173 @@ class TestRoyalCacheApplyMove:
 class TestAttackEquivalence:
     """is_square_attacked_fast must exactly match is_square_attacked_slow."""
 
-    def test_random_playout_equivalence(self):
-        """Deterministic 40-ply playout, full-board attack check each step."""
+    def test_lightweight_equivalence(self):
+        """Always-on: 5 seeds × 60 plies, check royal squares + 10 random."""
         import random
-        rng = random.Random(42)
-        board = _initial_board()
-        stm = eng.Side.CHESS
-        for ply in range(40):
-            # Check all squares for both sides
-            for by_side in [eng.Side.CHESS, eng.Side.XIANGQI]:
-                for y in range(10):
-                    for x in range(9):
-                        slow = eng.is_square_attacked_slow(board, x, y, by_side)
-                        fast = eng.is_square_attacked_fast(board, x, y, by_side)
+        for seed in range(5):
+            rng = random.Random(seed)
+            board = _initial_board()
+            stm = eng.Side.CHESS
+            for ply in range(60):
+                # Check royal squares + 10 random squares
+                spots = []
+                for s in [eng.Side.CHESS, eng.Side.XIANGQI]:
+                    sq = board.royal_square(s)
+                    if sq >= 0:
+                        spots.append((sq % 9, sq // 9))
+                rng2 = random.Random(seed * 100 + ply)
+                for _ in range(10):
+                    spots.append((rng2.randint(0, 8), rng2.randint(0, 9)))
+                for by_side in [eng.Side.CHESS, eng.Side.XIANGQI]:
+                    for (sx, sy) in spots:
+                        slow = eng.is_square_attacked_slow(board, sx, sy, by_side)
+                        fast = eng.is_square_attacked_fast(board, sx, sy, by_side)
                         assert slow == fast, (
-                            f"ply={ply} sq=({x},{y}) by={by_side} slow={slow} fast={fast}"
+                            f"seed={seed} ply={ply} sq=({sx},{sy}) "
+                            f"by={by_side} slow={slow} fast={fast}"
                         )
-            legal = eng.generate_legal_moves(board, stm)
-            if not legal:
-                break
-            mv = rng.choice(legal)
-            board = eng.apply_move(board, mv)
-            stm = eng.opponent(stm)
+                legal = eng.generate_legal_moves(board, stm)
+                if not legal:
+                    break
+                mv = rng.choice(legal)
+                board = eng.apply_move(board, mv)
+                stm = eng.opponent(stm)
+
+    @pytest.mark.skipif(
+        not __import__("os").environ.get("RUN_STRESS"),
+        reason="deep stress test; set RUN_STRESS=1 to run"
+    )
+    def test_deep_stress_equivalence(self):
+        """20 seeds × 300 plies, full board × 2 sides: ~19.4M checks."""
+        import random
+        for seed in range(20):
+            rng = random.Random(seed)
+            board = _initial_board()
+            stm = eng.Side.CHESS
+            for ply in range(300):
+                for by_side in [eng.Side.CHESS, eng.Side.XIANGQI]:
+                    for y in range(10):
+                        for x in range(9):
+                            slow = eng.is_square_attacked_slow(board, x, y, by_side)
+                            fast = eng.is_square_attacked_fast(board, x, y, by_side)
+                            assert slow == fast, (
+                                f"seed={seed} ply={ply} sq=({x},{y}) "
+                                f"by={by_side} slow={slow} fast={fast}"
+                            )
+                legal = eng.generate_legal_moves(board, stm)
+                if not legal:
+                    break
+                mv = rng.choice(legal)
+                board = eng.apply_move(board, mv)
+                stm = eng.opponent(stm)
+
+
+class TestCannonAttackEdgeCases:
+    """Hand-crafted Cannon attack boundary tests."""
+
+    def _empty_board(self):
+        return eng.Board.empty()
+
+    def test_cannon_slide_to_empty(self):
+        """Cannon slides to empty square (no screen) — attacked."""
+        b = self._empty_board()
+        b.set(1, 7, eng.Piece(eng.PieceKind.CANNON, eng.Side.XIANGQI))
+        # (1,5) is empty, cannon can slide there
+        assert eng.is_square_attacked_slow(b, 1, 5, eng.Side.XIANGQI)
+        assert eng.is_square_attacked_fast(b, 1, 5, eng.Side.XIANGQI)
+
+    def test_cannon_slide_blocked_by_piece(self):
+        """Cannon blocked by a piece — cannot slide past it (only cannon on board)."""
+        b = self._empty_board()
+        b.set(1, 7, eng.Piece(eng.PieceKind.CANNON, eng.Side.XIANGQI))
+        b.set(1, 6, eng.Piece(eng.PieceKind.PAWN, eng.Side.CHESS))  # blocker (enemy)
+        # (1,5) is behind a blocker — cannon can't slide there, and it needs
+        # a screen to jump, so after the blocker there's nothing to jump over
+        # But cannon jump: screen=(1,6), look for next piece: (1,5) empty → no capture
+        # So "attacked" depends on whether ANY XIANGQI piece reaches (1,5): only cannon, which can't
+        assert not eng.is_square_attacked_slow(b, 1, 5, eng.Side.XIANGQI)
+        assert not eng.is_square_attacked_fast(b, 1, 5, eng.Side.XIANGQI)
+
+    def test_cannon_capture_one_screen(self):
+        """Cannon with 1 screen can capture enemy behind it."""
+        b = self._empty_board()
+        b.set(1, 7, eng.Piece(eng.PieceKind.CANNON, eng.Side.XIANGQI))
+        b.set(1, 5, eng.Piece(eng.PieceKind.PAWN, eng.Side.CHESS))   # screen
+        b.set(1, 3, eng.Piece(eng.PieceKind.ROOK, eng.Side.CHESS))   # target
+        assert eng.is_square_attacked_slow(b, 1, 3, eng.Side.XIANGQI)
+        assert eng.is_square_attacked_fast(b, 1, 3, eng.Side.XIANGQI)
+
+    def test_cannon_no_capture_empty_behind_screen(self):
+        """Cannon with 1 screen, but target is empty — NOT attacked (jump=capture only)."""
+        b = self._empty_board()
+        b.set(1, 7, eng.Piece(eng.PieceKind.CANNON, eng.Side.XIANGQI))
+        b.set(1, 5, eng.Piece(eng.PieceKind.PAWN, eng.Side.CHESS))  # screen
+        # (1,3) is empty
+        assert not eng.is_square_attacked_slow(b, 1, 3, eng.Side.XIANGQI)
+        assert not eng.is_square_attacked_fast(b, 1, 3, eng.Side.XIANGQI)
+
+    def test_cannon_two_screens_no_capture(self):
+        """Cannon with 2 screens — cannot capture (need exactly 1)."""
+        b = self._empty_board()
+        b.set(1, 7, eng.Piece(eng.PieceKind.CANNON, eng.Side.XIANGQI))
+        b.set(1, 6, eng.Piece(eng.PieceKind.PAWN, eng.Side.CHESS))   # screen 1
+        b.set(1, 5, eng.Piece(eng.PieceKind.PAWN, eng.Side.CHESS))   # screen 2
+        b.set(1, 3, eng.Piece(eng.PieceKind.ROOK, eng.Side.CHESS))   # target
+        assert not eng.is_square_attacked_slow(b, 1, 3, eng.Side.XIANGQI)
+        assert not eng.is_square_attacked_fast(b, 1, 3, eng.Side.XIANGQI)
+
+    def test_cannon_no_capture_friendly_target(self):
+        """Cannon with 1 screen, target is friendly — NOT attacked."""
+        b = self._empty_board()
+        b.set(1, 7, eng.Piece(eng.PieceKind.CANNON, eng.Side.XIANGQI))
+        b.set(1, 5, eng.Piece(eng.PieceKind.PAWN, eng.Side.CHESS))   # screen
+        b.set(1, 3, eng.Piece(eng.PieceKind.CHARIOT, eng.Side.XIANGQI))  # friendly
+        assert not eng.is_square_attacked_slow(b, 1, 3, eng.Side.XIANGQI)
+        assert not eng.is_square_attacked_fast(b, 1, 3, eng.Side.XIANGQI)
+
+
+class TestFlyingGeneralEdgeCases:
+    """Hand-crafted Flying General boundary tests."""
+
+    def _empty_board(self):
+        return eng.Board.empty()
+
+    def test_flying_general_attacks_king(self):
+        """General on same column as King with clear path — attacks."""
+        b = self._empty_board()
+        b.set(4, 9, eng.Piece(eng.PieceKind.GENERAL, eng.Side.XIANGQI))
+        b.set(4, 0, eng.Piece(eng.PieceKind.KING, eng.Side.CHESS))
+        assert eng.is_square_attacked_slow(b, 4, 0, eng.Side.XIANGQI)
+        assert eng.is_square_attacked_fast(b, 4, 0, eng.Side.XIANGQI)
+
+    def test_flying_general_blocked(self):
+        """General on same column but piece between — NOT attacked."""
+        b = self._empty_board()
+        b.set(4, 9, eng.Piece(eng.PieceKind.GENERAL, eng.Side.XIANGQI))
+        b.set(4, 5, eng.Piece(eng.PieceKind.PAWN, eng.Side.CHESS))   # blocker
+        b.set(4, 0, eng.Piece(eng.PieceKind.KING, eng.Side.CHESS))
+        assert not eng.is_square_attacked_slow(b, 4, 0, eng.Side.XIANGQI)
+        assert not eng.is_square_attacked_fast(b, 4, 0, eng.Side.XIANGQI)
+
+    def test_flying_general_not_king_target(self):
+        """General on same column as NON-king piece — NOT attacked (one-directional)."""
+        b = self._empty_board()
+        b.set(4, 9, eng.Piece(eng.PieceKind.GENERAL, eng.Side.XIANGQI))
+        b.set(4, 3, eng.Piece(eng.PieceKind.ROOK, eng.Side.CHESS))
+        assert not eng.is_square_attacked_slow(b, 4, 3, eng.Side.XIANGQI)
+        assert not eng.is_square_attacked_fast(b, 4, 3, eng.Side.XIANGQI)
+
+    def test_flying_general_empty_target(self):
+        """General on same column as empty square — NOT attacked."""
+        b = self._empty_board()
+        b.set(4, 9, eng.Piece(eng.PieceKind.GENERAL, eng.Side.XIANGQI))
+        assert not eng.is_square_attacked_slow(b, 4, 3, eng.Side.XIANGQI)
+        assert not eng.is_square_attacked_fast(b, 4, 3, eng.Side.XIANGQI)
+
+    def test_flying_general_different_column(self):
+        """General on different column from King — NOT attacked."""
+        b = self._empty_board()
+        b.set(3, 9, eng.Piece(eng.PieceKind.GENERAL, eng.Side.XIANGQI))
+        b.set(4, 0, eng.Piece(eng.PieceKind.KING, eng.Side.CHESS))
+        assert not eng.is_square_attacked_slow(b, 4, 0, eng.Side.XIANGQI)
+        assert not eng.is_square_attacked_fast(b, 4, 0, eng.Side.XIANGQI)
