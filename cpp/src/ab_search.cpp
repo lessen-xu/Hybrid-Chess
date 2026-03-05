@@ -1,5 +1,8 @@
 // ab_search.cpp — Full Alpha-Beta (Negamax) search in C++.
 // Mirrors hybrid/agents/alphabeta_agent.py + hybrid/agents/eval.py.
+//
+// Performance: zero Board clones during search. Uses make_move/unmake_move
+// for in-place board mutation. Only one clone at entry (best_move).
 
 #include "ab_search.h"
 #include "rules.h"
@@ -41,8 +44,8 @@ static double piece_value(PieceKind k) {
 static constexpr double MOBILITY_WEIGHT = 0.05;
 static constexpr double CHECK_BONUS     = 0.3;
 
-static double evaluate(const Board& board, Side perspective) {
-    // Material
+static double evaluate(Board& board, Side perspective) {
+    // Material (direct grid scan)
     double mat = 0.0;
     for (int y = 0; y < BOARD_H; ++y) {
         for (int x = 0; x < BOARD_W; ++x) {
@@ -54,11 +57,13 @@ static double evaluate(const Board& board, Side perspective) {
         }
     }
 
-    // Mobility
+    // Mobility (uses generate_legal_moves_inplace — zero clone)
     Side opp = opponent(perspective);
-    int my_moves = static_cast<int>(generate_legal_moves(board, perspective).size());
-    int op_moves = static_cast<int>(generate_legal_moves(board, opp).size());
-    double mob = MOBILITY_WEIGHT * static_cast<double>(my_moves - op_moves);
+    std::vector<Move> my_m, op_m;
+    generate_legal_moves_inplace(board, perspective, my_m);
+    generate_legal_moves_inplace(board, opp, op_m);
+    double mob = MOBILITY_WEIGHT * static_cast<double>(
+        static_cast<int>(my_m.size()) - static_cast<int>(op_m.size()));
 
     // Check bonus
     double chk = 0.0;
@@ -70,6 +75,7 @@ static double evaluate(const Board& board, Side perspective) {
 
 // ═══════════════════════════════════════════════════════════════
 // Move ordering — captures (by victim value) > checks > stable
+// Uses make/unmake for check detection (no clone).
 // ═══════════════════════════════════════════════════════════════
 
 struct MoveKey {
@@ -78,7 +84,7 @@ struct MoveKey {
     int promo;
 };
 
-static MoveKey move_order_key(const Board& board, Side stm, const Move& mv) {
+static MoveKey move_order_key(Board& board, Side stm, const Move& mv) {
     // Capture bonus: value of captured piece
     double cap = 0.0;
     auto target = board.get(mv.tx, mv.ty);
@@ -86,9 +92,11 @@ static MoveKey move_order_key(const Board& board, Side stm, const Move& mv) {
         cap = piece_value(target->kind);
     }
 
-    // Check bonus: does this move give check?
-    Board after = apply_move(board, mv);
-    double chk = is_in_check(after, opponent(stm)) ? 2.0 : 0.0;
+    // Check bonus: does this move give check? (make/unmake, no clone)
+    UndoInfo u;
+    make_move(board, mv, u);
+    double chk = is_in_check(board, opponent(stm)) ? 2.0 : 0.0;
+    unmake_move(board, mv, u);
 
     return MoveKey{
         cap + chk,
@@ -108,7 +116,7 @@ static bool move_key_cmp(const std::pair<MoveKey, Move>& a,
     return ta < tb;
 }
 
-static std::vector<Move> order_moves(const Board& board, Side stm,
+static std::vector<Move> order_moves(Board& board, Side stm,
                                       const std::vector<Move>& moves) {
     std::vector<std::pair<MoveKey, Move>> keyed;
     keyed.reserve(moves.size());
@@ -142,13 +150,13 @@ struct RepGuard {
 };
 
 // ═══════════════════════════════════════════════════════════════
-// Negamax with alpha-beta pruning
+// Negamax with alpha-beta pruning (zero-clone, in-place board)
 // ═══════════════════════════════════════════════════════════════
 
 static constexpr double INF = 1e18;
 static constexpr double WIN_SCORE = 1e6;
 
-static double negamax(const Board& board, Side stm, int depth,
+static double negamax(Board& board, Side stm, int depth,
                       double alpha, double beta,
                       std::unordered_map<std::string,int>& rep,
                       int ply, int max_plies,
@@ -169,16 +177,12 @@ static double negamax(const Board& board, Side stm, int depth,
 
     // Leaf: evaluate
     if (depth <= 0) {
-        // Evaluate from side-to-move's perspective, then adjust to
-        // root_perspective's perspective via negamax sign flipping.
-        // Actually: negamax returns value from stm's perspective,
-        // and we need it relative to root_perspective.
-        // Simpler: evaluate always returns from root_perspective.
         return evaluate(board, root_perspective);
     }
 
-    // Generate & order moves
-    auto moves = generate_legal_moves(board, stm);
+    // Generate & order moves (zero-clone via inplace)
+    std::vector<Move> moves;
+    generate_legal_moves_inplace(board, stm, moves);
     if (moves.empty()) {
         return evaluate(board, root_perspective);
     }
@@ -188,13 +192,17 @@ static double negamax(const Board& board, Side stm, int depth,
     double best = -INF;
 
     for (auto& mv : ordered) {
-        Board child = apply_move(board, mv);
-        std::string hash_key = child.board_hash(opp);
+        // In-place: make move, recurse, unmake
+        UndoInfo u;
+        make_move(board, mv, u);
+        std::string hash_key = board.board_hash(opp);
         RepGuard guard(rep, hash_key);
 
-        double v = -negamax(child, opp, depth - 1, -beta, -alpha,
+        double v = -negamax(board, opp, depth - 1, -beta, -alpha,
                             rep, ply + 1, max_plies,
                             root_perspective, nodes);
+        unmake_move(board, mv, u);
+
         best = std::max(best, v);
         alpha = std::max(alpha, v);
         if (alpha >= beta) break;
@@ -215,15 +223,19 @@ SearchResult best_move(
         int ply,
         int max_plies) {
 
-    // We need a mutable copy for search-local repetition tracking
+    // Single clone at entry — protects Python's board from mutation
+    Board b = board.clone();
+
+    // Mutable copy of repetition table for search-local tracking
     auto rep = repetition_table;
 
-    auto moves = generate_legal_moves(board, side_to_move);
+    std::vector<Move> moves;
+    generate_legal_moves_inplace(b, side_to_move, moves);
     if (moves.empty()) {
         return SearchResult{Move{0,0,0,0,PieceKind::NONE}, 0.0, 0};
     }
 
-    auto ordered = order_moves(board, side_to_move, moves);
+    auto ordered = order_moves(b, side_to_move, moves);
 
     int64_t total_nodes = 0;
     double alpha = -INF, beta = INF;
@@ -232,13 +244,16 @@ SearchResult best_move(
     Side opp = opponent(side_to_move);
 
     for (auto& mv : ordered) {
-        Board child = apply_move(board, mv);
-        std::string hash_key = child.board_hash(opp);
+        UndoInfo u;
+        make_move(b, mv, u);
+        std::string hash_key = b.board_hash(opp);
         RepGuard guard(rep, hash_key);
 
-        double v = -negamax(child, opp, depth - 1, -beta, -alpha,
+        double v = -negamax(b, opp, depth - 1, -beta, -alpha,
                             rep, ply + 1, max_plies,
                             side_to_move, total_nodes);
+        unmake_move(b, mv, u);
+
         if (v > best_val) {
             best_val = v;
             best_mv = mv;

@@ -82,3 +82,27 @@ class TestBestMoveWithRepetition:
         rep = {key: 1}
         r = eng.best_move(board, eng.Side.CHESS, 1, rep, 0, 400)
         assert r.nodes > 0
+
+
+class TestNoMutation:
+    """make/unmake must not leak state through the Python API."""
+
+    @pytest.mark.parametrize("depth", [1, 2, 3])
+    def test_best_move_no_board_mutation(self, depth):
+        """Board hash must be identical before and after best_move."""
+        board = _initial_board()
+        h_chess = board.board_hash(eng.Side.CHESS)
+        h_xiangqi = board.board_hash(eng.Side.XIANGQI)
+        eng.best_move(board, eng.Side.CHESS, depth, {}, 0, 400)
+        assert board.board_hash(eng.Side.CHESS) == h_chess
+        assert board.board_hash(eng.Side.XIANGQI) == h_xiangqi
+
+    def test_generate_legal_moves_no_mutation(self):
+        """generate_legal_moves must not change the board."""
+        board = _initial_board()
+        h = board.board_hash(eng.Side.CHESS)
+        eng.generate_legal_moves(board, eng.Side.CHESS)
+        assert board.board_hash(eng.Side.CHESS) == h
+        eng.generate_legal_moves(board, eng.Side.XIANGQI)
+        assert board.board_hash(eng.Side.CHESS) == h
+

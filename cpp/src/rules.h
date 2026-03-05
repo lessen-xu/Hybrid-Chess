@@ -16,6 +16,25 @@ std::vector<Move> generate_legal_moves(const Board& board, Side side);
 // Apply a move on a cloned board and return the new board.
 Board apply_move(const Board& board, const Move& mv);
 
+// ── In-place move execution / reversal (zero-clone) ──
+
+struct UndoInfo {
+    Piece moved;                    // piece that was on from-square
+    std::optional<Piece> captured;  // piece that was on to-square (if any)
+    bool did_promotion;             // was this a pawn promotion?
+};
+
+// Execute move in-place (mutates board). Fills undo for reversal.
+void make_move(Board& board, const Move& mv, UndoInfo& undo);
+
+// Reverse a make_move (restores board to pre-move state).
+void unmake_move(Board& board, const Move& mv, const UndoInfo& undo);
+
+// Like generate_legal_moves but takes a mutable board ref and
+// does do/undo filtering in-place (zero clone).
+// Board is guaranteed unchanged on return.
+void generate_legal_moves_inplace(Board& board, Side side, std::vector<Move>& out);
+
 // Check if square (x,y) is attacked by any piece of by_side.
 bool is_square_attacked(const Board& board, int x, int y, Side by_side);
 

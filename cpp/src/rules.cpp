@@ -21,13 +21,16 @@ static constexpr std::array<std::pair<int,int>, 8> KNIGHT_DELTAS = {{
     {1,-2},{2,-1},{-1,-2},{-2,-1}
 }};
 
-// ── Helper: find royal piece ──
+// ── Helper: find royal piece (direct grid scan, no vector alloc) ──
 
 static std::optional<std::pair<int,int>> find_royal(const Board& board, Side side) {
     PieceKind target = (side == Side::CHESS) ? PieceKind::KING : PieceKind::GENERAL;
-    for (auto& [x, y, p] : board.iter_pieces()) {
-        if (p.side == side && p.kind == target)
-            return std::make_pair(x, y);
+    for (int y = 0; y < BOARD_H; ++y) {
+        for (int x = 0; x < BOARD_W; ++x) {
+            auto& cell = board.grid[y][x];
+            if (cell.has_value() && cell->side == side && cell->kind == target)
+                return std::make_pair(x, y);
+        }
     }
     return std::nullopt;
 }
@@ -313,55 +316,90 @@ static void piece_moves(const Board& board, int x, int y, const Piece& p,
     if (k == PieceKind::SOLDIER) { xiangqi_soldier_moves(board, x, y, s, out); return; }
 }
 
-// ── Pseudo-legal move generation ──
+// ── Pseudo-legal move generation (direct grid scan, no iter_pieces) ──
 
 std::vector<Move> generate_pseudo_legal_moves(const Board& board, Side side) {
     // Note: no_queen_promotion defaults to false (matching Python default)
     std::vector<Move> moves;
-    for (auto& [x, y, p] : board.iter_pieces()) {
-        if (p.side != side) continue;
-        piece_moves(board, x, y, p, false, moves);
+    for (int y = 0; y < BOARD_H; ++y) {
+        for (int x = 0; x < BOARD_W; ++x) {
+            auto& cell = board.grid[y][x];
+            if (!cell.has_value()) continue;
+            if (cell->side != side) continue;
+            piece_moves(board, x, y, *cell, false, moves);
+        }
     }
     return moves;
 }
 
-// ── Apply move ──
+// ═══════════════════════════════════════════════════════════════
+// In-place move execution / reversal
+// ═══════════════════════════════════════════════════════════════
+
+void make_move(Board& board, const Move& mv, UndoInfo& undo) {
+    auto from_piece = board.get(mv.fx, mv.fy);
+    assert(from_piece.has_value());
+    undo.moved = *from_piece;
+    undo.captured = board.get(mv.tx, mv.ty);
+
+    board.move_piece(mv.fx, mv.fy, mv.tx, mv.ty);
+
+    // Handle Chess pawn promotion
+    if (from_piece->kind == PieceKind::PAWN && from_piece->side == Side::CHESS
+        && mv.promotion != PieceKind::NONE) {
+        board.set(mv.tx, mv.ty, Piece{mv.promotion, Side::CHESS});
+        undo.did_promotion = true;
+    } else {
+        undo.did_promotion = false;
+    }
+}
+
+void unmake_move(Board& board, const Move& mv, const UndoInfo& undo) {
+    // Restore source square: if promotion happened, put back the pawn
+    if (undo.did_promotion) {
+        board.set(mv.fx, mv.fy, Piece{PieceKind::PAWN, Side::CHESS});
+    } else {
+        board.set(mv.fx, mv.fy, undo.moved);
+    }
+    // Restore target square: captured piece or empty
+    board.set(mv.tx, mv.ty, undo.captured);
+}
+
+// ── Apply move (clone-based, for external/pybind API) ──
 
 Board apply_move(const Board& board, const Move& mv) {
     Board nb = board.clone();
-    auto piece = nb.get(mv.fx, mv.fy);
-    assert(piece.has_value());
-    nb.move_piece(mv.fx, mv.fy, mv.tx, mv.ty);
-    // Handle pawn promotion
-    if (piece->kind == PieceKind::PAWN && piece->side == Side::CHESS
-        && mv.promotion != PieceKind::NONE) {
-        nb.set(mv.tx, mv.ty, Piece{mv.promotion, Side::CHESS});
-    }
+    UndoInfo u;
+    make_move(nb, mv, u);
     return nb;
 }
 
-// ── Attack detection ──
+// ── Attack detection (direct grid scan, no iter_pieces) ──
 
 bool is_square_attacked(const Board& board, int x, int y, Side by_side) {
-    for (auto& [px, py, p] : board.iter_pieces()) {
-        if (p.side != by_side) continue;
+    for (int py = 0; py < BOARD_H; ++py) {
+        for (int px = 0; px < BOARD_W; ++px) {
+            auto& cell = board.grid[py][px];
+            if (!cell.has_value()) continue;
+            if (cell->side != by_side) continue;
 
-        // Chess pawn attacks diagonally (not same as its movement)
-        if (p.kind == PieceKind::PAWN && p.side == Side::CHESS) {
-            for (int dx : {-1, 1}) {
-                int ax = px + dx, ay = py + 1;
-                if (ax == x && ay == y && board.in_bounds(ax, ay))
+            // Chess pawn attacks diagonally (not same as its movement)
+            if (cell->kind == PieceKind::PAWN && cell->side == Side::CHESS) {
+                for (int dx : {-1, 1}) {
+                    int ax = px + dx, ay = py + 1;
+                    if (ax == x && ay == y && board.in_bounds(ax, ay))
+                        return true;
+                }
+                continue;
+            }
+
+            // Other pieces: any pseudo-legal move landing on (x,y) counts
+            std::vector<Move> pmoves;
+            piece_moves(board, px, py, *cell, false, pmoves);
+            for (auto& mv : pmoves) {
+                if (mv.tx == x && mv.ty == y)
                     return true;
             }
-            continue;
-        }
-
-        // Other pieces: any pseudo-legal move landing on (x,y) counts
-        std::vector<Move> pmoves;
-        piece_moves(board, px, py, p, false, pmoves);
-        for (auto& mv : pmoves) {
-            if (mv.tx == x && mv.ty == y)
-                return true;
         }
     }
     return false;
@@ -376,17 +414,35 @@ bool is_in_check(const Board& board, Side side) {
     return is_square_attacked(board, rx, ry, opponent(side));
 }
 
-// ── Legal move generation ──
+// ── Legal move generation (single clone + do/undo) ──
 
 std::vector<Move> generate_legal_moves(const Board& board, Side side) {
     std::vector<Move> out;
     auto pseudo = generate_pseudo_legal_moves(board, side);
+    out.reserve(pseudo.size());
+    Board tmp = board.clone();  // single clone
     for (auto& mv : pseudo) {
-        Board nb = apply_move(board, mv);
-        if (!is_in_check(nb, side))
+        UndoInfo u;
+        make_move(tmp, mv, u);
+        if (!is_in_check(tmp, side))
             out.push_back(mv);
+        unmake_move(tmp, mv, u);
     }
     return out;
+}
+
+// ── Legal move generation, zero-clone (for AB search internal use) ──
+
+void generate_legal_moves_inplace(Board& board, Side side, std::vector<Move>& out) {
+    auto pseudo = generate_pseudo_legal_moves(board, side);
+    out.reserve(pseudo.size());
+    for (auto& mv : pseudo) {
+        UndoInfo u;
+        make_move(board, mv, u);
+        if (!is_in_check(board, side))
+            out.push_back(mv);
+        unmake_move(board, mv, u);
+    }
 }
 
 // ── Terminal state detection ──

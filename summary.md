@@ -345,6 +345,7 @@ Across evaluations (all **no_queen** ablation), MCTS simulations show a surprisi
 | 38 | Evaluation protocol: `GameRecord` telemetry (per-ply legal_move_counts + winner_side), 5 new CSV columns, `eval_arena.py` (side-switching evaluation), `analyze_experiment.py` (4 paper figures), `--ablation none/no_queen` support |
 | 39 | EGTA dual-matrix tournament: `egta_tournament.py` (7×7 round-robin, Nash equilibrium via LP, payoff heatmap), `eval_arena.py` gains `ab_d4` + CUDA inference |
 | 40 | Pure C++ negamax search: `ab_search.h/cpp` (~230 LOC, best_move single-call API), eliminates all Python↔C++ per-node overhead, `_CppABAgent` wrapper, 10 new tests pass |
+| 41 | Make/unmake refactor: `make_move`/`unmake_move` in-place board mutation, zero-clone AB search (single clone at entry), `generate_legal_moves_inplace`, eliminated `iter_pieces` from hot paths (`find_royal`/`pseudo_legal`/`is_square_attacked` → direct grid scan), 14 tests pass |
 
 ---
 
