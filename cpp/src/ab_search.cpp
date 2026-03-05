@@ -1,10 +1,13 @@
 // ab_search.cpp — Full Alpha-Beta (Negamax) search in C++.
+// Step 7: PVS (Negascout) + Root Aspiration Windows.
 // Step 6: Per-ply buffer pre-allocation, leaf eval 1× movegen.
 // Step 5: Zobrist 128-bit hash replaces SHA1 in hot path.
 // Step 4: TT + Iterative Deepening + Killer/History heuristics.
 //
 // Performance: zero Board clones during search. Uses make_move/unmake_move.
 // Zobrist mode: each node O(1) ZKey XOR — zero SHA1 calls in hot path.
+// PVS: null-window scout for non-PV moves, re-search on fail-high.
+// Root aspiration windows narrow search from d>=2 (exponential widening on fail).
 // Per-ply pre-allocated buffers — zero heap allocation in recursive search.
 // Leaf eval: 1× movegen (opp only), reuses stm move count from search.
 // Transposition Table with generation-based isolation (deterministic).
@@ -75,6 +78,14 @@ static constexpr double CHECK_BONUS     = 0.3;
 static constexpr double INF      = 1e18;
 static constexpr double WIN_SCORE = 1e6;
 static constexpr double MATE_TH  = WIN_SCORE * 0.5;
+
+// PVS null-window epsilon (scores are double)
+static constexpr double PVS_EPS = 1e-6;
+
+// Root aspiration window parameters
+static constexpr double INITIAL_ASP = 0.75;
+static constexpr int    ASP_MAX_RETRIES = 5;
+static constexpr double ASP_FALLBACK_TH = WIN_SCORE * 0.5;
 
 enum TTFlag : uint8_t { TT_EXACT = 0, TT_LOWER = 1, TT_UPPER = 2, TT_EMPTY = 3 };
 
@@ -497,11 +508,12 @@ static double negamax_z(Board& board, Side stm, int depth,
                              static_cast<int>(moves.size()), ctx, sply);
     }
 
-    // ── Search ──
+    // ── Search (PVS / Negascout) ──
     order_moves_inplace(board, stm, moves, tt_best, ctx, sply);
     Side opp = opponent(stm);
     double best = -INF;
     Move best_mv = moves[0];
+    bool first_move = true;
 
     for (auto& mv : moves) {
         UndoInfo u;
@@ -509,11 +521,34 @@ static double negamax_z(Board& board, Side stm, int depth,
         ZKey128 child_key = board.zobrist_key(opp);
         RepGuardZ guard(ctx.path_rep_z, child_key);
 
-        double v = -negamax_z(board, opp, depth - 1, -beta, -alpha,
-                              ctx, child_key,
-                              ply + 1, max_plies,
-                              root_perspective, nodes,
-                              sply + 1);
+        double v;
+        if (first_move) {
+            // First move: full window
+            v = -negamax_z(board, opp, depth - 1, -beta, -alpha,
+                           ctx, child_key,
+                           ply + 1, max_plies,
+                           root_perspective, nodes, sply + 1);
+            first_move = false;
+        } else if (alpha + PVS_EPS < beta) {
+            // Null-window scout
+            v = -negamax_z(board, opp, depth - 1, -alpha - PVS_EPS, -alpha,
+                           ctx, child_key,
+                           ply + 1, max_plies,
+                           root_perspective, nodes, sply + 1);
+            // Re-search if scout found a better move within true window
+            if (v > alpha && v < beta) {
+                v = -negamax_z(board, opp, depth - 1, -beta, -alpha,
+                               ctx, child_key,
+                               ply + 1, max_plies,
+                               root_perspective, nodes, sply + 1);
+            }
+        } else {
+            // Window already narrow, full search
+            v = -negamax_z(board, opp, depth - 1, -beta, -alpha,
+                           ctx, child_key,
+                           ply + 1, max_plies,
+                           root_perspective, nodes, sply + 1);
+        }
         unmake_move(board, mv, u);
 
         if (v > best) {
@@ -614,22 +649,42 @@ static double negamax_sha1(Board& board, Side stm, int depth,
                              static_cast<int>(moves.size()), ctx, sply);
     }
 
-    // Search
+    // Search (PVS / Negascout)
     order_moves_inplace(board, stm, moves, tt_best, ctx, sply);
     Side opp = opponent(stm);
     double best = -INF;
     Move best_mv = moves[0];
+    bool first_move = true;
 
     for (auto& mv : moves) {
         UndoInfo u;
         make_move(board, mv, u);
         RepGuard guard(rep, board.board_hash(opp));
 
-        double v = -negamax_sha1(board, opp, depth - 1, -beta, -alpha,
-                                 rep, guard.key,
-                                 ply + 1, max_plies,
-                                 root_perspective, nodes,
-                                 ctx, sply + 1);
+        double v;
+        if (first_move) {
+            v = -negamax_sha1(board, opp, depth - 1, -beta, -alpha,
+                              rep, guard.key,
+                              ply + 1, max_plies,
+                              root_perspective, nodes, ctx, sply + 1);
+            first_move = false;
+        } else if (alpha + PVS_EPS < beta) {
+            v = -negamax_sha1(board, opp, depth - 1, -alpha - PVS_EPS, -alpha,
+                              rep, guard.key,
+                              ply + 1, max_plies,
+                              root_perspective, nodes, ctx, sply + 1);
+            if (v > alpha && v < beta) {
+                v = -negamax_sha1(board, opp, depth - 1, -beta, -alpha,
+                                  rep, guard.key,
+                                  ply + 1, max_plies,
+                                  root_perspective, nodes, ctx, sply + 1);
+            }
+        } else {
+            v = -negamax_sha1(board, opp, depth - 1, -beta, -alpha,
+                              rep, guard.key,
+                              ply + 1, max_plies,
+                              root_perspective, nodes, ctx, sply + 1);
+        }
         unmake_move(board, mv, u);
 
         if (v > best) {
@@ -737,40 +792,92 @@ SearchResult best_move(
         ZKey128 root_key = b.zobrist_key(side_to_move);
 
         for (int d = 1; d <= depth; ++d) {
-            ctx.path_rep_z.clear();
+            // Aspiration window
+            double asp_alpha, asp_beta;
+            if (d == 1) {
+                asp_alpha = -INF;
+                asp_beta  =  INF;
+            } else {
+                double w = INITIAL_ASP;
+                asp_alpha = best_val - w;
+                asp_beta  = best_val + w;
+            }
 
-            double alpha = -INF, beta = INF;
             Move iter_best = root_moves[0];
             double iter_val = -INF;
+            bool accepted = false;
 
-            int root_rep = ctx.rep_count_z(root_key);
-            uint8_t root_rb = static_cast<uint8_t>(std::min(root_rep, 3));
-            Move root_tt_mv{0, 0, 0, 0, PieceKind::NONE};
-            const TTEntry* root_tte = g_tt.probe(root_key.lo, root_key.hi, root_rb);
-            if (root_tte) root_tt_mv = root_tte->best_move;
+            for (int retry = 0; !accepted; ++retry) {
+                ctx.path_rep_z.clear();
 
-            // Copy root moves to bufs[0] for ordering
-            ctx.bufs[0].moves = root_moves;
-            order_moves_inplace(b, side_to_move, ctx.bufs[0].moves, root_tt_mv, ctx, 0);
+                double alpha = asp_alpha, beta = asp_beta;
+                iter_best = root_moves[0];
+                iter_val = -INF;
 
-            for (auto& mv : ctx.bufs[0].moves) {
-                UndoInfo u;
-                make_move(b, mv, u);
-                ZKey128 child_key = b.zobrist_key(opp);
-                RepGuardZ guard(ctx.path_rep_z, child_key);
+                int root_rep = ctx.rep_count_z(root_key);
+                uint8_t root_rb = static_cast<uint8_t>(std::min(root_rep, 3));
+                Move root_tt_mv{0, 0, 0, 0, PieceKind::NONE};
+                const TTEntry* root_tte = g_tt.probe(root_key.lo, root_key.hi, root_rb);
+                if (root_tte) root_tt_mv = root_tte->best_move;
 
-                double v = -negamax_z(b, opp, d - 1, -beta, -alpha,
-                                      ctx, child_key,
-                                      ply + 1, max_plies,
-                                      side_to_move, total_nodes,
-                                      1);
-                unmake_move(b, mv, u);
+                ctx.bufs[0].moves = root_moves;
+                order_moves_inplace(b, side_to_move, ctx.bufs[0].moves, root_tt_mv, ctx, 0);
 
-                if (v > iter_val) {
-                    iter_val = v;
-                    iter_best = mv;
+                bool first_root_move = true;
+                for (auto& mv : ctx.bufs[0].moves) {
+                    UndoInfo u;
+                    make_move(b, mv, u);
+                    ZKey128 child_key = b.zobrist_key(opp);
+                    RepGuardZ guard(ctx.path_rep_z, child_key);
+
+                    double v;
+                    if (first_root_move) {
+                        v = -negamax_z(b, opp, d - 1, -beta, -alpha,
+                                       ctx, child_key,
+                                       ply + 1, max_plies,
+                                       side_to_move, total_nodes, 1);
+                        first_root_move = false;
+                    } else if (alpha + PVS_EPS < beta) {
+                        v = -negamax_z(b, opp, d - 1, -alpha - PVS_EPS, -alpha,
+                                       ctx, child_key,
+                                       ply + 1, max_plies,
+                                       side_to_move, total_nodes, 1);
+                        if (v > alpha && v < beta) {
+                            v = -negamax_z(b, opp, d - 1, -beta, -alpha,
+                                           ctx, child_key,
+                                           ply + 1, max_plies,
+                                           side_to_move, total_nodes, 1);
+                        }
+                    } else {
+                        v = -negamax_z(b, opp, d - 1, -beta, -alpha,
+                                       ctx, child_key,
+                                       ply + 1, max_plies,
+                                       side_to_move, total_nodes, 1);
+                    }
+                    unmake_move(b, mv, u);
+
+                    if (v > iter_val) {
+                        iter_val = v;
+                        iter_best = mv;
+                    }
+                    alpha = std::max(alpha, v);
                 }
-                alpha = std::max(alpha, v);
+
+                // Check aspiration result
+                if (d == 1 || (iter_val > asp_alpha && iter_val < asp_beta)) {
+                    accepted = true;
+                } else if (retry >= ASP_MAX_RETRIES || (asp_beta - asp_alpha) > ASP_FALLBACK_TH) {
+                    // Fallback to full window
+                    asp_alpha = -INF;
+                    asp_beta  =  INF;
+                    // One more iteration with full window
+                } else {
+                    // Widen
+                    double w = INITIAL_ASP;
+                    for (int i = 0; i <= retry; ++i) w *= 2.0;
+                    asp_alpha = best_val - w;
+                    asp_beta  = best_val + w;
+                }
             }
 
             best_mv = iter_best;
@@ -780,43 +887,91 @@ SearchResult best_move(
         std::string root_key = b.board_hash(side_to_move);
 
         for (int d = 1; d <= depth; ++d) {
-            auto rep = repetition_table;
+            double asp_alpha, asp_beta;
+            if (d == 1) {
+                asp_alpha = -INF;
+                asp_beta  =  INF;
+            } else {
+                double w = INITIAL_ASP;
+                asp_alpha = best_val - w;
+                asp_beta  = best_val + w;
+            }
 
-            double alpha = -INF, beta = INF;
             Move iter_best = root_moves[0];
             double iter_val = -INF;
+            bool accepted = false;
 
-            ZKey128 root_zk = b.zobrist_key(side_to_move);
-            int root_rep = 0;
-            {
-                auto it = rep.find(root_key);
-                if (it != rep.end()) root_rep = it->second;
-            }
-            uint8_t root_rb = static_cast<uint8_t>(std::min(root_rep, 3));
-            Move root_tt_mv{0, 0, 0, 0, PieceKind::NONE};
-            const TTEntry* root_tte = g_tt.probe(root_zk.lo, root_zk.hi, root_rb);
-            if (root_tte) root_tt_mv = root_tte->best_move;
+            for (int retry = 0; !accepted; ++retry) {
+                auto rep = repetition_table;
 
-            ctx.bufs[0].moves = root_moves;
-            order_moves_inplace(b, side_to_move, ctx.bufs[0].moves, root_tt_mv, ctx, 0);
+                double alpha = asp_alpha, beta = asp_beta;
+                iter_best = root_moves[0];
+                iter_val = -INF;
 
-            for (auto& mv : ctx.bufs[0].moves) {
-                UndoInfo u;
-                make_move(b, mv, u);
-                RepGuard guard(rep, b.board_hash(opp));
-
-                double v = -negamax_sha1(b, opp, d - 1, -beta, -alpha,
-                                         rep, guard.key,
-                                         ply + 1, max_plies,
-                                         side_to_move, total_nodes,
-                                         ctx, 1);
-                unmake_move(b, mv, u);
-
-                if (v > iter_val) {
-                    iter_val = v;
-                    iter_best = mv;
+                ZKey128 root_zk = b.zobrist_key(side_to_move);
+                int root_rep = 0;
+                {
+                    auto it = rep.find(root_key);
+                    if (it != rep.end()) root_rep = it->second;
                 }
-                alpha = std::max(alpha, v);
+                uint8_t root_rb = static_cast<uint8_t>(std::min(root_rep, 3));
+                Move root_tt_mv{0, 0, 0, 0, PieceKind::NONE};
+                const TTEntry* root_tte = g_tt.probe(root_zk.lo, root_zk.hi, root_rb);
+                if (root_tte) root_tt_mv = root_tte->best_move;
+
+                ctx.bufs[0].moves = root_moves;
+                order_moves_inplace(b, side_to_move, ctx.bufs[0].moves, root_tt_mv, ctx, 0);
+
+                bool first_root_move = true;
+                for (auto& mv : ctx.bufs[0].moves) {
+                    UndoInfo u;
+                    make_move(b, mv, u);
+                    RepGuard guard(rep, b.board_hash(opp));
+
+                    double v;
+                    if (first_root_move) {
+                        v = -negamax_sha1(b, opp, d - 1, -beta, -alpha,
+                                          rep, guard.key,
+                                          ply + 1, max_plies,
+                                          side_to_move, total_nodes, ctx, 1);
+                        first_root_move = false;
+                    } else if (alpha + PVS_EPS < beta) {
+                        v = -negamax_sha1(b, opp, d - 1, -alpha - PVS_EPS, -alpha,
+                                          rep, guard.key,
+                                          ply + 1, max_plies,
+                                          side_to_move, total_nodes, ctx, 1);
+                        if (v > alpha && v < beta) {
+                            v = -negamax_sha1(b, opp, d - 1, -beta, -alpha,
+                                              rep, guard.key,
+                                              ply + 1, max_plies,
+                                              side_to_move, total_nodes, ctx, 1);
+                        }
+                    } else {
+                        v = -negamax_sha1(b, opp, d - 1, -beta, -alpha,
+                                          rep, guard.key,
+                                          ply + 1, max_plies,
+                                          side_to_move, total_nodes, ctx, 1);
+                    }
+                    unmake_move(b, mv, u);
+
+                    if (v > iter_val) {
+                        iter_val = v;
+                        iter_best = mv;
+                    }
+                    alpha = std::max(alpha, v);
+                }
+
+                if (d == 1 || (iter_val > asp_alpha && iter_val < asp_beta)) {
+                    accepted = true;
+                } else if (retry >= ASP_MAX_RETRIES || (asp_beta - asp_alpha) > ASP_FALLBACK_TH) {
+                    asp_alpha = -INF;
+                    asp_beta  =  INF;
+                } else {
+                    double w = INITIAL_ASP;
+                    for (int i = 0; i <= retry; ++i) w *= 2.0;
+                    asp_alpha = best_val - w;
+                    asp_beta  = best_val + w;
+                }
             }
 
             best_mv = iter_best;

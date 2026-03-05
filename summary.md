@@ -139,8 +139,10 @@ The C++ engine (`hybrid_cpp_engine.pyd`) provides both a rules engine and a full
 | Heap allocs in recursion | `vector<Move>` per node (movegen + ordering) | **0** — per-ply pre-allocated `PlyBuffers` |
 | Leaf eval movegen | 2× (`generate_legal_moves` for both sides) | **1×** (reuses stm count, generates opp only) |
 
-**Search features (Steps 4–5):**
+**Search features (Steps 4–7):**
 - Negamax + alpha-beta pruning
+- **PVS (Negascout):** null-window scout for non-PV moves, re-search on fail-high within true window
+- **Root Aspiration Windows:** narrow [center±0.75] from d≥2, exponential widening on fail, full-window fallback after 5 retries
 - **Zobrist 128-bit hashing** (incremental XOR in `Board::set`/`move_piece`, splitmix64 deterministic table, 32-hex key format)
 - **Transposition Table** (512K entries, Zobrist 128-bit key, `rep_bucket` prevents repetition pollution, generation-based isolation for determinism, mate-score pack/unpack for path-independent TT storage)
 - **Dual-mode repetition:** Zobrist fast path (32-hex keys, zero SHA1) + SHA1 legacy (40-hex keys, backward compatible)
@@ -279,6 +281,7 @@ AZ is **undefeated** against AB-d2. It breaks the cowardice lock (95%→68% draw
 | 43 | **TT + Iterative Deepening + Killer/History:** 512K-entry transposition table (128-bit key, rep_bucket, generation isolation, mate-score pack/unpack), iterative deepening (depth 1..D), killer moves (2 slots/ply), history heuristic (depth² bonus), move ordering (TT PV > captures+checks > killers > history > tie-break), ~420 LOC, 14 tests pass |
 | 44 | **Zobrist 128-bit hashing:** incremental ZKey128 in Board (`set`/`move_piece` XOR), dual-mode AB search (`negamax_z` zero SHA1 + `negamax_sha1` legacy), TT switched to Zobrist keys, 24 tests pass |
 | 45 | **Per-ply buffers + leaf eval opt:** `PlyBuffers` pre-allocation (zero heap alloc in recursion), `ScoredMove` sort, `evaluate_leaf` reuses stm move count (1× opp movegen vs 2×), all 24+40+env tests pass |
+| 46 | **PVS + Aspiration Windows:** Negascout null-window scout + re-search in both negamax paths, root aspiration windows (0.75 initial, 5 retries, exp widening), test_ab_cpp 0.52s (was 1.49s), all tests green |
 
 ---
 
