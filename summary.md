@@ -346,6 +346,7 @@ Across evaluations (all **no_queen** ablation), MCTS simulations show a surprisi
 | 39 | EGTA dual-matrix tournament: `egta_tournament.py` (7×7 round-robin, Nash equilibrium via LP, payoff heatmap), `eval_arena.py` gains `ab_d4` + CUDA inference |
 | 40 | Pure C++ negamax search: `ab_search.h/cpp` (~230 LOC, best_move single-call API), eliminates all Python↔C++ per-node overhead, `_CppABAgent` wrapper, 10 new tests pass |
 | 41 | Make/unmake refactor: `make_move`/`unmake_move` in-place board mutation, zero-clone AB search (single clone at entry), `generate_legal_moves_inplace`, eliminated `iter_pieces` from hot paths (`find_royal`/`pseudo_legal`/`is_square_attacked` → direct grid scan), 14 tests pass |
+| 42 | Inline terminal detection: negamax no longer calls `terminal_info()`, single movegen + single board_hash per node, `stm_hash_key` parameter threading, RepGuard move semantics, 14 tests pass |
 
 ---
 
