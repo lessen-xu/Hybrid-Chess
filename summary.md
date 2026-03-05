@@ -30,10 +30,6 @@ hybrid-chess/
 │   │   ├── board.py                    #   Board class (9x10 grid), initial_board()
 │   │   ├── config.py                   #   Constants: BOARD_W/H, MAX_PLIES, ablation flags
 │   │   ├── rules.py                    #   Move generation, check/checkmate, terminal detection
-│   │   │                               #     Key functions: generate_legal_moves(), terminal_info(),
-│   │   │                               #     _xiangqi_cannon_moves(), _xiangqi_horse_moves(),
-│   │   │                               #     _xiangqi_elephant_moves(), _xiangqi_general_moves(),
-│   │   │                               #     is_in_check(), is_square_attacked(), board_hash()
 │   │   ├── env.py                      #   HybridChessEnv (gym-like): reset(), step(), legal_moves()
 │   │   ├── coords.py                   #   Coordinate utilities
 │   │   └── render.py                   #   ASCII board rendering
@@ -42,70 +38,56 @@ hybrid-chess/
 │   │   ├── random_agent.py             #   RandomAgent (uniform random legal move)
 │   │   ├── alphabeta_agent.py          #   AlphaBetaAgent (minimax + alpha-beta pruning, Python rules)
 │   │   ├── alphazero_stub.py           #   AlphaZeroMiniAgent (MCTS + neural network)
-│   │   │                               #     _run_mcts_search_cpp: C++ MCTS path (use_cpp=True)
 │   │   ├── az_remote_model.py          #   Remote model proxy for inference server
 │   │   └── eval.py                     #   Hand-crafted evaluation function for AB agent
-│   └── rl/                             # AlphaZero training pipeline
-│       ├── az_network.py               #   PolicyValueNet (small ResNet: 4 blocks, 64 filters)
-│       ├── az_encoding.py              #   State → tensor (14×10×9), GPU batch encoding, move → policy plane (92×10×9)
-│       ├── az_selfplay.py              #   Single-process self-play with MCTS + telemetry
-│       ├── az_selfplay_parallel.py     #   Multi-worker parallel self-play
-│       ├── az_inference_server.py      #   Centralized GPU inference server (batched, server-side encoding)
-│       ├── az_replay.py                #   Replay buffer (state/policy/value targets)
-│       ├── az_train.py                 #   Network training (MSE value + CE policy loss)
-│       ├── az_eval.py                  #   Evaluation: play_one_game(), score_ci()
-│       ├── az_eval_parallel.py         #   Parallel evaluation with side-swapping
-│       ├── az_runner.py                #   Full iterative loop: selfplay→train→eval→gating
-│       └── endgame_spawner.py          #   Generates random endgame positions (K+pieces vs G+pieces)
-├── scripts/                            # CLI tools
-│   ├── train_az_iter.py                #   Main AZ training entrypoint (--iterations, --curriculum, --use-cpp)
-│   ├── play_match.py                   #   Agent vs agent batch match
-│   ├── ab_tournament.py                #   AB vs AB rule balance tournament (3 conditions × N games)
-│   ├── egta_tournament.py              #   EGTA dual-matrix round-robin + Nash equilibrium (V3/V4 ablation)
-│   ├── eval_champions.py               #   Evaluate AZ checkpoints vs baselines (parallel, side-swap)
-│   ├── eval_az_vs_ab.py                #   AZ vs AB-d2 showdown (800 sims, termination tracking)
-│   ├── eval_arena.py                   #   Side-switching evaluation arena + agent factory (ab_d1/d2/d4 + AZ)
-│   ├── analyze_experiment.py           #   Generate 4 protocol figures (imbalance, branching, depth, equilibrium)
-│   ├── monitor_training.py             #   Live training dashboard (reads metrics.csv → PNG)
-│   ├── monitor_tournament.py           #   Live tournament dashboard
-│   ├── visualize_game.py               #   Game replay → HTML/GIF visualization
-│   ├── overfit_micro.py                #   Sanity check: overfit network on 1 position
-│   ├── mcts_sanity_check.py            #   Sanity check: MCTS captures/avoids material
-│   ├── action_mask_check.py            #   Sanity check: policy output respects legal moves
-│   └── _fix_encoding.py                #   UTF-8 stdout/stderr guard for Windows
-├── cpp/                                # C++ game engine (pybind11)
-│   ├── build.ps1                       #   Build script (MSYS2 ucrt64 g++ 15.2.0)
-│   └── src/
-│       ├── types.h                     #   Side, PieceKind, Piece, Move
-│       ├── board.h / board.cpp         #   Board class (9×10 grid, SHA1 hash)
-│       ├── rules.h / rules.cpp         #   Move gen + check + terminal (~350 LOC)
-│       ├── ab_search.h / ab_search.cpp #   Full C++ negamax α-β search + evaluate (~230 LOC)
-│       └── bindings.cpp                #   pybind11 module → hybrid_cpp_engine.pyd
-├── hybrid/
+│   ├── rl/                             # AlphaZero training pipeline
+│   │   ├── az_network.py               #   PolicyValueNet (small ResNet: 4 blocks, 64 filters)
+│   │   ├── az_encoding.py              #   State → tensor (14×10×9), GPU batch encoding
+│   │   ├── az_selfplay.py              #   Single-process self-play with MCTS + telemetry
+│   │   ├── az_selfplay_parallel.py     #   Multi-worker parallel self-play
+│   │   ├── az_inference_server.py      #   Centralized GPU inference server (batched)
+│   │   ├── az_replay.py                #   Replay buffer (state/policy/value targets)
+│   │   ├── az_train.py                 #   Network training (MSE value + CE policy loss)
+│   │   ├── az_eval.py                  #   Evaluation: play_one_game(), score_ci()
+│   │   ├── az_eval_parallel.py         #   Parallel evaluation with side-swapping
+│   │   ├── az_runner.py                #   Full iterative loop: selfplay→train→eval→gating
+│   │   └── endgame_spawner.py          #   Random endgame position generator
 │   └── cpp_engine/
 │       ├── __init__.py                 #   Python wrapper for C++ module
 │       └── hybrid_cpp_engine.*.pyd     #   Compiled extension (built by build.ps1)
-├── tests/                              # pytest test suite
-│   ├── test_rules.py                   #   ★ Rules oracle: move gen + terminal (40 tests)
-│   │                                   #     Cannon(8), FlyingGeneral(4), Horse/Knight(5),
-│   │                                   #     Elephant(4), Advisor/General(3), Soldier(3),
-│   │                                   #     Pawn(4), SelfCheck(4), Terminal(5)
-│   ├── test_rules_cpp.py              #   ★ C++ engine: same 40 oracle tests via pybind11
-│   ├── fuzz_dual_engine.py            #   ★ Differential fuzz: Python vs C++ (500 games, 156k pos, 0 mismatch)
-│   ├── test_env_cpp.py                #   ★ Env-level C++ vs Python comparison (100 games + 3 sanity)
-│   ├── test_basic.py                   #   Board init, turn switching (2 tests)
-│   ├── test_az_encoding.py             #   State encoding, GPU batch, in-place, cache pollution (13 tests)
+├── cpp/                                # C++ game engine (pybind11, MSYS2 ucrt64 g++ 15.2.0)
+│   ├── build.ps1                       #   Build script → hybrid_cpp_engine.pyd
+│   └── src/
+│       ├── types.h                     #   Side, PieceKind, Piece, Move
+│       ├── board.h / board.cpp         #   Board class (9×10 grid, SHA1 hash)
+│       ├── rules.h / rules.cpp         #   Move gen, check, terminal, make/unmake (~450 LOC)
+│       │                               #     make_move / unmake_move: in-place board mutation
+│       │                               #     generate_legal_moves_inplace: zero-clone legal filter
+│       ├── ab_search.h / ab_search.cpp #   Full C++ negamax α-β search (~280 LOC)
+│       │                               #     best_move(): single-call entry, SearchResult return
+│       │                               #     Inline terminal detection (no terminal_info call)
+│       │                               #     Zero Board clones during search (1 clone at entry)
+│       │                               #     1× movegen + 1× board_hash per node
+│       └── bindings.cpp                #   pybind11 module: Board, Move, best_move, etc.
+├── scripts/                            # CLI tools
+│   ├── train_az_iter.py                #   Main AZ training entrypoint
+│   ├── eval_arena.py                   #   Side-switching evaluation arena + _CppABAgent wrapper
+│   ├── egta_tournament.py              #   EGTA dual-matrix round-robin + Nash equilibrium
+│   ├── ab_tournament.py                #   AB vs AB rule balance tournament
+│   ├── analyze_experiment.py           #   Generate protocol figures
+│   ├── eval_champions.py               #   Evaluate AZ checkpoints vs baselines
+│   ├── eval_az_vs_ab.py                #   AZ vs AB showdown
+│   └── monitor_training.py             #   Live training dashboard
+├── tests/                              # pytest test suite (~150 tests)
+│   ├── test_rules.py                   #   Rules oracle: move gen + terminal (40 tests)
+│   ├── test_rules_cpp.py              #   C++ engine: same 40 oracle tests via pybind11
+│   ├── test_env_cpp.py                #   Env-level C++ vs Python (100 games + 3 sanity)
+│   ├── test_ab_cpp.py                 #   AB search: legality, determinism, mutation (14 tests)
+│   ├── fuzz_dual_engine.py            #   Differential fuzz: Python vs C++ (500 games, 0 mismatch)
+│   ├── test_az_encoding.py             #   State encoding, GPU batch (13 tests)
 │   ├── test_az_train_step.py           #   Network forward/backward (3 tests)
-│   ├── test_az_replay.py               #   Replay buffer add/sample (3 tests)
-│   ├── test_az_inference_server.py     #   GPU inference server (2 tests)
-│   ├── test_az_runner_smoke.py         #   Full pipeline smoke test (3 tests)
-│   ├── test_parallel_selfplay_smoke.py #   Parallel self-play (2 tests)
-│   ├── test_endgame_spawner.py         #   Endgame positions + reset_from_board (6 tests)
-│   ├── test_resign_and_diagnostics.py  #   Resign, adjudication, diagnostics (12 tests)
-│   ├── test_gating_wilson.py           #   Wilson CI gating (5 tests)
-│   └── test_runner_game_split.py       #   Game distribution across workers (1 test)
+│   └── ...                             #   Replay, inference server, runner, gating, etc.
 └── runs/                               # Experiment outputs (not in repo)
-    └── az_grand_run_v4/                #   V4: 200 sims, C++ engine, extra_cannon (~24h)
 ```
 
 ---
@@ -114,9 +96,50 @@ hybrid-chess/
 
 | Agent | Description | Strength |
 |---|---|---|
-| **Random** | Uniform random legal move | Baseline anchor (Elo reference) |
-| **AlphaBeta** | Minimax + alpha-beta + hand-crafted eval (material + mobility). Configurable depth (d1/d2/d4). C++ variant (`AlphaBetaCppAgent`) uses pybind11 engine for ~80× speedup. | d1: tactical but shallow. d2: defensive. d4: strong but slow (Python). |
-| **AlphaZero-Mini** | Small ResNet (4 blocks, 64 filters) + MCTS. Configurable simulations (50–800). Dirichlet noise. | Best agent. Beats AB-d2 at 800 sims **no_queen** (13W/27D/0L). |
+| **Random** | Uniform random legal move | Baseline anchor |
+| **AlphaBeta** | Minimax + α-β + hand-crafted eval (material + mobility + check bonus). Configurable depth (d1/d2/d4). | d1: tactical. d2: defensive. d4: strong. |
+| **AlphaBeta C++** | Full C++ negamax via `best_move()` — zero Python overhead. `_CppABAgent` wrapper in `eval_arena.py`. | Same logic, orders of magnitude faster. |
+| **AlphaZero-Mini** | Small ResNet (4 blocks, 64 filters) + MCTS. Configurable simulations (50–800). | Best agent. Beats AB-d2 at 800 sims (13W/27D/0L). |
+
+---
+
+## C++ Engine Architecture
+
+The C++ engine (`hybrid_cpp_engine.pyd`) provides both a rules engine and a full AB search engine, accessed via pybind11.
+
+### Rules Engine (`rules.h/cpp`)
+
+| Function | Description |
+|---|---|
+| `generate_pseudo_legal_moves` | Direct grid scan (no `iter_pieces` allocation), all piece types |
+| `generate_legal_moves` | Single clone + make/unmake filter (was per-move clone) |
+| `generate_legal_moves_inplace` | Zero-clone: make/unmake on mutable board ref |
+| `make_move` / `unmake_move` | In-place board mutation + reversal (captures, pawn promotion) |
+| `apply_move` | Clone-based wrapper (for Python API compatibility) |
+| `is_in_check` / `is_square_attacked` | Direct grid scan for attackers |
+| `terminal_info` | Full terminal detection (royal, ply, repetition, checkmate) |
+
+### AB Search Engine (`ab_search.h/cpp`)
+
+**Entry point:** `best_move(board, side, depth, rep_table, ply, max_plies) → SearchResult{move, score, nodes}`
+
+**Performance optimizations (Steps 1–3):**
+
+| Optimization | Before | After |
+|---|---|---|
+| Board clones / search node | 3+ (`terminal_info` + `legal_moves` + `apply_move`) | **0** (single clone at `best_move` entry) |
+| `generate_legal_moves` / node | 2× (`terminal_info` + search) | **1×** (`generate_legal_moves_inplace`) |
+| `board_hash` (SHA1) / node | 2× (RepGuard + `terminal_info`) | **1×** (parent computes, passed via `stm_hash_key`) |
+| Terminal detection | `terminal_info()` call (clones board) | Inline `has_royal` + ply/rep/moves-empty check |
+| Move ordering check detection | `apply_move` clone per move | `make_move` / `unmake_move` per move |
+| `iter_pieces` vector alloc | Every `find_royal`, `pseudo_legal`, `is_square_attacked` | Direct `board.grid[y][x]` scan |
+
+**Search features:**
+- Negamax + alpha-beta pruning
+- Move ordering: captures (by victim value) > checks > deterministic tie-break
+- Repetition detection via `RepGuard` (RAII, move semantics)
+- Evaluation: material + mobility (0.05×) + check bonus (0.3)
+- Win score with ply correction (prefers faster wins)
 
 ---
 
@@ -125,36 +148,15 @@ hybrid-chess/
 **Iterative AlphaZero loop:** self-play → train network → evaluate vs baselines → (optional gating) → update model.
 
 **Key mechanisms:**
-- **Parallel self-play:** multi-process workers + centralized GPU inference server for batched neural net queries.
-- **Hard truncation:** 150-ply limit during self-play (saves compute); 400-ply in evaluation/tournaments.
-- **Truncation penalty:** flat −0.1 reward for truncated games (replaced `tanh(material_diff/4)` which caused reward hacking).
-- **Draw adjudication:** if `|root_value| ≤ 0.08` for 15 consecutive moves → draw.
-- **Endgame curriculum:** configurable fraction of self-play games start from generated endgame positions (K+Q vs bare General, etc.) for dense checkmate signals.
-- **MCTS value discounting (γ=0.99):** shorter wins are strictly preferred, breaking perpetual-check loops.
-- **Score-based gating:** Wilson CI on score (wins + 0.5×draws) instead of pure win rate, handles high-draw regimes.
-- **Curriculum schedules:**
-  - `3phase`: endgame 60%→20%→0%, gating on. Failed: gating rejected 13/20 iterations, endgame knowledge forgotten.
-  - `3phase_v2`: endgame 80%→40%→15%, gating always off. Better: permanent endgame anchor + unrestricted model evolution.
-- **C++ game engine (`--use-cpp`):** pybind11-wrapped C++ rules engine replaces Python in MCTS inner loop. Profile: 21× raw playout speedup → **3.2× end-to-end training speedup** (selfplay 2.5×, eval 4.6×). NN inference now dominates at 63% of MCTS time.
-- **GPU server-side encoding:** `encode_state` moved from per-worker CPU Python loops to GPU batch `scatter_` inside InferenceServer. Workers send compact `(10,9) int8` board IDs (13.8× smaller than old `(14,10,9) uint8`), server encodes on GPU in batch.
-- **Zero-allocation inference pipeline:** pre-allocated pinned CPU + GPU-resident buffers eliminate all dynamic allocation from the hot loop. Async DMA via `non_blocking=True` on pinned memory. AMP autocast (FP16) for forward pass on CUDA.
-- **Virtual-loss leaf batching:** MCTS gathers K=8 leaves per round via virtual loss diversion before making one batched IPC call. DFS assertion verifies zero VL leakage after every search.
-- **Zero-copy shared memory IPC:** `SharedMemoryPool` holds cross-process tensors (`share_memory_()`). Queue carries only `(wid, K)` tuples (~15 bytes). Server reads from pool, writes full policy flat back; workers slice locally. `mp.Event` for wake signaling.
-- **Evaluation protocol telemetry:** `GameRecord` tracks per-ply legal move counts and explicit winner faction (`chess`/`xiangqi`). Runner aggregates into per-iteration CSV columns: `sp_chess_wins`, `sp_xiangqi_wins`, `sp_draws`, `sp_avg_legal_chess`, `sp_avg_legal_xiangqi`. These enable faction win-rate curves and branching factor analysis without post-hoc log parsing.
-
-**GPU engineering profiling** (`scripts/profile_server_path.py`, C++ engine, 200 sims, 2 plies/worker):
-
-| Metric | Baseline (8W) | +VL (8W) | +SHM (8W) | +Static (16W) |
-|---|---|---|---|---|
-| Throughput | 221 states/s | 443 states/s | 452 states/s | **667 states/s** |
-| Avg batch size | 7.8 (6%) | 45.9 (36%) | 50.2 (39%) | 83.5 (65%) |
-| Max batch size | 8 | 64 | 64 | **128** |
-| GPU compute | — | — | — | **1.80s** |
-| GPU duty cycle | 41% | 38% | 43% | **57%** |
-| Worker IPC wait | 91% | 80% | 77% | **75%** |
-| Worker MCTS CPU | 9% | 20% | 23% | **25%** |
-
-**Diagnosis:** Static batching + TF32 halved per-batch GPU compute time (~46ms→23ms). GPU duty dropped to 57% because GPU now outpaces worker request generation. `torch.compile` disabled on Windows (Triton backend hangs). Further scaling limited by Python multiprocessing spawn overhead for >16 workers.
+- **Parallel self-play:** multi-process workers + centralized GPU inference server for batched NN queries.
+- **Hard truncation:** 150-ply limit during self-play; 400-ply in evaluation/tournaments.
+- **Truncation penalty:** flat −0.1 reward (replaced `tanh(material_diff/4)` which caused reward hacking).
+- **MCTS value discounting (γ=0.99):** shorter wins strictly preferred.
+- **Endgame curriculum:** permanent 15% anchor (80%→40%→15% schedule).
+- **C++ MCTS integration:** `_run_mcts_search_cpp` in `alphazero_stub.py` — **3.2× end-to-end speedup**.
+- **GPU server-side encoding:** workers send compact `(10,9) int8` board IDs → server does GPU scatter.
+- **Virtual-loss leaf batching (K=8):** avg batch 7.8→45.9, throughput 221→443 states/s (8W).
+- **Static batching + TF32:** 16W: **667 states/s** (3× baseline).
 
 ---
 
@@ -162,146 +164,40 @@ hybrid-chess/
 
 ### AB Rule Balance Tournament (2×3 matrix, 100 games each)
 
-AB vs AB at two depths × three rule variants. 4 random opening plies to break determinism.
-
 | Rule variant | AB-d1 (Chess/XQ/Draw) | AB-d2 (Chess/XQ/Draw) |
 |---|---|---|
 | **Vanilla** | **33**/5/62 | 0/10/90 |
 | **Extra Cannon** | **28**/6/66 | 0/10/90 |
 | **No Queen** | **24**/7/69 | 0/5/95 |
 
-**Conclusions:**
-1. d1→d2 eliminates ALL Chess wins (33%→0%). Search depth >> rule variant.
-2. Queen amplifies weak defense — at d2 it's perfectly neutralized.
-3. Chess has a natural edge even without Queen (24% at d1 from Bishop diagonals + Pawn promotion).
-
-### AB-d2 Termination Analysis (**no_queen**, 100 games)
-
-| Termination Reason | Count | Avg Ply |
-|---|---|---|
-| **Threefold repetition** | 95 (95%) | 36.3 |
-| Checkmate (Xiangqi wins) | 5 (5%) | 11.2 |
-| Move limit (400 ply) | **0 (0%)** | — |
-
-**100% of AB-d2 draws are true deadlocks (threefold repetition), 0% time pressure.** AB-d2 enters deterministic cowardice loops ~36 plies in — every forward move looks like material loss, so both sides retreat and repeat until repetition triggers. The 400-ply limit is never approached (max observed: 98 ply).
+**Key finding:** d1→d2 eliminates ALL Chess wins (33%→0%). Search depth >> rule variant. AB-d2 draws are 100% threefold repetition at avg 36 ply — deterministic cowardice loops.
 
 ### AlphaZero Training Runs
 
-| Run | Config | vs Random (final) | vs AlphaBeta (best) | Key Issue |
-|---|---|---|---|---|
-| **V1** | 20 iter, 3phase, 50 sims, **extra_cannon** | 75% | 10W (iter 2 only) | Gating killed 13/20 iters, draw trap from iter 6 |
-| **V2** | 20 iter, 3phase_v2, 100 sims, **extra_cannon** | 75% | 10W (iter 11, 16) | Breakthrough oscillation (not sustained) |
-| **V3** | 10 iter, **no_queen**, 100 sims | 55% | 10W (iter 6) | Same oscillation, 5 iters earlier without Queen |
-| **V4** | 20 iter, 3phase_v2, **200 sims**, **extra_cannon**, C++ | 80% (avg 12.8W) | 10W (8 of 20 iters) | 40% breakthrough rate, 3× more frequent than V2 |
-
-**V4 vs V2 comparison:** V4 (200 sims) achieves 40% breakthrough frequency vs AB-d1, compared to V2's ~10% (2/20). However, the breakthrough pattern remains oscillatory—none of the 8 breakthrough iters are consecutive. The overall vs-AB score of 0.438 confirms the fundamental pipeline limitation: the small network (4 blocks, 64 filters) cannot sustainably retain tactical knowledge across training iterations. 200 sims produces sharper policy targets, making breakthroughs more frequent but not more durable.
-
-### Champion Evaluation: Side-Aware Analysis (V2, extra_cannon)
-
-Iter 16 (V2, trained with **extra_cannon**) evaluated with side-swapping (games 0–9 AZ=Chess, 10–19 AZ=Xiangqi):
-
-| Condition | AZ as Chess | AZ as Xiangqi | Interpretation |
+| Run | Config | vs AB (best) | Key Finding |
 |---|---|---|---|
-| With Queen (400 sims) | 10 Draw | 10 Loss | Queen defense is impenetrable; Queen attack crushes AZ |
-| **No Queen (400 sims)** | **10 Win** | 0 Win / 10 Draw | Removing Queen unlocks wins on Chess side |
+| **V2** | 20 iter, 100 sims, **extra_cannon** | 10W (iter 11, 16) | Breakthrough oscillation (not sustained) |
+| **V3** | 10 iter, **no_queen**, 100 sims | 10W (iter 6) | Same oscillation, 5 iters earlier without Queen |
+| **V4** | 20 iter, **200 sims**, **extra_cannon**, C++ | 10W (8 of 20 iters) | 40% breakthrough rate, 3× more frequent than V2 |
 
-The Queen imbalance is **side-deterministic**: when AZ holds the Queen, it survives; when it faces the Queen, it collapses in ~18 moves. This implies **AZ's tactical defense level ≈ AB-d1**: the Queen is devastating to AZ (just as it is to AB-d1, which loses 33% of games to it) but harmless against AB-d2 (which neutralizes it completely). The policy network has not yet learned the deep defensive patterns that exhaustive 2-ply search discovers automatically.
-
-### AZ vs AB-d2 Showdown (V2 Iter 16 @ 800 sims, **no_queen**, 40 games)
+### AZ vs AB-d2 Showdown (V2 Iter 16 @ 800 sims, no_queen, 40 games)
 
 | | W | D | L |
 |---|---|---|---|
 | **AZ total** | **13** | 27 | **0** |
-| AZ as Chess | 8 | 12 | 0 |
-| AZ as Xiangqi | 5 | 15 | 0 |
 
-Score: **0.662** | Termination: 13 checkmate (32%), 27 threefold repetition (68%), 0 move limit.
+Score: **0.662** | AZ is **undefeated**. Breaks AB-d2's repetition lock (95%→68% draws, 5%→32% checkmates).
 
-AZ is **undefeated** against AB-d2. It breaks the cowardice lock (95%→68% draws, 5%→32% checkmates) and wins from both sides, confirming genuine learned strategy.
+### EGTA Dual-Matrix Ablation (Pending)
 
-### Simulation Scaling: Non-Linear Breakthrough (V2 Iter 16, no_queen)
-
-Across evaluations (all **no_queen** ablation), MCTS simulations show a surprising non-linear effect:
-
-| Sims | Opponent | Result | Score |
-|---|---|---|---|
-| 200 | AB-d1 | 10W/10D/0L | 0.750 |
-| 400 | AB-d1 | 0W/20D/0L | 0.500 |
-| **800** | **AB-d2** (stronger) | **13W/27D/0L** | **0.662** |
-
-400 sims vs AB-d1 *regressed* relative to 200 sims (likely seed variance + different game trajectories), yet 800 sims vs the *stronger* AB-d2 produced the best result of all. This suggests a **phase transition** in MCTS search quality: below a threshold, deeper search exposes the network's evaluation inaccuracies (more accurate search surface + inaccurate value → worse moves); above a threshold, the search becomes deep enough to find genuinely winning tactical sequences that the network alone cannot see.
-
-### EGTA Dual-Matrix Ablation (Pending Results)
-
-**Motivation:** Standard AlphaZero self-play implicitly assumes strategy evolution is **transitive** (strictly improving over time). But in asymmetric games like Hybrid Chess, later generations may lose to earlier "wild" strategies — a sign of **non-transitive** (rock-paper-scissors-like) dynamics and **catastrophic strategy forgetting**.
-
-**Method:** Empirical Game-Theoretic Analysis (EGTA). Extract AZ checkpoints from the training trajectory, pit all agents against each other in a round-robin tournament, and build an N×N **empirical payoff matrix** M where M[i,j] = win rate of agent i vs agent j (averaged over 100 side-swapped games). Solve the resulting zero-sum meta-game for the **Nash Equilibrium** mixed strategy via linear programming.
-
-**Dual-matrix design** — two independent 7×7 tournaments under different rule variants:
+**Method:** Empirical Game-Theoretic Analysis. 7×7 round-robin payoff matrix, Nash Equilibrium via LP.
 
 | | Universe A: V4 (extra_cannon) | Universe B: V3 (no_queen) |
 |---|---|---|
-| **Hypothesis** | Queen + Cannon firepower → simplistic rush strategies, transitive | Without Queen → complex piece synergies, non-transitive |
+| **Hypothesis** | High firepower → transitive | Without Queen → non-transitive |
 | **Agents** | Random, AB-d2, AB-d4, AZ V4 iter 0/6/13/19 | Random, AB-d2, AB-d4, AZ V3 iter 0/3/6/9 |
-| **Rules** | extra_cannon (3 cannons, Queen retained) | no_queen (Queen removed, cannons only) |
 
-**Key metrics for comparison:**
-
-1. **Game value (v):** In the Nash solution, v = the row player's expected score under optimal mixed play. If v ≈ 0, the game is fair; if v >> 0, first-mover advantage dominates.
-2. **Nash support size:** Number of agents with non-zero Nash probability. Support = 1 means the latest agent dominates (transitive). Support ≥ 2 means multiple agent "eras" must be mixed to avoid exploitation (non-transitive, cyclic meta-game).
-
-**Controls:** 400 MCTS sims, τ→0 argmax (no exploration), Dirichlet noise off, 100 games/pair (50 per side), C++ engine for all agents. Script: `scripts/egta_tournament.py --preset both`.
-
----
-
-## Challenges & Solutions
-
-1. **Self-play too slow** — 400 ply games × MCTS = hours per iteration. Fix: hard truncation at 150 ply + truncation penalty (−0.1).
-2. **Draw adjudication never triggered** — 3-way AND condition too strict (0 triggers in 100s of games). Fix: simplified to root_value threshold only.
-3. **TD-learning learned nothing** — 100% draws without exploration → zero signal. Fix: ε-greedy (ε=0.2).
-4. **Gating broke in high-draw regimes** — W=0, L=0 → CI=[0,1] → no decision possible. Fix: score-based CI (draws = 0.5).
-5. **Reward hacking** — `tanh(material_diff/4)` taught model to hoard material and stall (≈+0.98 without checkmating). Fix: flat −0.1 penalty + endgame curriculum.
-6. **No sense of urgency** — mate-in-3 and mate-in-20 both propagate +1.0. Fix: MCTS value discounting (γ=0.99) makes shorter wins strictly better.
-7. **Gating killed curriculum progress** — new model tested against old model on full-game starts → looks "weaker" → rejected. Fix: disable gating during curriculum.
-8. **Endgame knowledge forgetting** — Phase 3 dropped endgame ratio to 0% → model forgot how to checkmate. Fix: permanent 15% endgame anchor.
-9. **C++ env speedup didn't help end-to-end** — C++ gave 21× raw playout speedup, but MCTS called Python rules directly (72% of time), bypassing the C++ env entirely. Fix: integrate C++ into MCTS internals (`_run_mcts_search_cpp`), achieving 3.2× real speedup.
-10. **Crash-restart corrupted metrics CSV** — restarting a run in the same `outdir` appended new data after stale rows from the crashed run. Fix: `az_runner.py` now backs up existing `metrics.csv` to `metrics_prev.csv` before overwriting.
-11. **Windows GBK encoding crash** — `Start-Process -RedirectStandardOutput` uses system ANSI codepage (GBK on Chinese Windows); any emoji or em-dash in `print()` crashes the script. Fix: `scripts/_fix_encoding.py` forces `stdout/stderr` to UTF-8 with `errors="replace"`, imported by all 15 scripts.
-
----
-
-## Known Limitations
-
-- **~~GPU severely starved (3–6% batch fill)~~** — ~~Workers had 1 in-flight request each~~ → **Resolved**: Virtual-loss leaf batching (K=8) raises batch fill to 22–36%, throughput 2×. Remaining idle time is IPC serialization.
-- **~~NN inference dominates MCTS time~~** — ~~63% of single-process self-play time~~ → In multi-worker server mode, NN inference is amortized; the real bottleneck is Python IPC serialization.
-- **~~encode_state CPU bottleneck~~** — ~~Workers ran Python loops to build (14,10,9) tensor per leaf~~ → **Resolved**: `encode_batch_gpu` does GPU scatter on server side; workers send (10,9) int8 IDs.
-- **Breakthrough oscillation** — single breakthrough iteration followed by regression. Caused by small network + catastrophic forgetting + high-variance 20-game evals.
-- **AZ still draws 68% vs AB-d2** — even at 800 sims, AZ cannot always break through AB-d2's repetition lock.
-- **AB-d2 draws are deterministic cowardice** — 100% threefold repetition at avg 36 ply, 0% move limit. Classical AI refuses any move that looks like material loss.
-- **Small sample evaluations are high-variance** — same checkpoint produces wildly different results under different seeds (±10W in 20 games).
-- **~~Test coverage gap~~** — ~~`rules.py` has zero unit tests on piece movement~~ → **Resolved**: `test_rules.py` now provides 40 oracle tests covering all piece types, flying general, self-check filtering, and terminal detection.
-
----
-
-## Test Coverage Assessment
-
-**Well-tested:** AZ encoding, network training, replay buffer, inference server, self-play pipeline, resign/adjudication, gating, endgame spawner.
-
-**Rules engine (`test_rules.py` — 40 tests, Python oracle for C++ rewrite):**
-
-| Function | Tests | Status |
-|---|---|---|
-| `_xiangqi_cannon_moves` | 8 (slide, jump, screen rules, vertical, friendly) | ✅ Covered |
-| `_xiangqi_general_moves` + flying general | 4 (open file, blocked, one-directional, diff column) | ✅ Covered |
-| `_xiangqi_horse_moves` vs `KNIGHT` | 5 (unblocked, leg block, all blocked, Knight comparison, edge) | ✅ Covered |
-| `_xiangqi_elephant_moves` | 4 (unblocked, eye block, river, edge) | ✅ Covered |
-| `_xiangqi_advisor_moves` | 2 (center, corner) | ✅ Covered |
-| `_xiangqi_soldier_moves` | 3 (before river, after river, edge) | ✅ Covered |
-| `_chess_pawn_moves` | 4 (double step, blocked, diagonal capture, promotion) | ✅ Covered |
-| `generate_legal_moves` (self-check filter) | 4 (absolute pin, check response, king safety, cannon pin) | ✅ Covered |
-| `terminal_info` | 5 (checkmate, stalemate, repetition, max ply, ongoing) | ✅ Covered |
-
-**Key discovery during testing:** Flying general is **one-directional** — only General→King, not King→General. `is_square_attacked` by Chess does NOT include flying general. A Xiangqi piece on the General-King column is NOT pinned to that column.
+**Key metrics:** game value (v), Nash support size (support ≥ 2 = non-transitive / cyclic dynamics).
 
 ---
 
@@ -309,44 +205,18 @@ Across evaluations (all **no_queen** ablation), MCTS simulations show a surprisi
 
 | Phase | Description |
 |---|---|
-| 0–1 | Rule design + environment + validation |
-| 2–3 | Baseline balance analysis + `extra_cannon` compensation |
-| 4–6 | AlphaZero inference / encoding / training loop |
-| 7–8 | Parallel self-play + GPU inference server |
-| 9 | CI gating + eval speedup |
-| 10 | Score-based CI + resign / diagnostics / visualization |
-| 11 | Game-count distribution fix + root_value diagnostics |
-| 12 | Draw adjudication A/B test |
-| 13 | Hard truncation (max_ply=150) + simplified adjudication |
-| 14 | Pipeline sanity checks (overfit, alignment, MCTS, masking) |
-| 15 | Reward purification + endgame curriculum learning |
-| 16 | MCTS value discounting + asymmetric eval scaling + 3-phase curriculum |
-| 17 | 3phase_v2 curriculum (endgame anchor + gating off) + grand runs V1/V2 |
-| 18 | Champion evaluation (Iter 11/16 @ 400 sims) + side-aware analysis |
-| 19 | No-Queen ablation: Iter 16 goes from 0W to 10W when Queen removed |
-| 20 | AB-d2 rule balance tournament + Grand Run V3 (no_queen) |
-| 21 | AB-d1 tournament: 2×3 matrix proves search depth >> Queen rule variant |
-| 22 | Termination analysis: 100% of AB-d2 draws = threefold repetition |
-| 23 | AZ vs AB-d2 showdown: Iter 16 @ 800 sims goes 13W/27D/0L undefeated |
-| 24 | `test_rules.py` oracle suite: 40 tests covering all piece move gen + terminal detection |
-| 25 | C++ game engine (pybind11): `types.h`, `board.h/cpp`, `rules.h/cpp`, `bindings.cpp` — 40/40 oracle tests pass |
-| 26 | Dual-engine differential fuzz: 500 games, 156k positions, 0 mismatches — C++ engine bit-perfect |
-| 27 | Hot-swap `env.py` with `use_cpp=True`: 103 env tests pass, **21× speedup** (85→1,802 plies/s) |
-| 28 | `--use-cpp` pipeline integration + profiling: 1.0× end-to-end speedup — MCTS calls Python rules directly (72%), C++ only touches env (0.2%) |
-| 29 | C++ MCTS integration: `_run_mcts_search_cpp` in `alphazero_stub.py` — **3.2× end-to-end speedup** (selfplay 2.5×, eval 4.6×), 248/248 tests pass |
-| 30 | Grand Run V4: 200 sims + C++ engine, 20 iter, ~24h — 8/20 iters hit 10W vs AB (40% breakthrough, 3× V2) |
-| 31 | GPU encode_state migration: `encode_batch_gpu` (scatter), workers send (10,9) int8 → 13.8× IPC shrink, 13/13 tests pass |
-| 32 | Zero-alloc inference server: pinned memory + GPU buffers + AMP (FP16), in-place `encode_batch_gpu`, 15/15 tests pass |
-| 33 | Server-path profiler: GPU 3-6% batch fill, 38-41% duty; workers 91-92% IPC-bound → GPU severely starved |
-| 34 | Virtual-loss leaf batching (K=8): avg batch 3.9→27.7 (4W), 7.8→45.9 (8W); throughput 109→202 (4W), 221→443 (8W); 16/16 tests pass |
-| 35 | Zero-copy shared memory IPC: `SharedMemoryPool` + `(wid,K)` signal (~15B Queue payload), throughput 443→452 (8W), GPU duty 38→43%, 16/16 tests pass |
-| 36 | Vectorized policy loss: pad+gather+masked_log_softmax, 28× speedup (B=512), 18/18 tests pass |
-| 37 | Static batching + TF32: always full B_max forward, GPU compute 46ms→23ms; 16W: **667 states/s** (3× baseline); torch.compile disabled on Windows (Triton hangs), 18/18 tests pass |
-| 38 | Evaluation protocol: `GameRecord` telemetry (per-ply legal_move_counts + winner_side), 5 new CSV columns, `eval_arena.py` (side-switching evaluation), `analyze_experiment.py` (4 paper figures), `--ablation none/no_queen` support |
-| 39 | EGTA dual-matrix tournament: `egta_tournament.py` (7×7 round-robin, Nash equilibrium via LP, payoff heatmap), `eval_arena.py` gains `ab_d4` + CUDA inference |
-| 40 | Pure C++ negamax search: `ab_search.h/cpp` (~230 LOC, best_move single-call API), eliminates all Python↔C++ per-node overhead, `_CppABAgent` wrapper, 10 new tests pass |
-| 41 | Make/unmake refactor: `make_move`/`unmake_move` in-place board mutation, zero-clone AB search (single clone at entry), `generate_legal_moves_inplace`, eliminated `iter_pieces` from hot paths (`find_royal`/`pseudo_legal`/`is_square_attacked` → direct grid scan), 14 tests pass |
-| 42 | Inline terminal detection: negamax no longer calls `terminal_info()`, single movegen + single board_hash per node, `stm_hash_key` parameter threading, RepGuard move semantics, 14 tests pass |
+| 0–8 | Game design, environment, baselines, AlphaZero pipeline, parallel self-play |
+| 9–14 | Pipeline hardening: gating, diagnostics, sanity checks, hard truncation |
+| 15–17 | Reward purification, endgame curriculum, MCTS discounting, grand runs V1/V2 |
+| 18–23 | Champion evaluation, Queen ablation analysis, AB tournament 2×3 matrix, AZ vs AB-d2 showdown |
+| 24–27 | C++ game engine: pybind11 rules, 40-test oracle, differential fuzz (500 games × 0 mismatch), env integration (21× speedup) |
+| 28–29 | C++ MCTS integration: `_run_mcts_search_cpp` → **3.2× end-to-end** (selfplay 2.5×, eval 4.6×) |
+| 30 | Grand Run V4: 200 sims + C++ engine → 40% breakthrough rate (8/20 iters hit 10W vs AB) |
+| 31–37 | GPU pipeline engineering: server-side encoding, zero-alloc, VL batching, SHM IPC, static batching → **667 states/s** |
+| 38–39 | Evaluation protocol telemetry, EGTA tournament framework |
+| 40 | **Pure C++ negamax search:** `ab_search.h/cpp` (~230 LOC), `best_move()` single-call API, `_CppABAgent` wrapper |
+| 41 | **Make/unmake refactor:** `make_move`/`unmake_move` in-place mutation, `generate_legal_moves_inplace` (zero-clone), eliminated `iter_pieces` from hot paths |
+| 42 | **Inline terminal detection:** negamax bypasses `terminal_info()`, 1× movegen + 1× board_hash per node, `stm_hash_key` parameter threading |
 
 ---
 
@@ -354,6 +224,12 @@ Across evaluations (all **no_queen** ablation), MCTS simulations show a surprisi
 
 ```bash
 pip install -r requirements.txt
+
+# Build C++ engine
+.\cpp\build.ps1
+
+# Run tests
+pytest -q
 
 # Single AlphaZero training run
 python -m scripts.train_az_iter --iterations 20 \
@@ -363,13 +239,10 @@ python -m scripts.train_az_iter --iterations 20 \
     --use-cpp --ablation extra_cannon \
     --outdir runs/az_run
 
-# Side-switching evaluation arena
-python -m scripts.eval_arena --model-a runs/az_run/ckpt_iter19.pt --model-b ab_d1 \
-    --games 20 --simulations 200 --use-cpp
+# Side-switching evaluation arena (C++ AB search)
+python -m scripts.eval_arena --model-a ab_d4 --model-b ab_d1 \
+    --games 20 --use-cpp
 
-# EGTA dual-matrix tournament (V4 extra_cannon + V3 no_queen)
+# EGTA dual-matrix tournament
 python -m scripts.egta_tournament --preset both --outdir runs/egta
-
-# Run tests
-pytest -q
 ```
