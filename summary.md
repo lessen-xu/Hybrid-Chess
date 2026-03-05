@@ -136,9 +136,11 @@ The C++ engine (`hybrid_cpp_engine.pyd`) provides both a rules engine and a full
 | Move ordering check detection | `apply_move` clone per move | `make_move` / `unmake_move` per move |
 | `iter_pieces` vector alloc | Every `find_royal`, `pseudo_legal`, `is_square_attacked` | Direct `board.grid[y][x]` scan |
 
-**Search features:**
+**Search features (Step 4):**
 - Negamax + alpha-beta pruning
-- Move ordering: captures (by victim value) > checks > deterministic tie-break
+- **Transposition Table** (512K entries, 128-bit key from SHA1, `rep_bucket` prevents repetition pollution, generation-based isolation for determinism, mate-score pack/unpack for path-independent TT storage)
+- **Iterative Deepening** (depth 1..D, TT PV reuse across iterations, cumulative nodes)
+- **Move ordering:** TT PV move → captures (by victim value) + checks → killer moves (2 slots/ply) → history heuristic (`depth²` bonus) → deterministic tie-break
 - Repetition detection via `RepGuard` (RAII, move semantics)
 - Evaluation: material + mobility (0.05×) + check bonus (0.3)
 - Win score with ply correction (prefers faster wins)
@@ -270,6 +272,7 @@ AZ is **undefeated** against AB-d2. It breaks the cowardice lock (95%→68% draw
 | 40 | **Pure C++ negamax search:** `ab_search.h/cpp` (~230 LOC), `best_move()` single-call API, `_CppABAgent` wrapper |
 | 41 | **Make/unmake refactor:** `make_move`/`unmake_move` in-place mutation, `generate_legal_moves_inplace` (zero-clone), eliminated `iter_pieces` from hot paths |
 | 42 | **Inline terminal detection:** negamax bypasses `terminal_info()`, 1× movegen + 1× board_hash per node, `stm_hash_key` parameter threading |
+| 43 | **TT + Iterative Deepening + Killer/History:** 512K-entry transposition table (128-bit key, rep_bucket, generation isolation, mate-score pack/unpack), iterative deepening (depth 1..D), killer moves (2 slots/ply), history heuristic (depth² bonus), move ordering (TT PV > captures+checks > killers > history > tie-break), ~420 LOC, 14 tests pass |
 
 ---
 
