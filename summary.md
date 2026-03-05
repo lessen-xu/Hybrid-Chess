@@ -285,6 +285,17 @@ AZ is **undefeated** against AB-d2. It breaks the cowardice lock (95%→68% draw
 | 47 | **Royal cache:** O(1) king/general lookup via `royal_sq[2]` in Board, incremental maintenance in `set`/`move_piece`, `is_in_check`/`has_royal`/`terminal_info` use cache (zero grid scan), test_ab_cpp 0.16s (was 0.52s), 28+40+103 tests green |
 | 48 | **Fast is_square_attacked:** reverse-ray/offset attack detection (~230 LOC) replaces O(W×H) grid scan, covers all 12 piece types (Knight L-offset, Horse reverse-L+leg, Cannon slide+screen, Elephant eye+river, Advisor/General palace, flying general King-only), deep equivalence test (20 seeds × 300 plies = 19.4M checks), 29+40+103 tests green |
 | 49 | **In-place movegen scratch buffers:** `generate_pseudo_legal_moves_inplace` + 4-arg `generate_legal_moves_inplace(board, side, out, pseudo_scratch)`, `PlyBuffers.pseudo` added to AB search, all 5 call sites use scratch version (zero hidden heap alloc in movegen hot path), `xiangqi_soldier_moves` static array, 80+40+103 tests green |
+| 50 | **Perft + frozen regression:** `perft_nodes(board, stm, depth)` in rules.cpp (per-depth scratch buffers, depth-1 bulk-count optimization), `test_perft_cpp.py` freezes d1–d3 for 3 positions, 90+1s tests green |
+
+Frozen perft values (any rule change that alters these = test failure):
+
+| Position | Side | d1 | d2 | d3 | d4 |
+|---|---|---|---|---|---|
+| Initial | CHESS | 23 | 1,048 | 26,311 | 1,130,358 |
+| Initial | XIANGQI | 46 | 1,052 | 45,840 | 1,140,360 |
+| Mid-game (seed=42, ply=10) | CHESS | 26 | 1,266 | 33,477 | 1,549,389 |
+
+d4 速度参考：初始局面 CHESS ~0.25s, XIANGQI ~0.27s (O2, GCC ucrt64)。
 
 ---
 

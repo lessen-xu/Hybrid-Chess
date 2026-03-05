@@ -111,6 +111,7 @@ PYBIND11_MODULE(hybrid_cpp_engine, m) {
     m.def("is_square_attacked_slow", &is_square_attacked_slow);
     m.def("is_square_attacked_fast", &is_square_attacked_fast);
     m.def("is_in_check", &is_in_check);
+    m.def("perft_nodes", &perft_nodes);
 
     // terminal_info: returns a GameInfo struct
     py::class_<GameInfo>(m, "GameInfo")

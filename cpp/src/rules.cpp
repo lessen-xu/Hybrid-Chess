@@ -752,3 +752,43 @@ GameInfo terminal_info(const Board& board, Side side_to_move,
         return {TerminalStatus::DRAW, 0, "Stalemate (draw by rule)"};
     }
 }
+
+// ── Perft (Performance Test / Move Path Enumeration) ──
+
+static uint64_t perft_recurse(Board& board, Side stm, int depth,
+                               std::vector<std::vector<Move>>& move_bufs,
+                               std::vector<std::vector<Move>>& pseudo_bufs) {
+    if (depth == 0) return 1;
+
+    auto& moves = move_bufs[depth];
+    auto& pseudo = pseudo_bufs[depth];
+    moves.clear();
+    generate_legal_moves_inplace(board, stm, moves, pseudo);
+
+    if (depth == 1) return static_cast<uint64_t>(moves.size());
+
+    uint64_t total = 0;
+    Side opp = opponent(stm);
+    for (auto& mv : moves) {
+        UndoInfo u;
+        make_move(board, mv, u);
+        total += perft_recurse(board, opp, depth - 1, move_bufs, pseudo_bufs);
+        unmake_move(board, mv, u);
+    }
+    return total;
+}
+
+uint64_t perft_nodes(const Board& board, Side stm, int depth) {
+    if (depth <= 0) return 1;
+    Board b = board.clone();
+
+    // Pre-allocate per-depth scratch buffers (depth+1 levels, index 0 unused)
+    std::vector<std::vector<Move>> move_bufs(depth + 1);
+    std::vector<std::vector<Move>> pseudo_bufs(depth + 1);
+    for (int d = 1; d <= depth; ++d) {
+        move_bufs[d].reserve(192);
+        pseudo_bufs[d].reserve(192);
+    }
+
+    return perft_recurse(b, stm, depth, move_bufs, pseudo_bufs);
+}

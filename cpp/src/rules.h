@@ -97,3 +97,7 @@ struct GameInfo {
 GameInfo terminal_info(const Board& board, Side side_to_move,
                        const std::unordered_map<std::string,int>& repetition_table,
                        int ply, int max_plies);
+
+// Perft: count leaf nodes in the move tree at given depth.
+// Uses make/unmake with per-depth scratch buffers (zero alloc after init).
+uint64_t perft_nodes(const Board& board, Side stm, int depth);
