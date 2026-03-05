@@ -195,11 +195,13 @@ struct PlyBuffers {
     std::vector<Move> moves;       // stm legal moves
     std::vector<Move> moves_opp;   // opp legal moves (leaf eval)
     std::vector<ScoredMove> scored; // for sorting
+    std::vector<Move> pseudo;      // pseudo-legal scratch (avoids alloc)
 
     PlyBuffers() {
         moves.reserve(192);
         moves_opp.reserve(192);
         scored.reserve(192);
+        pseudo.reserve(192);
     }
 };
 
@@ -373,7 +375,7 @@ static inline double evaluate_leaf(
     Side opp = opponent(stm);
     auto& opp_moves = ctx.bufs[sply].moves_opp;
     opp_moves.clear();
-    generate_legal_moves_inplace(board, opp, opp_moves);
+    generate_legal_moves_inplace(board, opp, opp_moves, ctx.bufs[sply].pseudo);
     int opp_moves_count = static_cast<int>(opp_moves.size());
 
     // Compute perspective-relative mobility
@@ -478,7 +480,7 @@ static double negamax_z(Board& board, Side stm, int depth,
     // ── Generate legal moves (into pre-allocated buffer) ──
     auto& moves = ctx.bufs[sply].moves;
     moves.clear();
-    generate_legal_moves_inplace(board, stm, moves);
+    generate_legal_moves_inplace(board, stm, moves, ctx.bufs[sply].pseudo);
 
     if (moves.empty()) {
         if (is_in_check(board, stm)) {
@@ -619,7 +621,7 @@ static double negamax_sha1(Board& board, Side stm, int depth,
     // Generate legal moves (into pre-allocated buffer)
     auto& moves = ctx.bufs[sply].moves;
     moves.clear();
-    generate_legal_moves_inplace(board, stm, moves);
+    generate_legal_moves_inplace(board, stm, moves, ctx.bufs[sply].pseudo);
 
     if (moves.empty()) {
         if (is_in_check(board, stm)) {
@@ -757,7 +759,9 @@ SearchResult best_move(
 
     // Generate root moves (not in PlyBuffers — root uses its own vector)
     std::vector<Move> root_moves;
-    generate_legal_moves_inplace(b, side_to_move, root_moves);
+    std::vector<Move> root_pseudo;
+    root_pseudo.reserve(192);
+    generate_legal_moves_inplace(b, side_to_move, root_moves, root_pseudo);
     if (root_moves.empty())
         return SearchResult{Move{0,0,0,0,PieceKind::NONE}, 0.0, 0};
 

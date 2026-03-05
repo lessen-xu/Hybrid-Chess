@@ -241,14 +241,11 @@ static void xiangqi_general_moves(const Board& board, int x, int y, Side side,
 static void xiangqi_soldier_moves(const Board& board, int x, int y, Side side,
                                   std::vector<Move>& out) {
     // Forward for Xiangqi is y-1 (towards Chess side)
-    std::vector<std::pair<int,int>> candidates = {{0, -1}};
     // After crossing river (y <= 4), can also move sideways
-    if (y <= 4) {
-        candidates.push_back({1, 0});
-        candidates.push_back({-1, 0});
-    }
-    for (auto [dx, dy] : candidates) {
-        int nx = x + dx, ny = y + dy;
+    static constexpr int deltas[][2] = {{0,-1},{1,0},{-1,0}};
+    int n = (y <= 4) ? 3 : 1;
+    for (int i = 0; i < n; ++i) {
+        int nx = x + deltas[i][0], ny = y + deltas[i][1];
         if (!board.in_bounds(nx, ny)) continue;
         auto t = board.get(nx, ny);
         if (!t.has_value() || t->side != side)
@@ -315,19 +312,25 @@ static void piece_moves(const Board& board, int x, int y, const Piece& p,
     if (k == PieceKind::SOLDIER) { xiangqi_soldier_moves(board, x, y, s, out); return; }
 }
 
-// ── Pseudo-legal move generation (direct grid scan, no iter_pieces) ──
+// ── Pseudo-legal move generation ──
 
-std::vector<Move> generate_pseudo_legal_moves(const Board& board, Side side) {
-    // Note: no_queen_promotion defaults to false (matching Python default)
-    std::vector<Move> moves;
+void generate_pseudo_legal_moves_inplace(const Board& board, Side side,
+                                         std::vector<Move>& out) {
+    // out is assumed already cleared by the caller.
     for (int y = 0; y < BOARD_H; ++y) {
         for (int x = 0; x < BOARD_W; ++x) {
             auto& cell = board.grid[y][x];
             if (!cell.has_value()) continue;
             if (cell->side != side) continue;
-            piece_moves(board, x, y, *cell, false, moves);
+            piece_moves(board, x, y, *cell, false, out);
         }
     }
+}
+
+std::vector<Move> generate_pseudo_legal_moves(const Board& board, Side side) {
+    std::vector<Move> moves;
+    moves.reserve(128);
+    generate_pseudo_legal_moves_inplace(board, side, moves);
     return moves;
 }
 
@@ -673,35 +676,41 @@ bool is_in_check(const Board& board, Side side) {
     return is_square_attacked(board, rx, ry, opponent(side));
 }
 
-// ── Legal move generation (single clone + do/undo) ──
+// ── Legal move generation ──
 
-std::vector<Move> generate_legal_moves(const Board& board, Side side) {
-    std::vector<Move> out;
-    auto pseudo = generate_pseudo_legal_moves(board, side);
-    out.reserve(pseudo.size());
-    Board tmp = board.clone();  // single clone
-    for (auto& mv : pseudo) {
-        UndoInfo u;
-        make_move(tmp, mv, u);
-        if (!is_in_check(tmp, side))
-            out.push_back(mv);
-        unmake_move(tmp, mv, u);
-    }
-    return out;
-}
-
-// ── Legal move generation, zero-clone (for AB search internal use) ──
-
-void generate_legal_moves_inplace(Board& board, Side side, std::vector<Move>& out) {
-    auto pseudo = generate_pseudo_legal_moves(board, side);
-    out.reserve(pseudo.size());
-    for (auto& mv : pseudo) {
+// Full scratch version: zero hidden heap alloc when buffers are pre-allocated.
+void generate_legal_moves_inplace(Board& board, Side side,
+                                   std::vector<Move>& out,
+                                   std::vector<Move>& pseudo_scratch) {
+    pseudo_scratch.clear();
+    generate_pseudo_legal_moves_inplace(board, side, pseudo_scratch);
+    out.clear();
+    out.reserve(pseudo_scratch.size());
+    for (auto& mv : pseudo_scratch) {
         UndoInfo u;
         make_move(board, mv, u);
         if (!is_in_check(board, side))
             out.push_back(mv);
         unmake_move(board, mv, u);
     }
+}
+
+// Convenience: creates local pseudo_scratch (one alloc per call).
+void generate_legal_moves_inplace(Board& board, Side side,
+                                   std::vector<Move>& out) {
+    std::vector<Move> pseudo_scratch;
+    pseudo_scratch.reserve(128);
+    generate_legal_moves_inplace(board, side, out, pseudo_scratch);
+}
+
+// Const-board version: clones board, returns vector.
+std::vector<Move> generate_legal_moves(const Board& board, Side side) {
+    Board tmp = board.clone();
+    std::vector<Move> out;
+    std::vector<Move> pseudo;
+    pseudo.reserve(128);
+    generate_legal_moves_inplace(tmp, side, out, pseudo);
+    return out;
 }
 
 // ── Terminal state detection ──

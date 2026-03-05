@@ -284,6 +284,7 @@ AZ is **undefeated** against AB-d2. It breaks the cowardice lock (95%→68% draw
 | 46 | **PVS + Aspiration Windows:** Negascout null-window scout + re-search in both negamax paths, root aspiration windows (0.75 initial, 5 retries, exp widening), test_ab_cpp 0.52s (was 1.49s), all tests green |
 | 47 | **Royal cache:** O(1) king/general lookup via `royal_sq[2]` in Board, incremental maintenance in `set`/`move_piece`, `is_in_check`/`has_royal`/`terminal_info` use cache (zero grid scan), test_ab_cpp 0.16s (was 0.52s), 28+40+103 tests green |
 | 48 | **Fast is_square_attacked:** reverse-ray/offset attack detection (~230 LOC) replaces O(W×H) grid scan, covers all 12 piece types (Knight L-offset, Horse reverse-L+leg, Cannon slide+screen, Elephant eye+river, Advisor/General palace, flying general King-only), deep equivalence test (20 seeds × 300 plies = 19.4M checks), 29+40+103 tests green |
+| 49 | **In-place movegen scratch buffers:** `generate_pseudo_legal_moves_inplace` + 4-arg `generate_legal_moves_inplace(board, side, out, pseudo_scratch)`, `PlyBuffers.pseudo` added to AB search, all 5 call sites use scratch version (zero hidden heap alloc in movegen hot path), `xiangqi_soldier_moves` static array, 80+40+103 tests green |
 
 ---
 

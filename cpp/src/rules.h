@@ -35,6 +35,16 @@ void unmake_move(Board& board, const Move& mv, const UndoInfo& undo);
 // Board is guaranteed unchanged on return.
 void generate_legal_moves_inplace(Board& board, Side side, std::vector<Move>& out);
 
+// Full scratch version: caller provides pseudo_scratch buffer to avoid
+// internal pseudo-legal vector allocation (zero hidden heap alloc).
+void generate_legal_moves_inplace(Board& board, Side side,
+                                   std::vector<Move>& out,
+                                   std::vector<Move>& pseudo_scratch);
+
+// In-place pseudo-legal move generation (appends to out, caller clears).
+void generate_pseudo_legal_moves_inplace(const Board& board, Side side,
+                                          std::vector<Move>& out);
+
 // ── Attack detection ──
 //
 // SEMANTICS: "attacked" here means "reachable by a pseudo-legal move of
