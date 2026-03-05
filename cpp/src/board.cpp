@@ -136,6 +136,8 @@ Board Board::empty() {
         for (int x = 0; x < BOARD_W; x++)
             b.grid[y][x] = std::nullopt;
     b.zkey = {0, 0};
+    b.royal_sq[0] = -1;
+    b.royal_sq[1] = -1;
     return b;
 }
 
@@ -145,6 +147,8 @@ Board Board::clone() const {
         for (int x = 0; x < BOARD_W; x++)
             b.grid[y][x] = grid[y][x];
     b.zkey = zkey;
+    b.royal_sq[0] = royal_sq[0];
+    b.royal_sq[1] = royal_sq[1];
     return b;
 }
 
@@ -160,15 +164,25 @@ std::optional<Piece> Board::get(int x, int y) const {
 void Board::set(int x, int y, std::optional<Piece> piece) {
     assert(in_bounds(x, y));
     const auto& zt = zobrist_table();
+    int sq = sq_encode(x, y);
     // XOR out old piece
     auto& old = grid[y][x];
-    if (old.has_value())
+    if (old.has_value()) {
         zkey ^= zt.get_piece_key(old->side, old->kind, x, y);
+        // Clear royal cache only if it still points to THIS square
+        if (is_royal_kind(old->side, old->kind) &&
+            royal_sq[side_index(old->side)] == sq)
+            royal_sq[side_index(old->side)] = -1;
+    }
     // Set new value
     grid[y][x] = piece;
     // XOR in new piece
-    if (piece.has_value())
+    if (piece.has_value()) {
         zkey ^= zt.get_piece_key(piece->side, piece->kind, x, y);
+        // Update royal cache if placing a royal
+        if (is_royal_kind(piece->side, piece->kind))
+            royal_sq[side_index(piece->side)] = sq;
+    }
 }
 
 std::optional<Piece> Board::move_piece(int fx, int fy, int tx, int ty) {
@@ -179,13 +193,20 @@ std::optional<Piece> Board::move_piece(int fx, int fy, int tx, int ty) {
     // XOR out source piece
     zkey ^= zt.get_piece_key(p->side, p->kind, fx, fy);
     // XOR out captured piece (if any)
-    if (captured.has_value())
+    if (captured.has_value()) {
         zkey ^= zt.get_piece_key(captured->side, captured->kind, tx, ty);
+        // Clear royal cache if capturing a royal
+        if (is_royal_kind(captured->side, captured->kind))
+            royal_sq[side_index(captured->side)] = -1;
+    }
     // XOR in piece at destination
     zkey ^= zt.get_piece_key(p->side, p->kind, tx, ty);
     // Update grid (bypass set() to avoid double XOR)
     grid[ty][tx] = p;
     grid[fy][fx] = std::nullopt;
+    // Update royal cache if moving a royal
+    if (is_royal_kind(p->side, p->kind))
+        royal_sq[side_index(p->side)] = sq_encode(tx, ty);
     return captured;
 }
 
@@ -256,4 +277,26 @@ std::string Board::zobrist_key_hex_recompute(Side stm) const {
 
 void Board::recompute_zkey() {
     zkey = compute_zkey_from_grid(grid);
+}
+
+void Board::recompute_royal_cache() {
+    royal_sq[0] = -1;  // CHESS
+    royal_sq[1] = -1;  // XIANGQI
+    for (int y = 0; y < BOARD_H; ++y)
+        for (int x = 0; x < BOARD_W; ++x) {
+            auto& cell = grid[y][x];
+            if (cell.has_value() && is_royal_kind(cell->side, cell->kind))
+                royal_sq[side_index(cell->side)] = sq_encode(x, y);
+        }
+}
+
+int Board::royal_square_recompute(Side s) const {
+    PieceKind target = (s == Side::CHESS) ? PieceKind::KING : PieceKind::GENERAL;
+    for (int y = 0; y < BOARD_H; ++y)
+        for (int x = 0; x < BOARD_W; ++x) {
+            auto& cell = grid[y][x];
+            if (cell.has_value() && cell->side == s && cell->kind == target)
+                return sq_encode(x, y);
+        }
+    return -1;
 }

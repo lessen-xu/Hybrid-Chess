@@ -208,3 +208,45 @@ class TestLegacySHA1Repetition:
         assert r1.nodes == r2.nodes
 
 
+class TestRoyalCacheCorrectness:
+    """royal_square must match royal_square_recompute for both sides."""
+
+    def test_initial_board(self):
+        board = _initial_board()
+        for side in [eng.Side.CHESS, eng.Side.XIANGQI]:
+            assert board.royal_square(side) == board.royal_square_recompute(side)
+            assert board.has_royal(side) is True
+
+    def test_after_set_piece(self):
+        """After setting pieces manually, cache must remain correct."""
+        board = eng.Board.empty()
+        board.set(4, 0, eng.Piece(eng.PieceKind.KING, eng.Side.CHESS))
+        board.set(4, 9, eng.Piece(eng.PieceKind.GENERAL, eng.Side.XIANGQI))
+        assert board.royal_square(eng.Side.CHESS) == board.royal_square_recompute(eng.Side.CHESS)
+        assert board.royal_square(eng.Side.XIANGQI) == board.royal_square_recompute(eng.Side.XIANGQI)
+
+
+class TestRoyalCacheInvariance:
+    """best_move must not mutate the board's royal cache."""
+
+    def test_best_move_preserves_cache(self):
+        board = _initial_board()
+        rc0 = board.royal_square(eng.Side.CHESS)
+        rx0 = board.royal_square(eng.Side.XIANGQI)
+        zk0 = board.zobrist_key_hex(eng.Side.CHESS)
+        eng.best_move(board, eng.Side.CHESS, 3, {}, 0, 400)
+        assert board.royal_square(eng.Side.CHESS) == rc0
+        assert board.royal_square(eng.Side.XIANGQI) == rx0
+        assert board.zobrist_key_hex(eng.Side.CHESS) == zk0
+
+
+class TestRoyalCacheApplyMove:
+    """apply_move must produce a board with correct royal cache."""
+
+    def test_apply_move_cache(self):
+        board = _initial_board()
+        legal = eng.generate_legal_moves(board, eng.Side.CHESS)
+        assert len(legal) > 0
+        b2 = eng.apply_move(board, legal[0])
+        for side in [eng.Side.CHESS, eng.Side.XIANGQI]:
+            assert b2.royal_square(side) == b2.royal_square_recompute(side)

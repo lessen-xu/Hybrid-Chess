@@ -98,7 +98,10 @@ PYBIND11_MODULE(hybrid_cpp_engine, m) {
         .def("iter_pieces", &Board::iter_pieces)
         .def("board_hash", &Board::board_hash, py::arg("side_to_move"))
         .def("zobrist_key_hex", &Board::zobrist_key_hex, py::arg("side_to_move"))
-        .def("zobrist_key_hex_recompute", &Board::zobrist_key_hex_recompute, py::arg("side_to_move"));
+        .def("zobrist_key_hex_recompute", &Board::zobrist_key_hex_recompute, py::arg("side_to_move"))
+        .def("royal_square", &Board::royal_square, py::arg("side"))
+        .def("has_royal", &Board::has_royal, py::arg("side"))
+        .def("royal_square_recompute", &Board::royal_square_recompute, py::arg("side"));
 
     // ── Free functions ──
     m.def("generate_pseudo_legal_moves", &generate_pseudo_legal_moves);

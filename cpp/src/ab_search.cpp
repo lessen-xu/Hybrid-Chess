@@ -49,20 +49,7 @@ static double piece_value(PieceKind k) {
     }
 }
 
-// ═══════════════════════════════════════════════════════════════
-// Royal existence check (direct grid scan)
-// ═══════════════════════════════════════════════════════════════
 
-static bool has_royal(const Board& board, Side side) {
-    PieceKind target = (side == Side::CHESS) ? PieceKind::KING : PieceKind::GENERAL;
-    for (int y = 0; y < BOARD_H; ++y)
-        for (int x = 0; x < BOARD_W; ++x) {
-            auto& cell = board.grid[y][x];
-            if (cell.has_value() && cell->side == side && cell->kind == target)
-                return true;
-        }
-    return false;
-}
 
 // ═══════════════════════════════════════════════════════════════
 // Evaluation constants
@@ -455,11 +442,11 @@ static double negamax_z(Board& board, Side stm, int depth,
     nodes++;
 
     // ── Inline terminal detection ──
-    if (!has_royal(board, Side::CHESS)) {
+    if (!board.has_royal(Side::CHESS)) {
         double score = WIN_SCORE - static_cast<double>(ply);
         return (Side::XIANGQI == root_perspective) ? score : -score;
     }
-    if (!has_royal(board, Side::XIANGQI)) {
+    if (!board.has_royal(Side::XIANGQI)) {
         double score = WIN_SCORE - static_cast<double>(ply);
         return (Side::CHESS == root_perspective) ? score : -score;
     }
@@ -590,11 +577,11 @@ static double negamax_sha1(Board& board, Side stm, int depth,
                            SearchContext& ctx, int sply) {
     nodes++;
 
-    if (!has_royal(board, Side::CHESS)) {
+    if (!board.has_royal(Side::CHESS)) {
         double score = WIN_SCORE - static_cast<double>(ply);
         return (Side::XIANGQI == root_perspective) ? score : -score;
     }
-    if (!has_royal(board, Side::XIANGQI)) {
+    if (!board.has_royal(Side::XIANGQI)) {
         double score = WIN_SCORE - static_cast<double>(ply);
         return (Side::CHESS == root_perspective) ? score : -score;
     }
@@ -763,7 +750,7 @@ SearchResult best_move(
     Board b = board.clone();
     g_tt.new_search();
 
-    if (!has_royal(b, Side::CHESS) || !has_royal(b, Side::XIANGQI))
+    if (!b.has_royal(Side::CHESS) || !b.has_royal(Side::XIANGQI))
         return SearchResult{Move{0,0,0,0,PieceKind::NONE}, 0.0, 0};
     if (ply >= max_plies)
         return SearchResult{Move{0,0,0,0,PieceKind::NONE}, 0.0, 0};

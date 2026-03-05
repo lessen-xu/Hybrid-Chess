@@ -216,9 +216,8 @@ static void xiangqi_general_moves(const Board& board, int x, int y, Side side,
     }
 
     // Flying general: if King is on the same file with no pieces between
-    auto king_pos = find_royal(board, Side::CHESS);
-    if (king_pos.has_value()) {
-        auto [kx, ky] = *king_pos;
+    auto [kx, ky] = board.royal_xy(Side::CHESS);
+    if (kx >= 0) {
         if (kx == x) {
             int step = (ky > y) ? 1 : -1;
             int cy = y + step;
@@ -408,9 +407,9 @@ bool is_square_attacked(const Board& board, int x, int y, Side by_side) {
 // ── Check detection ──
 
 bool is_in_check(const Board& board, Side side) {
-    auto royal = find_royal(board, side);
-    if (!royal.has_value()) return true;  // royal captured
-    auto [rx, ry] = *royal;
+    int sq = board.royal_square(side);
+    if (sq < 0) return true;  // royal captured
+    int rx = sq_x(sq), ry = sq_y(sq);
     return is_square_attacked(board, rx, ry, opponent(side));
 }
 
@@ -451,11 +450,11 @@ GameInfo terminal_info(const Board& board, Side side_to_move,
                        const std::unordered_map<std::string,int>& repetition_table,
                        int ply, int max_plies) {
     // 1) Royal existence
-    auto chess_royal = find_royal(board, Side::CHESS);
-    auto xiangqi_royal = find_royal(board, Side::XIANGQI);
-    if (!chess_royal.has_value())
+    bool chess_has = board.has_royal(Side::CHESS);
+    bool xiangqi_has = board.has_royal(Side::XIANGQI);
+    if (!chess_has)
         return {TerminalStatus::XIANGQI_WIN, 2, "Chess king captured"};
-    if (!xiangqi_royal.has_value())
+    if (!xiangqi_has)
         return {TerminalStatus::CHESS_WIN, 1, "Xiangqi general captured"};
 
     // 2) Move limit
