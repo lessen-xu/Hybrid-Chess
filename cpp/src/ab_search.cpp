@@ -1,10 +1,12 @@
 // ab_search.cpp — Full Alpha-Beta (Negamax) search in C++.
+// Step 6: Per-ply buffer pre-allocation, leaf eval 1× movegen.
 // Step 5: Zobrist 128-bit hash replaces SHA1 in hot path.
 // Step 4: TT + Iterative Deepening + Killer/History heuristics.
 //
 // Performance: zero Board clones during search. Uses make_move/unmake_move.
 // Zobrist mode: each node O(1) ZKey XOR — zero SHA1 calls in hot path.
-// SHA1 legacy mode: each node 1× board_hash (backward compatible).
+// Per-ply pre-allocated buffers — zero heap allocation in recursive search.
+// Leaf eval: 1× movegen (opp only), reuses stm move count from search.
 // Transposition Table with generation-based isolation (deterministic).
 // Iterative Deepening from depth 1 to requested depth.
 
@@ -60,36 +62,11 @@ static bool has_royal(const Board& board, Side side) {
 }
 
 // ═══════════════════════════════════════════════════════════════
-// Evaluation — material + mobility + check bonus
+// Evaluation constants
 // ═══════════════════════════════════════════════════════════════
 
 static constexpr double MOBILITY_WEIGHT = 0.05;
 static constexpr double CHECK_BONUS     = 0.3;
-
-static double evaluate(Board& board, Side perspective) {
-    double mat = 0.0;
-    for (int y = 0; y < BOARD_H; ++y)
-        for (int x = 0; x < BOARD_W; ++x) {
-            auto& cell = board.grid[y][x];
-            if (cell.has_value()) {
-                double v = piece_value(cell->kind);
-                mat += (cell->side == perspective) ? v : -v;
-            }
-        }
-
-    Side opp = opponent(perspective);
-    std::vector<Move> my_m, op_m;
-    generate_legal_moves_inplace(board, perspective, my_m);
-    generate_legal_moves_inplace(board, opp, op_m);
-    double mob = MOBILITY_WEIGHT * static_cast<double>(
-        static_cast<int>(my_m.size()) - static_cast<int>(op_m.size()));
-
-    double chk = 0.0;
-    if (is_in_check(board, opp))         chk += CHECK_BONUS;
-    if (is_in_check(board, perspective)) chk -= CHECK_BONUS;
-
-    return mat + mob + chk;
-}
 
 // ═══════════════════════════════════════════════════════════════
 // Transposition Table
@@ -114,7 +91,6 @@ struct TTEntry {
 
 // Parse first 32 hex chars of SHA1 string into two uint64_t (legacy only)
 static void parse_hash_key(const std::string& hex, uint64_t& k1, uint64_t& k2) {
-    // hex is 40 chars; we use first 32 (128 bits)
     auto hex4 = [](char c) -> uint64_t {
         if (c >= '0' && c <= '9') return c - '0';
         if (c >= 'a' && c <= 'f') return c - 'a' + 10;
@@ -152,7 +128,6 @@ struct TranspositionTable {
     void new_search() {
         generation++;
         if (generation == 0) {
-            // Overflow: clear all generation fields, then set to 1
             for (auto& e : table) e.generation = 0;
             generation = 1;
         }
@@ -163,7 +138,6 @@ struct TranspositionTable {
         return static_cast<size_t>(h & TT_MASK);
     }
 
-    // Returns pointer to entry if hit, nullptr if miss
     const TTEntry* probe(uint64_t k1, uint64_t k2, uint8_t rb) const {
         size_t idx = index(k1, k2, rb);
         const auto& e = table[idx];
@@ -179,7 +153,6 @@ struct TranspositionTable {
                int depth, double value, uint8_t flag, const Move& bm) {
         size_t idx = index(k1, k2, rb);
         auto& e = table[idx];
-        // Deterministic replace: stale generation -> always replace; same gen -> only if deeper
         if (e.generation != generation || depth >= e.depth) {
             e.key1 = k1;
             e.key2 = k2;
@@ -193,11 +166,47 @@ struct TranspositionTable {
     }
 };
 
-// Global TT (persists across best_move calls, but generation isolates them)
 static TranspositionTable g_tt;
 
 // ═══════════════════════════════════════════════════════════════
-// Search context — per best_move() call, holds killer/history
+// ScoredMove — for sorting without extra pair<MoveKey,Move> alloc
+// ═══════════════════════════════════════════════════════════════
+
+struct ScoredMove {
+    Move mv;
+    int    phase;       // 0=TT PV, 1=capture/check, 2=killer, 3=quiet
+    double score;       // within-phase sort (descending)
+    int    hist;        // history bonus for quiet moves
+};
+
+static bool scored_move_cmp(const ScoredMove& a, const ScoredMove& b) {
+    if (a.phase != b.phase) return a.phase < b.phase;
+    if (a.score != b.score) return a.score > b.score;
+    if (a.hist  != b.hist)  return a.hist  > b.hist;
+    // Tie-break by move coordinates (deterministic)
+    auto ta = std::make_tuple(a.mv.fx, a.mv.fy, a.mv.tx, a.mv.ty, static_cast<int>(a.mv.promotion));
+    auto tb = std::make_tuple(b.mv.fx, b.mv.fy, b.mv.tx, b.mv.ty, static_cast<int>(b.mv.promotion));
+    return ta < tb;
+}
+
+// ═══════════════════════════════════════════════════════════════
+// Per-ply buffers — pre-allocated, reused across recursive calls
+// ═══════════════════════════════════════════════════════════════
+
+struct PlyBuffers {
+    std::vector<Move> moves;       // stm legal moves
+    std::vector<Move> moves_opp;   // opp legal moves (leaf eval)
+    std::vector<ScoredMove> scored; // for sorting
+
+    PlyBuffers() {
+        moves.reserve(192);
+        moves_opp.reserve(192);
+        scored.reserve(192);
+    }
+};
+
+// ═══════════════════════════════════════════════════════════════
+// Search context — per best_move() call
 // ═══════════════════════════════════════════════════════════════
 
 static constexpr int MAX_SEARCH_PLY = 256;
@@ -210,6 +219,9 @@ struct SearchContext {
     // History heuristic: from_sq * 90 + to_sq
     int history[90 * 90];
 
+    // Per-ply pre-allocated buffers
+    std::vector<PlyBuffers> bufs;
+
     // Zobrist-mode repetition tables
     std::unordered_map<ZKey128,int> base_rep_z;
     std::unordered_map<ZKey128,int> path_rep_z;
@@ -221,6 +233,11 @@ struct SearchContext {
             killer2[i] = empty;
         }
         std::memset(history, 0, sizeof(history));
+    }
+
+    void init_buffers(int max_depth) {
+        // sply ranges from 0 (root) up to max_depth + some margin
+        bufs.resize(max_depth + 4);
     }
 
     void update_killers(int sply, const Move& mv) {
@@ -255,7 +272,6 @@ struct SearchContext {
         return match(killer1[sply]) || match(killer2[sply]);
     }
 
-    // Zobrist repetition total count
     int rep_count_z(const ZKey128& key) const {
         int c = 0;
         auto it1 = base_rep_z.find(key);
@@ -267,29 +283,8 @@ struct SearchContext {
 };
 
 // ═══════════════════════════════════════════════════════════════
-// Move ordering: TT PV > captures+checks > killers > history > tie-break
+// Move ordering — writes sorted result into moves buffer in-place
 // ═══════════════════════════════════════════════════════════════
-
-struct MoveKey {
-    int    phase;       // 0=TT PV, 1=capture/check, 2=killer, 3=quiet
-    double score;       // within-phase sort (descending)
-    int    hist;        // history bonus for quiet moves
-    int fx, fy, tx, ty; // tie-break
-    int promo;
-};
-
-static bool move_key_cmp(const std::pair<MoveKey, Move>& a,
-                          const std::pair<MoveKey, Move>& b) {
-    if (a.first.phase != b.first.phase)
-        return a.first.phase < b.first.phase;
-    if (a.first.score != b.first.score)
-        return a.first.score > b.first.score;
-    if (a.first.hist != b.first.hist)
-        return a.first.hist > b.first.hist;
-    auto ta = std::make_tuple(a.first.fx, a.first.fy, a.first.tx, a.first.ty, a.first.promo);
-    auto tb = std::make_tuple(b.first.fx, b.first.fy, b.first.tx, b.first.ty, b.first.promo);
-    return ta < tb;
-}
 
 static bool moves_equal(const Move& a, const Move& b) {
     return a.fx == b.fx && a.fy == b.fy &&
@@ -297,22 +292,27 @@ static bool moves_equal(const Move& a, const Move& b) {
            a.promotion == b.promotion;
 }
 
-static std::vector<Move> order_moves(Board& board, Side stm,
-                                      const std::vector<Move>& moves,
-                                      const Move& tt_move,
-                                      const SearchContext& ctx, int sply) {
+// Sorts moves in-place using scored buffer. Preserves exact same ordering
+// as the old order_moves function for determinism.
+static void order_moves_inplace(Board& board, Side stm,
+                                std::vector<Move>& moves,
+                                const Move& tt_move,
+                                SearchContext& ctx, int sply) {
     bool has_tt = (tt_move.fx != 0 || tt_move.fy != 0 ||
                    tt_move.tx != 0 || tt_move.ty != 0 ||
                    tt_move.promotion != PieceKind::NONE);
 
-    std::vector<std::pair<MoveKey, Move>> keyed;
-    keyed.reserve(moves.size());
+    auto& scored = ctx.bufs[sply].scored;
+    scored.clear();
 
     for (auto& mv : moves) {
+        ScoredMove sm;
+        sm.mv = mv;
+
         // Phase 0: TT PV move
         if (has_tt && moves_equal(mv, tt_move)) {
-            keyed.push_back({MoveKey{0, 100.0, 0,
-                mv.fx, mv.fy, mv.tx, mv.ty, static_cast<int>(mv.promotion)}, mv});
+            sm.phase = 0; sm.score = 100.0; sm.hist = 0;
+            scored.push_back(sm);
             continue;
         }
 
@@ -332,36 +332,78 @@ static std::vector<Move> order_moves(Board& board, Side stm,
         double tactical_score = cap + chk;
 
         if (tactical_score > 0.0) {
-            // Phase 1: captures/checks
-            keyed.push_back({MoveKey{1, tactical_score, 0,
-                mv.fx, mv.fy, mv.tx, mv.ty, static_cast<int>(mv.promotion)}, mv});
+            sm.phase = 1; sm.score = tactical_score; sm.hist = 0;
         } else if (ctx.is_killer(sply, mv)) {
-            // Phase 2: killer moves
-            keyed.push_back({MoveKey{2, 0.0, 0,
-                mv.fx, mv.fy, mv.tx, mv.ty, static_cast<int>(mv.promotion)}, mv});
+            sm.phase = 2; sm.score = 0.0; sm.hist = 0;
         } else {
-            // Phase 3: quiet moves, sorted by history
-            int hist = ctx.get_history(mv);
-            keyed.push_back({MoveKey{3, 0.0, hist,
-                mv.fx, mv.fy, mv.tx, mv.ty, static_cast<int>(mv.promotion)}, mv});
+            sm.phase = 3; sm.score = 0.0; sm.hist = ctx.get_history(mv);
         }
+        scored.push_back(sm);
     }
 
-    std::stable_sort(keyed.begin(), keyed.end(), move_key_cmp);
+    std::stable_sort(scored.begin(), scored.end(), scored_move_cmp);
 
-    std::vector<Move> result;
-    result.reserve(moves.size());
-    for (auto& [k, mv] : keyed) {
-        result.push_back(mv);
+    // Write back sorted moves
+    for (size_t i = 0; i < scored.size(); ++i) {
+        moves[i] = scored[i].mv;
     }
-    return result;
+}
+
+// ═══════════════════════════════════════════════════════════════
+// Leaf evaluation — reuses stm_moves_count, only generates opp
+// ═══════════════════════════════════════════════════════════════
+
+static inline double evaluate_leaf(
+        Board& board,
+        Side root_perspective,
+        Side stm,
+        int stm_moves_count,
+        SearchContext& ctx,
+        int sply) {
+    // Material (grid scan)
+    double mat = 0.0;
+    for (int y = 0; y < BOARD_H; ++y)
+        for (int x = 0; x < BOARD_W; ++x) {
+            auto& cell = board.grid[y][x];
+            if (cell.has_value()) {
+                double v = piece_value(cell->kind);
+                mat += (cell->side == root_perspective) ? v : -v;
+            }
+        }
+
+    // Mobility: only generate opp moves (stm moves already known)
+    Side opp = opponent(stm);
+    auto& opp_moves = ctx.bufs[sply].moves_opp;
+    opp_moves.clear();
+    generate_legal_moves_inplace(board, opp, opp_moves);
+    int opp_moves_count = static_cast<int>(opp_moves.size());
+
+    // Compute perspective-relative mobility
+    // Old code: generate_legal_moves(perspective) - generate_legal_moves(opp)
+    // root_perspective's move count depends on whether root_perspective == stm
+    int perspective_count, opp_persp_count;
+    if (root_perspective == stm) {
+        perspective_count = stm_moves_count;
+        opp_persp_count = opp_moves_count;
+    } else {
+        perspective_count = opp_moves_count;
+        opp_persp_count = stm_moves_count;
+    }
+    double mob = MOBILITY_WEIGHT * static_cast<double>(perspective_count - opp_persp_count);
+
+    // Check bonus
+    double chk = 0.0;
+    Side rp_opp = opponent(root_perspective);
+    if (is_in_check(board, rp_opp))            chk += CHECK_BONUS;
+    if (is_in_check(board, root_perspective))   chk -= CHECK_BONUS;
+
+    return mat + mob + chk;
 }
 
 // ═══════════════════════════════════════════════════════════════
 // Repetition guards — RAII push/pop
 // ═══════════════════════════════════════════════════════════════
 
-// Legacy SHA1 repetition guard
 struct RepGuard {
     std::unordered_map<std::string,int>& rep;
     std::string key;
@@ -375,7 +417,6 @@ struct RepGuard {
     }
 };
 
-// Zobrist repetition guard
 struct RepGuardZ {
     std::unordered_map<ZKey128,int>& rep;
     ZKey128 key;
@@ -396,15 +437,13 @@ struct RepGuardZ {
 static double negamax_z(Board& board, Side stm, int depth,
                         double alpha, double beta,
                         SearchContext& ctx,
-                        ZKey128 stm_key,  // board.zobrist_key(stm)
+                        ZKey128 stm_key,
                         int ply, int max_plies,
                         Side root_perspective, int64_t& nodes,
                         int sply) {
     nodes++;
 
     // ── Inline terminal detection ──
-
-    // 1) Royal existence
     if (!has_royal(board, Side::CHESS)) {
         double score = WIN_SCORE - static_cast<double>(ply);
         return (Side::XIANGQI == root_perspective) ? score : -score;
@@ -413,15 +452,13 @@ static double negamax_z(Board& board, Side stm, int depth,
         double score = WIN_SCORE - static_cast<double>(ply);
         return (Side::CHESS == root_perspective) ? score : -score;
     }
-
-    // 2) Move limit
     if (ply >= max_plies) return 0.0;
 
-    // 3) Threefold repetition (MUST check before TT probe)
+    // Threefold repetition
     int rep_count = ctx.rep_count_z(stm_key);
     if (rep_count >= 3) return 0.0;
 
-    // ── TT probe (Zobrist key) ──
+    // ── TT probe ──
     uint64_t k1 = stm_key.lo, k2 = stm_key.hi;
     uint8_t rb = static_cast<uint8_t>(std::min(rep_count, 3));
 
@@ -440,8 +477,9 @@ static double negamax_z(Board& board, Side stm, int depth,
         }
     }
 
-    // ── Generate legal moves ──
-    std::vector<Move> moves;
+    // ── Generate legal moves (into pre-allocated buffer) ──
+    auto& moves = ctx.bufs[sply].moves;
+    moves.clear();
     generate_legal_moves_inplace(board, stm, moves);
 
     if (moves.empty()) {
@@ -450,21 +488,22 @@ static double negamax_z(Board& board, Side stm, int depth,
             double score = WIN_SCORE - static_cast<double>(ply);
             return (winner == root_perspective) ? score : -score;
         }
-        return 0.0;  // stalemate
+        return 0.0;
     }
 
-    // ── Leaf evaluation ──
+    // ── Leaf evaluation (reuse stm move count) ──
     if (depth <= 0) {
-        return evaluate(board, root_perspective);
+        return evaluate_leaf(board, root_perspective, stm,
+                             static_cast<int>(moves.size()), ctx, sply);
     }
 
     // ── Search ──
-    auto ordered = order_moves(board, stm, moves, tt_best, ctx, sply);
+    order_moves_inplace(board, stm, moves, tt_best, ctx, sply);
     Side opp = opponent(stm);
     double best = -INF;
-    Move best_mv = ordered[0];
+    Move best_mv = moves[0];
 
-    for (auto& mv : ordered) {
+    for (auto& mv : moves) {
         UndoInfo u;
         make_move(board, mv, u);
         ZKey128 child_key = board.zobrist_key(opp);
@@ -483,7 +522,6 @@ static double negamax_z(Board& board, Side stm, int depth,
         }
         alpha = std::max(alpha, v);
         if (alpha >= beta) {
-            // Beta cutoff: update killer/history for quiet moves
             bool is_capture = board.get(mv.tx, mv.ty).has_value();
             if (!is_capture) {
                 ctx.update_killers(sply, mv);
@@ -517,9 +555,6 @@ static double negamax_sha1(Board& board, Side stm, int depth,
                            SearchContext& ctx, int sply) {
     nodes++;
 
-    // ── Inline terminal detection ──
-
-    // 1) Royal existence
     if (!has_royal(board, Side::CHESS)) {
         double score = WIN_SCORE - static_cast<double>(ply);
         return (Side::XIANGQI == root_perspective) ? score : -score;
@@ -528,11 +563,8 @@ static double negamax_sha1(Board& board, Side stm, int depth,
         double score = WIN_SCORE - static_cast<double>(ply);
         return (Side::CHESS == root_perspective) ? score : -score;
     }
-
-    // 2) Move limit
     if (ply >= max_plies) return 0.0;
 
-    // 3) Threefold repetition (MUST check before TT probe)
     int rep_count = 0;
     {
         auto it = rep.find(stm_hash_key);
@@ -542,7 +574,7 @@ static double negamax_sha1(Board& board, Side stm, int depth,
         }
     }
 
-    // ── TT probe (use Zobrist key even in SHA1 mode) ──
+    // TT probe (Zobrist key)
     ZKey128 zk = board.zobrist_key(stm);
     uint64_t k1 = zk.lo, k2 = zk.hi;
     uint8_t rb = static_cast<uint8_t>(std::min(rep_count, 3));
@@ -562,8 +594,9 @@ static double negamax_sha1(Board& board, Side stm, int depth,
         }
     }
 
-    // ── Generate legal moves ──
-    std::vector<Move> moves;
+    // Generate legal moves (into pre-allocated buffer)
+    auto& moves = ctx.bufs[sply].moves;
+    moves.clear();
     generate_legal_moves_inplace(board, stm, moves);
 
     if (moves.empty()) {
@@ -572,21 +605,22 @@ static double negamax_sha1(Board& board, Side stm, int depth,
             double score = WIN_SCORE - static_cast<double>(ply);
             return (winner == root_perspective) ? score : -score;
         }
-        return 0.0;  // stalemate
+        return 0.0;
     }
 
-    // ── Leaf evaluation ──
+    // Leaf evaluation (reuse stm move count)
     if (depth <= 0) {
-        return evaluate(board, root_perspective);
+        return evaluate_leaf(board, root_perspective, stm,
+                             static_cast<int>(moves.size()), ctx, sply);
     }
 
-    // ── Search ──
-    auto ordered = order_moves(board, stm, moves, tt_best, ctx, sply);
+    // Search
+    order_moves_inplace(board, stm, moves, tt_best, ctx, sply);
     Side opp = opponent(stm);
     double best = -INF;
-    Move best_mv = ordered[0];
+    Move best_mv = moves[0];
 
-    for (auto& mv : ordered) {
+    for (auto& mv : moves) {
         UndoInfo u;
         make_move(board, mv, u);
         RepGuard guard(rep, board.board_hash(opp));
@@ -613,7 +647,6 @@ static double negamax_sha1(Board& board, Side stm, int depth,
         }
     }
 
-    // ── TT store ──
     uint8_t flag;
     if (best <= alpha0)     flag = TT_UPPER;
     else if (best >= beta)  flag = TT_LOWER;
@@ -631,8 +664,7 @@ static double negamax_sha1(Board& board, Side stm, int depth,
 enum class RepMode { ZOBRIST, SHA1 };
 
 static RepMode detect_rep_mode(const std::unordered_map<std::string,int>& rep) {
-    if (rep.empty()) return RepMode::ZOBRIST;  // default fast path
-    // Check first key
+    if (rep.empty()) return RepMode::ZOBRIST;
     const auto& key = rep.begin()->first;
     auto is_hex = [](const std::string& s) {
         for (char c : s) {
@@ -643,11 +675,9 @@ static RepMode detect_rep_mode(const std::unordered_map<std::string,int>& rep) {
     };
     if (key.size() == 32 && is_hex(key)) return RepMode::ZOBRIST;
     if (key.size() == 40 && is_hex(key)) return RepMode::SHA1;
-    // Fallback SHA1 for unknown formats
     return RepMode::SHA1;
 }
 
-// Parse a 32-hex Zobrist key string back to ZKey128
 static ZKey128 parse_zkey_hex(const std::string& hex) {
     auto hex4 = [](char c) -> uint64_t {
         if (c >= '0' && c <= '9') return c - '0';
@@ -656,7 +686,6 @@ static ZKey128 parse_zkey_hex(const std::string& hex) {
         return 0;
     };
     ZKey128 k{0, 0};
-    // hi first (chars 0..15), lo second (chars 16..31)
     for (int i = 0; i < 16; ++i)
         k.hi = (k.hi << 4) | hex4(hex[i]);
     for (int i = 16; i < 32; ++i)
@@ -676,37 +705,31 @@ SearchResult best_move(
         int ply,
         int max_plies) {
 
-    // Single clone at entry — protects Python's board
     Board b = board.clone();
-
-    // New TT generation for this call (isolates from previous calls)
     g_tt.new_search();
 
-    // Root terminal checks
     if (!has_royal(b, Side::CHESS) || !has_royal(b, Side::XIANGQI))
         return SearchResult{Move{0,0,0,0,PieceKind::NONE}, 0.0, 0};
     if (ply >= max_plies)
         return SearchResult{Move{0,0,0,0,PieceKind::NONE}, 0.0, 0};
 
-    std::vector<Move> moves;
-    generate_legal_moves_inplace(b, side_to_move, moves);
-    if (moves.empty())
+    // Generate root moves (not in PlyBuffers — root uses its own vector)
+    std::vector<Move> root_moves;
+    generate_legal_moves_inplace(b, side_to_move, root_moves);
+    if (root_moves.empty())
         return SearchResult{Move{0,0,0,0,PieceKind::NONE}, 0.0, 0};
 
-    // Fresh search context (killer/history reset each call for determinism)
     SearchContext ctx;
+    ctx.init_buffers(depth + 2);
 
     int64_t total_nodes = 0;
-    Move best_mv = moves[0];
+    Move best_mv = root_moves[0];
     double best_val = -INF;
     Side opp = opponent(side_to_move);
 
-    // Detect repetition mode
     RepMode mode = detect_rep_mode(repetition_table);
 
     if (mode == RepMode::ZOBRIST) {
-        // ── ZOBRIST fast path ──
-        // Parse base repetition table
         for (auto& [k, v] : repetition_table) {
             ctx.base_rep_z[parse_zkey_hex(k)] = v;
         }
@@ -714,23 +737,23 @@ SearchResult best_move(
         ZKey128 root_key = b.zobrist_key(side_to_move);
 
         for (int d = 1; d <= depth; ++d) {
-            // Reset path_rep each iteration
             ctx.path_rep_z.clear();
 
             double alpha = -INF, beta = INF;
-            Move iter_best = moves[0];
+            Move iter_best = root_moves[0];
             double iter_val = -INF;
 
-            // TT PV from previous iteration for root move ordering
             int root_rep = ctx.rep_count_z(root_key);
             uint8_t root_rb = static_cast<uint8_t>(std::min(root_rep, 3));
             Move root_tt_mv{0, 0, 0, 0, PieceKind::NONE};
             const TTEntry* root_tte = g_tt.probe(root_key.lo, root_key.hi, root_rb);
             if (root_tte) root_tt_mv = root_tte->best_move;
 
-            auto ordered = order_moves(b, side_to_move, moves, root_tt_mv, ctx, 0);
+            // Copy root moves to bufs[0] for ordering
+            ctx.bufs[0].moves = root_moves;
+            order_moves_inplace(b, side_to_move, ctx.bufs[0].moves, root_tt_mv, ctx, 0);
 
-            for (auto& mv : ordered) {
+            for (auto& mv : ctx.bufs[0].moves) {
                 UndoInfo u;
                 make_move(b, mv, u);
                 ZKey128 child_key = b.zobrist_key(opp);
@@ -754,17 +777,15 @@ SearchResult best_move(
             best_val = iter_val;
         }
     } else {
-        // ── SHA1 legacy path ──
         std::string root_key = b.board_hash(side_to_move);
 
         for (int d = 1; d <= depth; ++d) {
             auto rep = repetition_table;
 
             double alpha = -INF, beta = INF;
-            Move iter_best = moves[0];
+            Move iter_best = root_moves[0];
             double iter_val = -INF;
 
-            // TT PV (use Zobrist key for TT)
             ZKey128 root_zk = b.zobrist_key(side_to_move);
             int root_rep = 0;
             {
@@ -776,9 +797,10 @@ SearchResult best_move(
             const TTEntry* root_tte = g_tt.probe(root_zk.lo, root_zk.hi, root_rb);
             if (root_tte) root_tt_mv = root_tte->best_move;
 
-            auto ordered = order_moves(b, side_to_move, moves, root_tt_mv, ctx, 0);
+            ctx.bufs[0].moves = root_moves;
+            order_moves_inplace(b, side_to_move, ctx.bufs[0].moves, root_tt_mv, ctx, 0);
 
-            for (auto& mv : ordered) {
+            for (auto& mv : ctx.bufs[0].moves) {
                 UndoInfo u;
                 make_move(b, mv, u);
                 RepGuard guard(rep, b.board_hash(opp));

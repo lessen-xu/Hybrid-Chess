@@ -64,11 +64,11 @@ hybrid-chess/
 │       ├── rules.h / rules.cpp         #   Move gen, check, terminal, make/unmake (~450 LOC)
 │       │                               #     make_move / unmake_move: in-place board mutation
 │       │                               #     generate_legal_moves_inplace: zero-clone legal filter
-│       ├── ab_search.h / ab_search.cpp #   Full C++ negamax α-β search (~500 LOC)
+│       ├── ab_search.h / ab_search.cpp #   Full C++ negamax α-β search (~530 LOC)
 │       │                               #     best_move(): single-call entry, SearchResult return
 │       │                               #     Dual-mode: Zobrist fast path (zero SHA1) + SHA1 legacy
-│       │                               #     Zero Board clones during search (1 clone at entry)
-│       │                               #     Zobrist mode: 1× movegen + O(1) XOR key per node
+│       │                               #     Zero Board clones, zero heap alloc in recursive search
+│       │                               #     Per-ply pre-allocated buffers, leaf eval 1× opp movegen
 │       └── bindings.cpp                #   pybind11 module: Board, Move, best_move, etc.
 ├── scripts/                            # CLI tools
 │   ├── train_az_iter.py                #   Main AZ training entrypoint
@@ -136,6 +136,8 @@ The C++ engine (`hybrid_cpp_engine.pyd`) provides both a rules engine and a full
 | Terminal detection | `terminal_info()` call (clones board) | Inline `has_royal` + ply/rep/moves-empty check |
 | Move ordering check detection | `apply_move` clone per move | `make_move` / `unmake_move` per move |
 | `iter_pieces` vector alloc | Every `find_royal`, `pseudo_legal`, `is_square_attacked` | Direct `board.grid[y][x]` scan |
+| Heap allocs in recursion | `vector<Move>` per node (movegen + ordering) | **0** — per-ply pre-allocated `PlyBuffers` |
+| Leaf eval movegen | 2× (`generate_legal_moves` for both sides) | **1×** (reuses stm count, generates opp only) |
 
 **Search features (Steps 4–5):**
 - Negamax + alpha-beta pruning
@@ -276,6 +278,7 @@ AZ is **undefeated** against AB-d2. It breaks the cowardice lock (95%→68% draw
 | 42 | **Inline terminal detection:** negamax bypasses `terminal_info()`, 1× movegen + 1× board_hash per node, `stm_hash_key` parameter threading |
 | 43 | **TT + Iterative Deepening + Killer/History:** 512K-entry transposition table (128-bit key, rep_bucket, generation isolation, mate-score pack/unpack), iterative deepening (depth 1..D), killer moves (2 slots/ply), history heuristic (depth² bonus), move ordering (TT PV > captures+checks > killers > history > tie-break), ~420 LOC, 14 tests pass |
 | 44 | **Zobrist 128-bit hashing:** incremental ZKey128 in Board (`set`/`move_piece` XOR), dual-mode AB search (`negamax_z` zero SHA1 + `negamax_sha1` legacy), TT switched to Zobrist keys, 24 tests pass |
+| 45 | **Per-ply buffers + leaf eval opt:** `PlyBuffers` pre-allocation (zero heap alloc in recursion), `ScoredMove` sort, `evaluate_leaf` reuses stm move count (1× opp movegen vs 2×), all 24+40+env tests pass |
 
 ---
 
