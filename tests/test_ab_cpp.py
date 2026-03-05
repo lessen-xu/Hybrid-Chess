@@ -250,3 +250,30 @@ class TestRoyalCacheApplyMove:
         b2 = eng.apply_move(board, legal[0])
         for side in [eng.Side.CHESS, eng.Side.XIANGQI]:
             assert b2.royal_square(side) == b2.royal_square_recompute(side)
+
+
+class TestAttackEquivalence:
+    """is_square_attacked_fast must exactly match is_square_attacked_slow."""
+
+    def test_random_playout_equivalence(self):
+        """Deterministic 40-ply playout, full-board attack check each step."""
+        import random
+        rng = random.Random(42)
+        board = _initial_board()
+        stm = eng.Side.CHESS
+        for ply in range(40):
+            # Check all squares for both sides
+            for by_side in [eng.Side.CHESS, eng.Side.XIANGQI]:
+                for y in range(10):
+                    for x in range(9):
+                        slow = eng.is_square_attacked_slow(board, x, y, by_side)
+                        fast = eng.is_square_attacked_fast(board, x, y, by_side)
+                        assert slow == fast, (
+                            f"ply={ply} sq=({x},{y}) by={by_side} slow={slow} fast={fast}"
+                        )
+            legal = eng.generate_legal_moves(board, stm)
+            if not legal:
+                break
+            mv = rng.choice(legal)
+            board = eng.apply_move(board, mv)
+            stm = eng.opponent(stm)

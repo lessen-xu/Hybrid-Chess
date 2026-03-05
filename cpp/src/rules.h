@@ -38,6 +38,10 @@ void generate_legal_moves_inplace(Board& board, Side side, std::vector<Move>& ou
 // Check if square (x,y) is attacked by any piece of by_side.
 bool is_square_attacked(const Board& board, int x, int y, Side by_side);
 
+// Slow (grid-scan) and fast (reverse-ray) variants — for equivalence testing.
+bool is_square_attacked_slow(const Board& board, int x, int y, Side by_side);
+bool is_square_attacked_fast(const Board& board, int x, int y, Side by_side);
+
 // Check if side's royal piece is in check.
 bool is_in_check(const Board& board, Side side);
 

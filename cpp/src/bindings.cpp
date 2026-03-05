@@ -108,6 +108,8 @@ PYBIND11_MODULE(hybrid_cpp_engine, m) {
     m.def("generate_legal_moves", &generate_legal_moves);
     m.def("apply_move", &apply_move);
     m.def("is_square_attacked", &is_square_attacked);
+    m.def("is_square_attacked_slow", &is_square_attacked_slow);
+    m.def("is_square_attacked_fast", &is_square_attacked_fast);
     m.def("is_in_check", &is_in_check);
 
     // terminal_info: returns a GameInfo struct

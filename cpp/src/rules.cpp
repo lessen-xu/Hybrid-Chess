@@ -373,9 +373,9 @@ Board apply_move(const Board& board, const Move& mv) {
     return nb;
 }
 
-// ── Attack detection (direct grid scan, no iter_pieces) ──
+// ── Attack detection (SLOW — preserved for equivalence testing) ──
 
-bool is_square_attacked(const Board& board, int x, int y, Side by_side) {
+bool is_square_attacked_slow(const Board& board, int x, int y, Side by_side) {
     for (int py = 0; py < BOARD_H; ++py) {
         for (int px = 0; px < BOARD_W; ++px) {
             auto& cell = board.grid[py][px];
@@ -402,6 +402,253 @@ bool is_square_attacked(const Board& board, int x, int y, Side by_side) {
         }
     }
     return false;
+}
+
+// ── Attack detection (FAST — reverse ray/offset from target square) ──
+
+static inline bool ib(int x, int y) {
+    return x >= 0 && x < BOARD_W && y >= 0 && y < BOARD_H;
+}
+
+static inline bool has_piece(const Board& b, int x, int y, Side s, PieceKind k) {
+    auto& c = b.grid[y][x];
+    return c.has_value() && c->side == s && c->kind == k;
+}
+
+bool is_square_attacked_fast(const Board& board, int x, int y, Side by_side) {
+
+    auto& target_cell = board.grid[y][x];
+    bool target_friendly = target_cell.has_value() && target_cell->side == by_side;
+
+    // ── CHESS pieces ──
+    if (by_side == Side::CHESS) {
+        // Pawn: chess pawn attacks diagonally forward (y+1) REGARDLESS of target
+        // (standard chess convention: pawns "control" squares diagonally)
+        for (int dx : {-1, 1}) {
+            int px = x + dx, py = y - 1;
+            if (ib(px, py) && has_piece(board, px, py, Side::CHESS, PieceKind::PAWN))
+                return true;
+        }
+
+        // For all other CHESS pieces, if target has a friendly piece, no move can land there
+        if (target_friendly)
+            return false;
+
+        // King: 8 neighbors
+        for (auto [dx, dy] : ORTH_DIRS) {
+            int nx = x + dx, ny = y + dy;
+            if (ib(nx, ny) && has_piece(board, nx, ny, Side::CHESS, PieceKind::KING))
+                return true;
+        }
+        for (auto [dx, dy] : DIAG_DIRS) {
+            int nx = x + dx, ny = y + dy;
+            if (ib(nx, ny) && has_piece(board, nx, ny, Side::CHESS, PieceKind::KING))
+                return true;
+        }
+
+        // Knight: 8 L-offsets (no leg block for chess knight)
+        for (auto [dx, dy] : KNIGHT_DELTAS) {
+            int nx = x + dx, ny = y + dy;
+            if (ib(nx, ny) && has_piece(board, nx, ny, Side::CHESS, PieceKind::KNIGHT))
+                return true;
+        }
+
+        // Rook / Queen: orthogonal rays
+        for (auto [dx, dy] : ORTH_DIRS) {
+            int cx = x + dx, cy = y + dy;
+            while (ib(cx, cy)) {
+                auto& c = board.grid[cy][cx];
+                if (c.has_value()) {
+                    if (c->side == Side::CHESS &&
+                        (c->kind == PieceKind::ROOK || c->kind == PieceKind::QUEEN))
+                        return true;
+                    break;
+                }
+                cx += dx; cy += dy;
+            }
+        }
+
+        // Bishop / Queen: diagonal rays
+        for (auto [dx, dy] : DIAG_DIRS) {
+            int cx = x + dx, cy = y + dy;
+            while (ib(cx, cy)) {
+                auto& c = board.grid[cy][cx];
+                if (c.has_value()) {
+                    if (c->side == Side::CHESS &&
+                        (c->kind == PieceKind::BISHOP || c->kind == PieceKind::QUEEN))
+                        return true;
+                    break;
+                }
+                cx += dx; cy += dy;
+            }
+        }
+
+        return false;
+    }
+
+    // ── XIANGQI pieces ──
+    // (by_side == Side::XIANGQI)
+
+    // If target square has a friendly XIANGQI piece, no move can land there
+    if (target_friendly)
+        return false;
+
+    // General: orthogonal 1-step within palace
+    // Original checks: destination must be in palace. Here (x,y) is destination.
+    if (palace_contains(Side::XIANGQI, x, y)) {
+        for (auto [dx, dy] : ORTH_DIRS) {
+            int nx = x + dx, ny = y + dy;
+            if (ib(nx, ny) &&
+                has_piece(board, nx, ny, Side::XIANGQI, PieceKind::GENERAL))
+                return true;
+        }
+    }
+
+    // Flying general: General can capture King on same column with no pieces between.
+    // This is one-directional: General -> King. So if by_side is XIANGQI and target
+    // is on same column as the General, check for clear path.
+    {
+        // Only applies if target (x,y) is the Chess King (one-directional rule)
+        if (target_cell.has_value() && target_cell->kind == PieceKind::KING &&
+            target_cell->side == Side::CHESS) {
+            int gsq = board.royal_square(Side::XIANGQI);
+            if (gsq >= 0) {
+                int gx = sq_x(gsq), gy = sq_y(gsq);
+                if (gx == x && gy != y) {
+                    int step = (y > gy) ? 1 : -1;
+                    int cy = gy + step;
+                    bool blocked = false;
+                    while (cy != y) {
+                        if (board.grid[cy][x].has_value()) { blocked = true; break; }
+                        cy += step;
+                    }
+                    if (!blocked) return true;
+                }
+            }
+        }
+    }
+
+    // Advisor: diagonal 1-step within palace
+    // Original checks: destination must be in palace. Here (x,y) is destination.
+    if (palace_contains(Side::XIANGQI, x, y)) {
+        for (auto [dx, dy] : DIAG_DIRS) {
+            int nx = x + dx, ny = y + dy;
+            if (ib(nx, ny) &&
+                has_piece(board, nx, ny, Side::XIANGQI, PieceKind::ADVISOR))
+                return true;
+        }
+    }
+
+    // Elephant: diagonal 2-step, eye must be empty
+    // Both destination (x,y) AND elephant position (nx,ny) must be y>=5 (own half)
+    if (y >= 5) {
+        static constexpr int deltas[][2] = {{2,2},{2,-2},{-2,2},{-2,-2}};
+        for (auto& d : deltas) {
+            int nx = x + d[0], ny = y + d[1];
+            if (!ib(nx, ny)) continue;
+            if (ny < 5) continue; // elephant must also stay on own half
+            int ex = x + d[0]/2, ey = y + d[1]/2;
+            if (board.grid[ey][ex].has_value()) continue; // eye blocked
+            if (has_piece(board, nx, ny, Side::XIANGQI, PieceKind::ELEPHANT))
+                return true;
+        }
+    }
+
+    // Horse: reverse-L with leg block
+    // A horse at (hx,hy) attacks (x,y) if:
+    //   (hx,hy) = (x-dx, y-dy) for some horse delta (dx,dy)
+    //   and the leg at (hx + leg_dx, hy + leg_dy) is empty
+    // We need to reverse the horse movement table.
+    // Original: horse at (hx,hy), leg at (hx+c[0], hy+c[1]), dest at (hx+c[2], hy+c[3])
+    // So: hx = x - c[2], hy = y - c[3], leg at (hx+c[0], hy+c[1])
+    {
+        static constexpr int candidates[][4] = {
+            {1,0,2,1}, {1,0,2,-1},
+            {-1,0,-2,1}, {-1,0,-2,-1},
+            {0,1,1,2}, {0,1,-1,2},
+            {0,-1,1,-2}, {0,-1,-1,-2},
+        };
+        for (auto& c : candidates) {
+            int hx = x - c[2], hy = y - c[3];
+            if (!ib(hx, hy)) continue;
+            if (!has_piece(board, hx, hy, Side::XIANGQI, PieceKind::HORSE)) continue;
+            int lx = hx + c[0], ly = hy + c[1];
+            if (!ib(lx, ly)) continue;
+            if (board.grid[ly][lx].has_value()) continue; // leg blocked
+            return true;
+        }
+    }
+
+    // Chariot + Cannon slides: orthogonal rays
+    // Chariot: first piece on ray = attack (same as Rook)
+    // Cannon non-capture: can slide to empty (x,y) if no piece blocks the path
+    //   (the target_cell check at top already returned false for friendly pieces,
+    //    so if we reach here, target is either empty or has enemy)
+    bool target_empty = !target_cell.has_value();
+    for (auto [dx, dy] : ORTH_DIRS) {
+        int cx = x + dx, cy = y + dy;
+        while (ib(cx, cy)) {
+            auto& c = board.grid[cy][cx];
+            if (c.has_value()) {
+                if (c->side == Side::XIANGQI) {
+                    if (c->kind == PieceKind::CHARIOT) return true;
+                    if (c->kind == PieceKind::CANNON && target_empty) return true;
+                }
+                break;
+            }
+            cx += dx; cy += dy;
+        }
+    }
+
+    // Cannon: orthogonal rays with exactly one screen between
+    // Cannon jump is capture-only, so target (x,y) must have an enemy piece.
+    // Non-capture slides are already handled above in the Chariot+Cannon section.
+    if (!target_empty) {
+        for (auto [dx, dy] : ORTH_DIRS) {
+            int cx = x + dx, cy = y + dy;
+            // Find first piece (screen)
+            while (ib(cx, cy) && !board.grid[cy][cx].has_value()) {
+                cx += dx; cy += dy;
+            }
+            if (!ib(cx, cy)) continue;
+            // Skip screen, find next piece
+            cx += dx; cy += dy;
+            while (ib(cx, cy) && !board.grid[cy][cx].has_value()) {
+                cx += dx; cy += dy;
+            }
+            if (!ib(cx, cy)) continue;
+            if (board.grid[cy][cx].has_value() &&
+                board.grid[cy][cx]->side == Side::XIANGQI &&
+                board.grid[cy][cx]->kind == PieceKind::CANNON)
+                return true;
+        }
+    }
+
+    // Soldier: can attack (x,y) from positions that move to (x,y)
+    // Soldier moves: always forward (y-1), and sideways (±1,0) if past river (y<=4)
+    // So a soldier at (sx,sy) attacks (x,y) if:
+    //   (sx, sy) = (x, y+1) [forward]  — always valid
+    //   (sx, sy) = (x±1, y) [sideways]  — only if sy <= 4 (soldier past river)
+    {
+        // Forward: soldier at (x, y+1)
+        if (ib(x, y + 1) && has_piece(board, x, y + 1, Side::XIANGQI, PieceKind::SOLDIER))
+            return true;
+        // Sideways: soldier at (x-1, y) or (x+1, y), only if that soldier is past river
+        for (int dx : {-1, 1}) {
+            int sx = x + dx;
+            if (ib(sx, y) && y <= 4 &&
+                has_piece(board, sx, y, Side::XIANGQI, PieceKind::SOLDIER))
+                return true;
+        }
+    }
+
+    return false;
+}
+
+// ── Public API: uses fast path ──
+
+bool is_square_attacked(const Board& board, int x, int y, Side by_side) {
+    return is_square_attacked_fast(board, x, y, by_side);
 }
 
 // ── Check detection ──
