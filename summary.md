@@ -41,7 +41,6 @@ hybrid-chess/
 │   │   ├── base.py                     #   BaseAgent abstract class
 │   │   ├── random_agent.py             #   RandomAgent (uniform random legal move)
 │   │   ├── alphabeta_agent.py          #   AlphaBetaAgent (minimax + alpha-beta pruning, Python rules)
-│   │   ├── alphabeta_cpp_agent.py      #   AlphaBetaCppAgent (same logic, C++ rules, ~80× faster)
 │   │   ├── alphazero_stub.py           #   AlphaZeroMiniAgent (MCTS + neural network)
 │   │   │                               #     _run_mcts_search_cpp: C++ MCTS path (use_cpp=True)
 │   │   ├── az_remote_model.py          #   Remote model proxy for inference server
@@ -80,6 +79,7 @@ hybrid-chess/
 │       ├── types.h                     #   Side, PieceKind, Piece, Move
 │       ├── board.h / board.cpp         #   Board class (9×10 grid, SHA1 hash)
 │       ├── rules.h / rules.cpp         #   Move gen + check + terminal (~350 LOC)
+│       ├── ab_search.h / ab_search.cpp #   Full C++ negamax α-β search + evaluate (~230 LOC)
 │       └── bindings.cpp                #   pybind11 module → hybrid_cpp_engine.pyd
 ├── hybrid/
 │   └── cpp_engine/
@@ -343,7 +343,8 @@ Across evaluations (all **no_queen** ablation), MCTS simulations show a surprisi
 | 36 | Vectorized policy loss: pad+gather+masked_log_softmax, 28× speedup (B=512), 18/18 tests pass |
 | 37 | Static batching + TF32: always full B_max forward, GPU compute 46ms→23ms; 16W: **667 states/s** (3× baseline); torch.compile disabled on Windows (Triton hangs), 18/18 tests pass |
 | 38 | Evaluation protocol: `GameRecord` telemetry (per-ply legal_move_counts + winner_side), 5 new CSV columns, `eval_arena.py` (side-switching evaluation), `analyze_experiment.py` (4 paper figures), `--ablation none/no_queen` support |
-| 39 | EGTA dual-matrix tournament: `egta_tournament.py` (7×7 round-robin, Nash equilibrium via LP, payoff heatmap), `alphabeta_cpp_agent.py` (C++ AB search, **~80× speedup** over Python AB: 3.4s vs 803s for d2 game), `eval_arena.py` gains `ab_d4` + CUDA inference |
+| 39 | EGTA dual-matrix tournament: `egta_tournament.py` (7×7 round-robin, Nash equilibrium via LP, payoff heatmap), `eval_arena.py` gains `ab_d4` + CUDA inference |
+| 40 | Pure C++ negamax search: `ab_search.h/cpp` (~230 LOC, best_move single-call API), eliminates all Python↔C++ per-node overhead, `_CppABAgent` wrapper, 10 new tests pass |
 
 ---
 

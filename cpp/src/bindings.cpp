@@ -7,6 +7,7 @@
 #include "types.h"
 #include "board.h"
 #include "rules.h"
+#include "ab_search.h"
 
 namespace py = pybind11;
 
@@ -112,6 +113,16 @@ PYBIND11_MODULE(hybrid_cpp_engine, m) {
 
     m.def("terminal_info", &terminal_info,
           py::arg("board"), py::arg("side_to_move"),
+          py::arg("repetition_table"), py::arg("ply"), py::arg("max_plies"));
+
+    // ── Alpha-Beta search ──
+    py::class_<SearchResult>(m, "SearchResult")
+        .def_readonly("best_move", &SearchResult::best_move)
+        .def_readonly("score",     &SearchResult::score)
+        .def_readonly("nodes",     &SearchResult::nodes);
+
+    m.def("best_move", &best_move,
+          py::arg("board"), py::arg("side_to_move"), py::arg("depth"),
           py::arg("repetition_table"), py::arg("ply"), py::arg("max_plies"));
 
     // ── Constants ──

@@ -16,7 +16,7 @@ $OutputFile = "$OutDir\hybrid_cpp_engine$ExtSuffix"
 
 Write-Host "=== Building hybrid_cpp_engine ==="
 Write-Host "  Compiler:   $GXX"
-Write-Host "  Sources:    board.cpp, rules.cpp, bindings.cpp"
+Write-Host "  Sources:    board.cpp, rules.cpp, ab_search.cpp, bindings.cpp"
 Write-Host "  Output:     $OutputFile"
 Write-Host "  Python DLL: $PythonDll"
 Write-Host ""
@@ -41,6 +41,7 @@ $args = @(
     "-o", $OutputFile,
     "$SrcDir\board.cpp",
     "$SrcDir\rules.cpp",
+    "$SrcDir\ab_search.cpp",
     "$SrcDir\bindings.cpp"
 )
 

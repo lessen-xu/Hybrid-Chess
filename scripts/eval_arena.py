@@ -50,6 +50,26 @@ from hybrid.agents.base import Agent
 BASELINE_AGENTS = {"random", "ab_d1", "ab_d2", "ab_d4"}
 
 
+class _CppABAgent(Agent):
+    """AlphaBeta agent backed by C++ best_move() — single call per move."""
+    name = "alphabeta_cpp"
+
+    def __init__(self, depth: int):
+        self.depth = depth
+        from hybrid.core.env import _ensure_cpp_maps
+        _ensure_cpp_maps()
+
+    def select_move(self, state, legal_moves):
+        from hybrid.core.env import _sync_to_cpp, _PY_TO_CPP_SIDE, _cpp_to_py_move
+        from hybrid.cpp_engine import hybrid_cpp_engine as eng
+        from hybrid.core.config import MAX_PLIES
+
+        cpp_board = _sync_to_cpp(state.board)
+        cpp_side = _PY_TO_CPP_SIDE[state.side_to_move]
+        r = eng.best_move(cpp_board, cpp_side, self.depth,
+                          state.repetition, state.ply, MAX_PLIES)
+        return _cpp_to_py_move(r.best_move)
+
 def _create_agent(
     spec: str,
     simulations: int = 200,
@@ -64,24 +84,14 @@ def _create_agent(
     if spec == "random":
         from hybrid.agents.random_agent import RandomAgent
         return RandomAgent(seed=seed)
-    if spec == "ab_d1":
+    # AB agents: use C++ best_move when use_cpp=True
+    ab_depths = {"ab_d1": 1, "ab_d2": 2, "ab_d4": 4}
+    if spec in ab_depths:
+        depth = ab_depths[spec]
         if use_cpp:
-            from hybrid.agents.alphabeta_cpp_agent import AlphaBetaCppAgent, SearchConfig
-            return AlphaBetaCppAgent(SearchConfig(depth=1))
+            return _CppABAgent(depth)
         from hybrid.agents.alphabeta_agent import AlphaBetaAgent, SearchConfig
-        return AlphaBetaAgent(SearchConfig(depth=1))
-    if spec == "ab_d2":
-        if use_cpp:
-            from hybrid.agents.alphabeta_cpp_agent import AlphaBetaCppAgent, SearchConfig
-            return AlphaBetaCppAgent(SearchConfig(depth=2))
-        from hybrid.agents.alphabeta_agent import AlphaBetaAgent, SearchConfig
-        return AlphaBetaAgent(SearchConfig(depth=2))
-    if spec == "ab_d4":
-        if use_cpp:
-            from hybrid.agents.alphabeta_cpp_agent import AlphaBetaCppAgent, SearchConfig
-            return AlphaBetaCppAgent(SearchConfig(depth=4))
-        from hybrid.agents.alphabeta_agent import AlphaBetaAgent, SearchConfig
-        return AlphaBetaAgent(SearchConfig(depth=4))
+        return AlphaBetaAgent(SearchConfig(depth=depth))
 
     # AZ checkpoint
     import torch
