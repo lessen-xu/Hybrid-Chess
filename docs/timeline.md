@@ -24,6 +24,7 @@
 | 50 | **Perft + frozen regression:** `perft_nodes(board, stm, depth)` in rules.cpp (per-depth scratch buffers, depth-1 bulk-count optimization), `test_perft_cpp.py` freezes d1–d3 for 3 positions, 90+1s tests green |
 | 51 | **Docs restructure:** `summary.md` (328 LOC) → modular `docs/` layout: `game_rules.md`, `methodology.md`, `results/ab_tournament.md`, `results/az_training.md`, `timeline.md`; lightweight `README.md` (65 LOC); added `paper/`, `notebooks/` placeholders |
 | 52 | **EGTA Sprint 1:** Greedy agent (1-ply capture maximizer) + Pure MCTS (C++ random rollout, `PolicyValueModel` interface) + frozen 9-agent pool (Random, Greedy, Pure MCTS 100, AB d1/d2/d4, AZ iter 2/9/19) + pilot tournament |
+| 53 | **EGTA Sprint 2:** `predict_batch()` for 8× AZ inference speedup, `analyze_topology.py` (alpha-rank + cycle detection), V3 9-agent pool frozen (iter 1/6/9), dual-universe N=100 tournament launched |
 
 ## Frozen Perft Values
 
