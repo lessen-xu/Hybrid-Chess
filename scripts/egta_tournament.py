@@ -194,6 +194,67 @@ def _load_progress(path: str) -> dict | None:
 # Single-universe tournament
 # ====================================================================
 
+def _init_worker(ablation: str):
+    """Per-worker process initializer: apply ablation config."""
+    from hybrid.rl.az_runner import _apply_ablation
+    _apply_ablation(ablation)
+
+
+def _run_pair(args_tuple):
+    """Worker function: play all games for one pair, return results.
+
+    Runs in a subprocess — each call creates its own agents.
+    """
+    (i, j, label_i, label_j, spec_i, spec_j,
+     games_per_pair, simulations, use_cpp, seed, pair_idx) = args_tuple
+
+    games_per_half = games_per_pair // 2
+    pair_scores_ij = []
+    pair_scores_ji = []
+    game_count = 0
+
+    for half_label, i_is_chess in [("i=Chess", True), ("i=Xiangqi", False)]:
+        for gi in range(games_per_half):
+            game_seed = seed + pair_idx * 10000 + gi + (0 if i_is_chess else 5000)
+
+            agent_i = _create_agent(spec_i, simulations, game_seed, use_cpp)
+            agent_j = _create_agent(spec_j, simulations, game_seed + 500, use_cpp)
+
+            if i_is_chess:
+                agent_chess, agent_xiangqi = agent_i, agent_j
+            else:
+                agent_chess, agent_xiangqi = agent_j, agent_i
+
+            result = play_arena_game(agent_chess, agent_xiangqi,
+                                     seed=game_seed, use_cpp=use_cpp)
+
+            if result["winner_side"] is None:
+                score_i = 0.5
+            elif (result["winner_side"] == "chess" and i_is_chess) or \
+                 (result["winner_side"] == "xiangqi" and not i_is_chess):
+                score_i = 1.0
+            else:
+                score_i = 0.0
+
+            pair_scores_ij.append(score_i)
+            pair_scores_ji.append(1.0 - score_i)
+            game_count += 1
+
+    avg_ij = sum(pair_scores_ij) / max(len(pair_scores_ij), 1)
+    avg_ji = sum(pair_scores_ji) / max(len(pair_scores_ji), 1)
+    print(f"  => {label_i} vs {label_j}: {avg_ij:.3f} / {avg_ji:.3f}"
+          f"  ({game_count} games)", flush=True)
+
+    return {
+        "i": i, "j": j,
+        "label_i": label_i, "label_j": label_j,
+        "scores_ij": pair_scores_ij,
+        "scores_ji": pair_scores_ji,
+        "avg_ij": avg_ij,
+        "avg_ji": avg_ji,
+    }
+
+
 def run_tournament(
     agent_specs: List[str],
     games_per_pair: int,
@@ -203,6 +264,7 @@ def run_tournament(
     seed: int,
     outdir: str,
     universe_label: str = "",
+    workers: int = 1,
 ) -> dict:
     """Run round-robin tournament and compute Nash Equilibrium."""
 
@@ -214,7 +276,6 @@ def run_tournament(
 
     n = len(agent_specs)
     labels = [_agent_label(s) for s in agent_specs]
-    games_per_half = games_per_pair // 2   # each side
 
     # Load existing progress for resume
     existing = _load_progress(progress_path)
@@ -228,12 +289,22 @@ def run_tournament(
 
     # Reload completed pair scores
     for key, data in completed_pairs.items():
-        i, j = map(int, key.split(","))
-        scores[i][j] = data["scores_ij"]
-        scores[j][i] = data["scores_ji"]
+        i_idx, j_idx = map(int, key.split(","))
+        scores[i_idx][j_idx] = data["scores_ij"]
+        scores[j_idx][i_idx] = data["scores_ji"]
 
     all_pairs = list(combinations(range(n), 2))
     total_pairs = len(all_pairs)
+    pending_pairs = [(i, j) for i, j in all_pairs if f"{i},{j}" not in completed_pairs]
+
+    tag = universe_label or ablation
+    print(f"\n{'='*60}")
+    print(f"  EGTA Tournament: {tag}")
+    print(f"  Agents: {labels}")
+    print(f"  Pairs: {total_pairs} ({len(pending_pairs)} pending) | "
+          f"Games/pair: {games_per_pair} | Sims: {simulations}")
+    print(f"  Ablation: {ablation} | C++: {use_cpp} | Workers: {workers}")
+    print(f"{'='*60}\n")
 
     progress = {
         "status": "running",
@@ -245,87 +316,48 @@ def run_tournament(
         "ablation": ablation,
         "total_pairs": total_pairs,
         "completed_pairs": completed_pairs,
+        "workers": workers,
         "start_time": time.strftime("%Y-%m-%d %H:%M:%S"),
     }
 
-    tag = universe_label or ablation
-    print(f"\n{'='*60}")
-    print(f"  EGTA Tournament: {tag}")
-    print(f"  Agents: {labels}")
-    print(f"  Pairs: {total_pairs} | Games/pair: {games_per_pair} | Sims: {simulations}")
-    print(f"  Ablation: {ablation} | C++: {use_cpp}")
-    print(f"{'='*60}\n")
+    if pending_pairs:
+        # Build work items
+        work_items = []
+        for i, j in pending_pairs:
+            pair_idx = all_pairs.index((i, j)) + 1
+            work_items.append((
+                i, j, labels[i], labels[j], agent_specs[i], agent_specs[j],
+                games_per_pair, simulations, use_cpp, seed, pair_idx,
+            ))
 
-    pair_idx = 0
-    for i, j in all_pairs:
-        pair_idx += 1
-        pair_key = f"{i},{j}"
+        if workers <= 1:
+            # Serial execution (same as before)
+            results_list = []
+            for item in work_items:
+                results_list.append(_run_pair(item))
+        else:
+            # Parallel execution
+            from concurrent.futures import ProcessPoolExecutor
+            print(f"  Launching {workers} worker processes...\n")
+            with ProcessPoolExecutor(
+                max_workers=workers,
+                initializer=_init_worker,
+                initargs=(ablation,),
+            ) as pool:
+                results_list = list(pool.map(_run_pair, work_items))
 
-        if pair_key in completed_pairs:
-            print(f"  [{pair_idx}/{total_pairs}] {labels[i]} vs {labels[j]} -- SKIPPED (done)")
-            continue
+        # Merge results
+        for pair_result in results_list:
+            i_idx = pair_result["i"]
+            j_idx = pair_result["j"]
+            pair_key = f"{i_idx},{j_idx}"
+            scores[i_idx][j_idx] = pair_result["scores_ij"]
+            scores[j_idx][i_idx] = pair_result["scores_ji"]
+            completed_pairs[pair_key] = pair_result
 
-        print(f"\n  [{pair_idx}/{total_pairs}] {labels[i]} vs {labels[j]}")
-        print(f"  {'-'*50}")
-
-        pair_scores_ij: List[float] = []
-        pair_scores_ji: List[float] = []
-
-        game_count = 0
-        for half_label, i_is_chess in [("i=Chess", True), ("i=Xiangqi", False)]:
-            for gi in range(games_per_half):
-                game_seed = seed + pair_idx * 10000 + gi + (0 if i_is_chess else 5000)
-
-                agent_i = _create_agent(agent_specs[i], simulations, game_seed, use_cpp)
-                agent_j = _create_agent(agent_specs[j], simulations, game_seed + 500, use_cpp)
-
-                if i_is_chess:
-                    agent_chess, agent_xiangqi = agent_i, agent_j
-                else:
-                    agent_chess, agent_xiangqi = agent_j, agent_i
-
-                t0 = time.time()
-                result = play_arena_game(agent_chess, agent_xiangqi,
-                                         seed=game_seed, use_cpp=use_cpp)
-                elapsed = time.time() - t0
-
-                # Score from i's perspective
-                if result["winner_side"] is None:
-                    score_i = 0.5
-                elif (result["winner_side"] == "chess" and i_is_chess) or \
-                     (result["winner_side"] == "xiangqi" and not i_is_chess):
-                    score_i = 1.0
-                else:
-                    score_i = 0.0
-
-                pair_scores_ij.append(score_i)
-                pair_scores_ji.append(1.0 - score_i)
-
-                game_count += 1
-                outcome = "WIN_i" if score_i == 1.0 else ("DRAW" if score_i == 0.5 else "WIN_j")
-                avg_i = sum(pair_scores_ij) / len(pair_scores_ij)
-                print(f"    [{game_count}/{games_per_pair}] {half_label} "
-                      f"{outcome} ({result['plies']}ply, {result['reason']}, "
-                      f"{elapsed:.1f}s) running={avg_i:.3f}", flush=True)
-
-        scores[i][j] = pair_scores_ij
-        scores[j][i] = pair_scores_ji
-
-        completed_pairs[pair_key] = {
-            "i": i, "j": j,
-            "label_i": labels[i], "label_j": labels[j],
-            "scores_ij": pair_scores_ij,
-            "scores_ji": pair_scores_ji,
-            "avg_ij": sum(pair_scores_ij) / max(len(pair_scores_ij), 1),
-            "avg_ji": sum(pair_scores_ji) / max(len(pair_scores_ji), 1),
-        }
         progress["completed_pairs"] = completed_pairs
         progress["last_update"] = time.strftime("%Y-%m-%d %H:%M:%S")
         _write_json(progress_path, progress)
-
-        print(f"  => {labels[i]} vs {labels[j]}: "
-              f"{completed_pairs[pair_key]['avg_ij']:.3f} / "
-              f"{completed_pairs[pair_key]['avg_ji']:.3f}")
 
     # -- Build payoff matrix --
     matrix = np.full((n, n), 0.5)  # diagonal = 0.5
@@ -489,6 +521,8 @@ def main():
                         help="Disable C++ game engine")
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--outdir", type=str, default="runs/egta")
+    parser.add_argument("--workers", type=int, default=1,
+                        help="Number of parallel worker processes per universe. Default: 1")
     args = parser.parse_args()
 
     if args.no_cpp:
@@ -515,6 +549,7 @@ def main():
             seed=args.seed,
             outdir=universe_outdir,
             universe_label=label,
+            workers=args.workers,
         )
         all_results.append(result)
 
