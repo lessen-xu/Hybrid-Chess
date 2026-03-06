@@ -464,3 +464,33 @@ class TorchPolicyValueModel(PolicyValueModel):
             policy_dict = {mv: probs[i].item() for i, mv in enumerate(legal_moves)}
 
         return policy_dict, value
+
+    def predict_batch(
+        self, inputs: List[Tuple[GameState, List[Move]]]
+    ) -> List[Tuple[Dict[Move, float], float]]:
+        """Batch prediction: K leaf states → 1 GPU forward pass → K results."""
+        if not inputs:
+            return []
+
+        with torch.no_grad():
+            batch = torch.stack(
+                [encode_state(s) for s, _ in inputs]
+            ).to(self.device)                              # (K, C, 10, 9)
+            policy_batch, value_batch = self.net(batch)    # (K, 92, 10, 9), (K, 1)
+
+            results: List[Tuple[Dict[Move, float], float]] = []
+            for idx, (state, legal_moves) in enumerate(inputs):
+                if not legal_moves:
+                    results.append(({}, 0.0))
+                    continue
+                pp = policy_batch[idx]                     # (92, 10, 9)
+                value = value_batch[idx].item()
+
+                logits = extract_policy_logits(pp, legal_moves)
+                logits = logits - logits.max()
+                probs = torch.softmax(logits, dim=0)
+
+                policy_dict = {mv: probs[i].item() for i, mv in enumerate(legal_moves)}
+                results.append((policy_dict, value))
+
+        return results

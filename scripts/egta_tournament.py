@@ -66,12 +66,14 @@ V4_AGENTS = [
 
 V3_AGENTS = [
     "random",
+    "greedy",
+    "pure_mcts_100",
+    "ab_d1",
     "ab_d2",
     "ab_d4",
-    "runs/az_no_queen_run/ckpt_iter0.pt",
-    "runs/az_no_queen_run/ckpt_iter3.pt",
-    "runs/az_no_queen_run/ckpt_iter6.pt",
-    "runs/az_no_queen_run/ckpt_iter9.pt",
+    "runs/az_no_queen_run/ckpt_iter1.pt",   # AZ-Early
+    "runs/az_no_queen_run/ckpt_iter6.pt",   # AZ-Mid  (only AB breakthrough: 10W)
+    "runs/az_no_queen_run/ckpt_iter9.pt",   # AZ-Best (final)
 ]
 
 PRESETS = {
