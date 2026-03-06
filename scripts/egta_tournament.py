@@ -204,9 +204,19 @@ def _run_pair(args_tuple):
     """Worker function: play all games for one pair, return results.
 
     Runs in a subprocess — each call creates its own agents.
+    Writes per-game progress to live/pair_{i}_{j}.log for monitoring.
     """
     (i, j, label_i, label_j, spec_i, spec_j,
-     games_per_pair, simulations, use_cpp, seed, pair_idx) = args_tuple
+     games_per_pair, simulations, use_cpp, seed, pair_idx, outdir) = args_tuple
+
+    # Per-game log file
+    import os, time as _time
+    live_dir = os.path.join(outdir, "live")
+    os.makedirs(live_dir, exist_ok=True)
+    pair_log_path = os.path.join(live_dir, f"pair_{i}_{j}.log")
+    pair_log = open(pair_log_path, "w", encoding="utf-8")
+    pair_log.write(f"{label_i} vs {label_j} ({games_per_pair} games)\n")
+    pair_log.flush()
 
     games_per_half = games_per_pair // 2
     pair_scores_ij = []
@@ -225,8 +235,10 @@ def _run_pair(args_tuple):
             else:
                 agent_chess, agent_xiangqi = agent_j, agent_i
 
+            t0 = _time.time()
             result = play_arena_game(agent_chess, agent_xiangqi,
                                      seed=game_seed, use_cpp=use_cpp)
+            elapsed = _time.time() - t0
 
             if result["winner_side"] is None:
                 score_i = 0.5
@@ -240,10 +252,18 @@ def _run_pair(args_tuple):
             pair_scores_ji.append(1.0 - score_i)
             game_count += 1
 
+            outcome = "WIN_i" if score_i == 1.0 else ("DRAW" if score_i == 0.5 else "WIN_j")
+            avg_i = sum(pair_scores_ij) / len(pair_scores_ij)
+            pair_log.write(
+                f"  [{game_count}/{games_per_pair}] {half_label} "
+                f"{outcome} ({result['plies']}ply, {result['reason']}, "
+                f"{elapsed:.1f}s) running={avg_i:.3f}\n")
+            pair_log.flush()
+
     avg_ij = sum(pair_scores_ij) / max(len(pair_scores_ij), 1)
     avg_ji = sum(pair_scores_ji) / max(len(pair_scores_ji), 1)
-    print(f"  => {label_i} vs {label_j}: {avg_ij:.3f} / {avg_ji:.3f}"
-          f"  ({game_count} games)", flush=True)
+    pair_log.write(f"DONE: {avg_ij:.3f} / {avg_ji:.3f}\n")
+    pair_log.close()
 
     return {
         "i": i, "j": j,
@@ -327,27 +347,15 @@ def run_tournament(
             pair_idx = all_pairs.index((i, j)) + 1
             work_items.append((
                 i, j, labels[i], labels[j], agent_specs[i], agent_specs[j],
-                games_per_pair, simulations, use_cpp, seed, pair_idx,
+                games_per_pair, simulations, use_cpp, seed, pair_idx, outdir,
             ))
 
-        if workers <= 1:
-            # Serial execution (same as before)
-            results_list = []
-            for item in work_items:
-                results_list.append(_run_pair(item))
-        else:
-            # Parallel execution
-            from concurrent.futures import ProcessPoolExecutor
-            print(f"  Launching {workers} worker processes...\n")
-            with ProcessPoolExecutor(
-                max_workers=workers,
-                initializer=_init_worker,
-                initargs=(ablation,),
-            ) as pool:
-                results_list = list(pool.map(_run_pair, work_items))
+        # Open log file for incremental writing
+        log_path = os.path.join(outdir, "tournament.log")
+        log_file = open(log_path, "a", encoding="utf-8")
 
-        # Merge results
-        for pair_result in results_list:
+        def _save_pair_result(pair_result):
+            """Save one completed pair: update JSON + write to log."""
             i_idx = pair_result["i"]
             j_idx = pair_result["j"]
             pair_key = f"{i_idx},{j_idx}"
@@ -355,9 +363,39 @@ def run_tournament(
             scores[j_idx][i_idx] = pair_result["scores_ji"]
             completed_pairs[pair_key] = pair_result
 
-        progress["completed_pairs"] = completed_pairs
-        progress["last_update"] = time.strftime("%Y-%m-%d %H:%M:%S")
-        _write_json(progress_path, progress)
+            # Incremental JSON save (checkpoint)
+            progress["completed_pairs"] = completed_pairs
+            progress["last_update"] = time.strftime("%Y-%m-%d %H:%M:%S")
+            _write_json(progress_path, progress)
+
+            # Write to log + stdout
+            n_done = len(completed_pairs)
+            line = (f"  [{n_done}/{total_pairs}] "
+                    f"{pair_result['label_i']} vs {pair_result['label_j']}: "
+                    f"{pair_result['avg_ij']:.3f} / {pair_result['avg_ji']:.3f}"
+                    f"  ({len(pair_result['scores_ij'])} games)")
+            print(line, flush=True)
+            log_file.write(line + "\n")
+            log_file.flush()
+
+        if workers <= 1:
+            for item in work_items:
+                _save_pair_result(_run_pair(item))
+        else:
+            from concurrent.futures import ProcessPoolExecutor, as_completed
+            print(f"  Launching {workers} worker processes...\n", flush=True)
+            log_file.write(f"  Launching {workers} worker processes...\n")
+            log_file.flush()
+            with ProcessPoolExecutor(
+                max_workers=workers,
+                initializer=_init_worker,
+                initargs=(ablation,),
+            ) as pool:
+                futures = {pool.submit(_run_pair, item): item for item in work_items}
+                for future in as_completed(futures):
+                    _save_pair_result(future.result())
+
+        log_file.close()
 
     # -- Build payoff matrix --
     matrix = np.full((n, n), 0.5)  # diagonal = 0.5
