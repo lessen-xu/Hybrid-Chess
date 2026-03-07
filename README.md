@@ -63,4 +63,4 @@ python -m scripts.egta_tournament --preset v4 --outdir runs/egta
 | [Results: AB Tournament](docs/results/ab_tournament.md) | AB balance 2×3 matrix, termination analysis |
 | [Results: AZ Training](docs/results/az_training.md) | V1–V4 runs, champion eval, sim scaling |
 | [Legacy EGTA](docs/results/legacy_pre_v2/) | Pre-V2 results (invalidated — see INVALIDATED.md) |
-| [Timeline](docs/timeline.md) | Development phases 0–56 |
+| [Timeline](docs/timeline.md) | Development phases 0–57 |
