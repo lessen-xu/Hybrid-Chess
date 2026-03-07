@@ -1,11 +1,5 @@
 # Hybrid Chess ♔♚
 
-**Topological Phase Transitions in Asymmetric Zero-Sum Games: An Empirical Game-Theoretic Analysis**
-
-> A two-player zero-sum game where one side plays with International Chess pieces and the other with Chinese Chess (Xiangqi) pieces on a shared 9×10 board. We train AlphaZero-style agents via self-play and apply Empirical Game-Theoretic Analysis (EGTA) to study how asymmetric rule perturbations reshape the topology of multi-agent strategy spaces.
-
----
-
 ## Project Structure
 
 ```
