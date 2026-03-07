@@ -26,7 +26,7 @@
 | 52 | **EGTA Sprint 1:** Greedy agent (1-ply capture maximizer) + Pure MCTS (C++ random rollout, `PolicyValueModel` interface) + frozen 9-agent pool (Random, Greedy, Pure MCTS 100, AB d1/d2/d4, AZ iter 2/9/19) + pilot tournament |
 | 53 | **EGTA Sprint 2 tooling:** `predict_batch()` for AZ VL leaf batching, `analyze_topology.py` (alpha-rank + cycle detection), V3 9-agent pool frozen (iter 1/6/9) |
 | 54 | **Parallel tournament:** `ProcessPoolExecutor` + `--workers N` in `egta_tournament.py`, 6 workers per universe (12 total on 16-core CPU), ~6× wall-clock speedup for round-robin |
-| 55 | **N=100 dual-universe tournament:** V3 (no_queen) + V4 (extra_cannon) launched simultaneously, 3,600 games each |
+| 55 | **N=100 dual-universe tournament complete:** V3 + V4 each 3,600 games (9 agents × 36 pairs × 100 games), ~11h runtime. Both TRANSITIVE (Nash support=1, 0 cycles). V3 Nash=iter9, V4 Nash=iter19 |
 
 ## Frozen Perft Values
 
