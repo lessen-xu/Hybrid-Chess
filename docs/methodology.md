@@ -54,7 +54,8 @@ The C++ engine (`hybrid_cpp_engine.pyd`) provides both a rules engine and a full
 - **Transposition Table** (512K entries, rep_bucket, generation isolation, mate-score pack/unpack)
 - **Iterative Deepening** (depth 1..D, TT PV reuse)
 - **Move ordering:** TT PV → captures+checks → killer moves → history heuristic → tie-break
-- Evaluation: material + mobility (0.05×) + check bonus (0.3)
+- Evaluation: material + mobility (0.05×) + check bonus (0.3). **V2 endgame:** 3× material amp, Chebyshev piece→enemy king, own-king proximity, mobility squeeze, anti-stalemate penalty (8.0), check bonus 5.0 when winning
+- **Stalemate = loss** for the stalemated side (Xiangqi convention)
 
 ---
 

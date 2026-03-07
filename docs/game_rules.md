@@ -12,7 +12,7 @@
 
 - King/General captured
 - Checkmate
-- Stalemate (draw)
+- Stalemate (loss for stalemated side — Xiangqi convention)
 - Threefold repetition (draw)
 - Move limit: 400 ply (draw)
 

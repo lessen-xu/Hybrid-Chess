@@ -451,4 +451,7 @@ def terminal_info(board: Board, side_to_move: Side, repetition_table: Dict[str, 
         status = TerminalStatus.CHESS_WIN if winner == Side.CHESS else TerminalStatus.XIANGQI_WIN
         return GameInfo(status, winner=winner, reason="Checkmate")
     else:
-        return GameInfo(TerminalStatus.DRAW, winner=None, reason="Stalemate (draw by rule)")
+        # Stalemate = loss for the side with no moves (Xiangqi convention)
+        winner = side_to_move.opponent()
+        status = TerminalStatus.CHESS_WIN if winner == Side.CHESS else TerminalStatus.XIANGQI_WIN
+        return GameInfo(status, winner=winner, reason="Stalemate (loss for stalemated side)")

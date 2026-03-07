@@ -51,7 +51,9 @@ class AlphaBetaAgent(Agent):
         if info.status != TerminalStatus.ONGOING:
             if info.status == TerminalStatus.DRAW:
                 return 0.0
-            return 1e6 if info.winner == perspective else -1e6
+            # Prefer shorter mates: subtract ply count so mate-in-1 > mate-in-3
+            mate_score = 1e6 - state.ply
+            return mate_score if info.winner == perspective else -mate_score
 
         if depth <= 0:
             return evaluate(state, perspective, self.cfg.eval_weights)

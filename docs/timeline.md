@@ -27,6 +27,7 @@
 | 53 | **EGTA Sprint 2 tooling:** `predict_batch()` for AZ VL leaf batching, `analyze_topology.py` (alpha-rank + cycle detection), V3 9-agent pool frozen (iter 1/6/9) |
 | 54 | **Parallel tournament:** `ProcessPoolExecutor` + `--workers N` in `egta_tournament.py`, 6 workers per universe (12 total on 16-core CPU), ~6× wall-clock speedup for round-robin |
 | 55 | **N=100 dual-universe tournament complete:** V3 + V4 each 3,600 games (9 agents × 36 pairs × 100 games), ~11h runtime. Both TRANSITIVE (Nash support=1, 0 cycles). V3 Nash=iter9, V4 Nash=iter19 |
+| 56 | **Draw disease fix:** N=100 矩阵暴露 AB/GREEDY 打 RANDOM 得分 0.50（100%平局）。诊断发现两个根因：(1) Stalemate 规则错误（国际象棋惯例=平局），改为象棋惯例（困毙=负），修改 `negamax_z`/`terminal_info`/`rules.py` 三处；(2) `evaluate_leaf` V2 终局启发式（Chebyshev 距敌王、己方王接近、困毙惩罚、3× 子力放大、活动度挤压）。GREEDY vs RANDOM 0.55→**0.775**，AB_D4 vs AB_D1 0.50→**0.75**。发现固有 Chess vs Xiangqi 不对称性（Chess 方 100% 胜率，Xiangqi 方难以获胜）|
 
 ## Frozen Perft Values
 

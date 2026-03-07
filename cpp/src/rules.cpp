@@ -741,15 +741,16 @@ GameInfo terminal_info(const Board& board, Side side_to_move,
     if (!legal.empty())
         return {TerminalStatus::ONGOING, 0, ""};
 
-    // No legal moves
+    // No legal moves: both checkmate and stalemate are a loss for
+    // the side to move (Xiangqi convention — stalemate = loss).
+    Side winner = opponent(side_to_move);
+    std::string status = (winner == Side::CHESS)
+        ? TerminalStatus::CHESS_WIN : TerminalStatus::XIANGQI_WIN;
+    int w = (winner == Side::CHESS) ? 1 : 2;
     if (is_in_check(board, side_to_move)) {
-        Side winner = opponent(side_to_move);
-        std::string status = (winner == Side::CHESS)
-            ? TerminalStatus::CHESS_WIN : TerminalStatus::XIANGQI_WIN;
-        int w = (winner == Side::CHESS) ? 1 : 2;
         return {status, w, "Checkmate"};
     } else {
-        return {TerminalStatus::DRAW, 0, "Stalemate (draw by rule)"};
+        return {status, w, "Stalemate (loss for stalemated side)"};
     }
 }
 

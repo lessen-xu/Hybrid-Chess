@@ -353,6 +353,29 @@ static void order_moves_inplace(Board& board, Side stm,
 // Leaf evaluation — reuses stm_moves_count, only generates opp
 // ═══════════════════════════════════════════════════════════════
 
+// Endgame heuristic constants (V2 — much more aggressive guidance)
+static constexpr double ENDGAME_CHECK_BONUS    = 5.0;   // Strong check bonus when winning
+static constexpr double MATERIAL_AMP_FACTOR    = 3.0;   // Triple material advantage in endgame
+static constexpr double MATERIAL_AMP_THRESHOLD = 5.0;   // Material diff to trigger endgame mode
+static constexpr int    ENDGAME_PIECE_THRESHOLD = 6;     // Opponent pieces ≤ this = endgame
+static constexpr double APPROACH_WEIGHT        = 0.8;    // Weight per piece for approaching enemy king
+static constexpr double KING_PROXIMITY_WEIGHT  = 0.5;    // Weight for own king approaching
+static constexpr double CONFINE_WEIGHT         = 1.0;    // King confinement weight
+static constexpr double SQUEEZE_WEIGHT         = 0.3;    // Per-move mobility restriction bonus
+static constexpr double STALEMATE_PENALTY      = 8.0;    // Penalty for stalemating (not mating)
+
+// Chebyshev distance between two squares
+static inline int chebyshev(int x1, int y1, int x2, int y2) {
+    return std::max(std::abs(x1 - x2), std::abs(y1 - y2));
+}
+
+// Manhattan distance from center of the board (4, 4.5)
+static inline double king_edge_distance(int x, int y) {
+    double dx = std::abs(x - 4.0);
+    double dy = std::abs(y - 4.5);
+    return dx + dy;
+}
+
 static inline double evaluate_leaf(
         Board& board,
         Side root_perspective,
@@ -360,14 +383,32 @@ static inline double evaluate_leaf(
         int stm_moves_count,
         SearchContext& ctx,
         int sply) {
-    // Material (grid scan)
+    // Material + piece counting + track piece positions for endgame
     double mat = 0.0;
+    int my_piece_count = 0;
+    int opp_piece_count = 0;
+
+    // Track positions for endgame heuristics (up to 16 pieces each)
+    int my_px[32], my_py[32];
+    int my_n = 0;
+
     for (int y = 0; y < BOARD_H; ++y)
         for (int x = 0; x < BOARD_W; ++x) {
             auto& cell = board.grid[y][x];
             if (cell.has_value()) {
                 double v = piece_value(cell->kind);
-                mat += (cell->side == root_perspective) ? v : -v;
+                if (cell->side == root_perspective) {
+                    mat += v;
+                    my_piece_count++;
+                    if (my_n < 32) {
+                        my_px[my_n] = x;
+                        my_py[my_n] = y;
+                        my_n++;
+                    }
+                } else {
+                    mat -= v;
+                    opp_piece_count++;
+                }
             }
         }
 
@@ -379,8 +420,6 @@ static inline double evaluate_leaf(
     int opp_moves_count = static_cast<int>(opp_moves.size());
 
     // Compute perspective-relative mobility
-    // Old code: generate_legal_moves(perspective) - generate_legal_moves(opp)
-    // root_perspective's move count depends on whether root_perspective == stm
     int perspective_count, opp_persp_count;
     if (root_perspective == stm) {
         perspective_count = stm_moves_count;
@@ -391,13 +430,67 @@ static inline double evaluate_leaf(
     }
     double mob = MOBILITY_WEIGHT * static_cast<double>(perspective_count - opp_persp_count);
 
-    // Check bonus
+    // Check bonus — amplified in winning endgames
     double chk = 0.0;
     Side rp_opp = opponent(root_perspective);
-    if (is_in_check(board, rp_opp))            chk += CHECK_BONUS;
-    if (is_in_check(board, root_perspective))   chk -= CHECK_BONUS;
+    bool winning_big = (mat > MATERIAL_AMP_THRESHOLD);
+    double effective_check_bonus = winning_big ? ENDGAME_CHECK_BONUS : CHECK_BONUS;
+    bool opp_in_check = is_in_check(board, rp_opp);
+    bool self_in_check = is_in_check(board, root_perspective);
+    if (opp_in_check)  chk += effective_check_bonus;
+    if (self_in_check) chk -= effective_check_bonus;
 
-    return mat + mob + chk;
+    // ── Endgame heuristics V2 (winning with large material advantage) ──
+    double endgame_bonus = 0.0;
+
+    if (winning_big) {
+        // 1. Material amplification: strongly encourage converting advantages
+        mat *= MATERIAL_AMP_FACTOR;
+
+        // 2. Locate enemy royal for proximity calculations
+        int opp_royal_sq = board.royal_square(rp_opp);
+        int my_royal_sq  = board.royal_square(root_perspective);
+
+        if (opp_royal_sq >= 0) {
+            int ekx = opp_royal_sq % BOARD_W;
+            int eky = opp_royal_sq / BOARD_W;
+
+            // 3. King confinement: push enemy royal to edges/corners
+            endgame_bonus += CONFINE_WEIGHT * king_edge_distance(ekx, eky);
+
+            // 4. Approach bonus: reward ALL our pieces being close to enemy king
+            //    This creates a strong gradient guiding pieces toward the enemy
+            double approach_sum = 0.0;
+            for (int i = 0; i < my_n; ++i) {
+                int dist = chebyshev(my_px[i], my_py[i], ekx, eky);
+                // Max Chebyshev on 9x10 board is 9. Reward closeness.
+                approach_sum += (10.0 - dist);
+            }
+            endgame_bonus += APPROACH_WEIGHT * approach_sum;
+
+            // 5. Own king proximity: reward our king being close to enemy king
+            //    (kings must cooperate to deliver mate)
+            if (my_royal_sq >= 0) {
+                int mkx = my_royal_sq % BOARD_W;
+                int mky = my_royal_sq / BOARD_W;
+                int king_dist = chebyshev(mkx, mky, ekx, eky);
+                endgame_bonus += KING_PROXIMITY_WEIGHT * (10.0 - king_dist);
+            }
+        }
+
+        // 6. Mobility squeeze: reward restricting opponent's moves
+        if (opp_piece_count <= ENDGAME_PIECE_THRESHOLD) {
+            endgame_bonus += SQUEEZE_WEIGHT * (30.0 - opp_persp_count);
+
+            // 7. Anti-stalemate: PENALIZE positions where opponent has 0 or very
+            //    few moves but is NOT in check (= accidental stalemate = draw!)
+            if (opp_persp_count <= 1 && !opp_in_check) {
+                endgame_bonus -= STALEMATE_PENALTY;
+            }
+        }
+    }
+
+    return mat + mob + chk + endgame_bonus;
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -483,12 +576,11 @@ static double negamax_z(Board& board, Side stm, int depth,
     generate_legal_moves_inplace(board, stm, moves, ctx.bufs[sply].pseudo);
 
     if (moves.empty()) {
-        if (is_in_check(board, stm)) {
-            Side winner = opponent(stm);
-            double score = WIN_SCORE - static_cast<double>(ply);
-            return (winner == root_perspective) ? score : -score;
-        }
-        return 0.0;
+        // No legal moves: both checkmate and stalemate are a loss for
+        // the side to move (Xiangqi convention — stalemate = loss).
+        Side winner = opponent(stm);
+        double score = WIN_SCORE - static_cast<double>(ply);
+        return (winner == root_perspective) ? score : -score;
     }
 
     // ── Leaf evaluation (reuse stm move count) ──
