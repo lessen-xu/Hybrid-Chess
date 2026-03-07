@@ -205,6 +205,11 @@ def _run_pair(args_tuple):
 
     Runs in a subprocess — each call creates its own agents.
     Writes per-game progress to live/pair_{i}_{j}.log for monitoring.
+
+    Returns per-role scores:
+      scores_i_as_chess: list of scores when agent_i plays Chess vs agent_j plays Xiangqi
+      scores_j_as_chess: list of scores when agent_j plays Chess vs agent_i plays Xiangqi
+    Plus the legacy combined scores (scores_ij / scores_ji) for backward compat.
     """
     (i, j, label_i, label_j, spec_i, spec_j,
      games_per_pair, simulations, use_cpp, seed, pair_idx, outdir) = args_tuple
@@ -219,8 +224,10 @@ def _run_pair(args_tuple):
     pair_log.flush()
 
     games_per_half = games_per_pair // 2
-    pair_scores_ij = []
-    pair_scores_ji = []
+    pair_scores_ij = []      # legacy: combined i-perspective scores
+    pair_scores_ji = []      # legacy: combined j-perspective scores
+    scores_i_as_chess = []   # role-separated: i=Chess, j=Xiangqi → i's score
+    scores_j_as_chess = []   # role-separated: j=Chess, i=Xiangqi → j's score
     game_count = 0
 
     for half_label, i_is_chess in [("i=Chess", True), ("i=Xiangqi", False)]:
@@ -240,16 +247,25 @@ def _run_pair(args_tuple):
                                      seed=game_seed, use_cpp=use_cpp)
             elapsed = _time.time() - t0
 
+            # Score from Chess player's perspective
             if result["winner_side"] is None:
-                score_i = 0.5
-            elif (result["winner_side"] == "chess" and i_is_chess) or \
-                 (result["winner_side"] == "xiangqi" and not i_is_chess):
-                score_i = 1.0
+                chess_score = 0.5
+            elif result["winner_side"] == "chess":
+                chess_score = 1.0
             else:
-                score_i = 0.0
+                chess_score = 0.0
 
+            # Legacy combined scores (i-perspective)
+            score_i = chess_score if i_is_chess else (1.0 - chess_score)
             pair_scores_ij.append(score_i)
             pair_scores_ji.append(1.0 - score_i)
+
+            # Role-separated scores
+            if i_is_chess:
+                scores_i_as_chess.append(chess_score)
+            else:
+                scores_j_as_chess.append(chess_score)
+
             game_count += 1
 
             outcome = "WIN_i" if score_i == 1.0 else ("DRAW" if score_i == 0.5 else "WIN_j")
@@ -270,6 +286,8 @@ def _run_pair(args_tuple):
         "label_i": label_i, "label_j": label_j,
         "scores_ij": pair_scores_ij,
         "scores_ji": pair_scores_ji,
+        "scores_i_as_chess": scores_i_as_chess,
+        "scores_j_as_chess": scores_j_as_chess,
         "avg_ij": avg_ij,
         "avg_ji": avg_ji,
     }
@@ -397,29 +415,67 @@ def run_tournament(
 
         log_file.close()
 
-    # -- Build payoff matrix --
-    matrix = np.full((n, n), 0.5)  # diagonal = 0.5
+    # -- Build role-separated matrix: M_chess[i,j] = agent_i as Chess vs agent_j as Xiangqi --
+    # Also build legacy symmetric matrix for backward compat.
+    matrix_sym = np.full((n, n), 0.5)  # diagonal = 0.5 (symmetric/averaged)
+    matrix_chess = np.full((n, n), 0.5)  # role-separated: row=Chess, col=Xiangqi
+
     for i in range(n):
         for j in range(n):
             if i != j and scores[i][j]:
-                matrix[i, j] = sum(scores[i][j]) / len(scores[i][j])
+                matrix_sym[i, j] = sum(scores[i][j]) / len(scores[i][j])
 
-    # Save CSV
-    csv_path = os.path.join(outdir, "payoff_matrix.csv")
-    with open(csv_path, "w", newline="", encoding="utf-8") as f:
+    # Build role-separated from role_scores
+    for i in range(n):
+        for j in range(n):
+            if i != j:
+                key = f"{min(i,j)},{max(i,j)}"
+                pair_data = completed_pairs.get(key)
+                if pair_data:
+                    pi, pj = pair_data["i"], pair_data["j"]
+                    i_chess = pair_data.get("scores_i_as_chess", [])
+                    j_chess = pair_data.get("scores_j_as_chess", [])
+                    if i == pi and j == pj and i_chess:
+                        matrix_chess[i, j] = sum(i_chess) / len(i_chess)
+                    elif i == pj and j == pi and j_chess:
+                        matrix_chess[i, j] = sum(j_chess) / len(j_chess)
+                    elif i == pi and j == pj and not i_chess:
+                        # Legacy data without role-separated scores — fall back to sym
+                        matrix_chess[i, j] = matrix_sym[i, j]
+                    elif i == pj and j == pi and not j_chess:
+                        matrix_chess[i, j] = matrix_sym[i, j]
+
+    # Save symmetric CSV (legacy)
+    csv_sym_path = os.path.join(outdir, "payoff_matrix.csv")
+    with open(csv_sym_path, "w", newline="", encoding="utf-8") as f:
         writer = csv.writer(f)
         writer.writerow([""] + labels)
         for i in range(n):
-            writer.writerow([labels[i]] + [f"{matrix[i,j]:.4f}" for j in range(n)])
-    print(f"\n  Payoff matrix saved: {csv_path}")
+            writer.writerow([labels[i]] + [f"{matrix_sym[i,j]:.4f}" for j in range(n)])
+    print(f"\n  Symmetric payoff matrix saved: {csv_sym_path}")
 
-    # -- Heatmap --
-    heatmap_path = os.path.join(outdir, "payoff_heatmap.png")
-    plot_payoff_heatmap(matrix, labels, heatmap_path,
-                        title=f"EGTA Payoff Matrix - {tag}")
+    # Save role-separated CSV
+    csv_role_path = os.path.join(outdir, "payoff_matrix_role_separated.csv")
+    chess_labels = [f"{l}@Chess" for l in labels]
+    xiangqi_labels = [f"{l}@Xiangqi" for l in labels]
+    with open(csv_role_path, "w", newline="", encoding="utf-8") as f:
+        writer = csv.writer(f)
+        writer.writerow(["Row=Chess / Col=Xiangqi"] + xiangqi_labels)
+        for i in range(n):
+            writer.writerow([chess_labels[i]] + [f"{matrix_chess[i,j]:.4f}" for j in range(n)])
+    print(f"  Role-separated payoff matrix saved: {csv_role_path}")
 
-    # -- Nash Equilibrium --
-    nash_dist, game_value = compute_nash_equilibrium(matrix)
+    # -- Heatmaps --
+    heatmap_sym_path = os.path.join(outdir, "payoff_heatmap.png")
+    plot_payoff_heatmap(matrix_sym, labels, heatmap_sym_path,
+                        title=f"EGTA Payoff Matrix (Symmetric) - {tag}")
+
+    heatmap_role_path = os.path.join(outdir, "payoff_heatmap_role_separated.png")
+    plot_payoff_heatmap(matrix_chess, labels, heatmap_role_path,
+                        title=f"EGTA Payoff Matrix (Row=Chess, Col=Xiangqi) - {tag}")
+
+    # -- Nash Equilibrium (on symmetric matrix — role-separated needs bimatrix solver) --
+    nash_dist, game_value = compute_nash_equilibrium(matrix_sym)
 
     nash_result = {}
     if nash_dist is not None:
@@ -436,10 +492,11 @@ def run_tournament(
                 if len(support) <= 1 else
                 "NON-TRANSITIVE: Nash mixes multiple agents (cyclic exploitation)"
             ),
+            "note": "Computed on symmetric (averaged) matrix. Role-separated Nash requires bimatrix solver.",
         }
 
         print(f"\n{'='*60}")
-        print(f"  NASH EQUILIBRIUM — {tag}")
+        print(f"  NASH EQUILIBRIUM (symmetric) — {tag}")
         print(f"{'='*60}")
         for lbl, prob in nash_result["distribution"].items():
             bar = "#" * int(prob * 40)
@@ -456,13 +513,13 @@ def run_tournament(
     _write_json(nash_path, nash_result)
     print(f"  Nash result saved: {nash_path}")
 
-    # -- Zero-sum validation --
+    # -- Zero-sum validation (symmetric matrix) --
     max_err = 0.0
     for i in range(n):
         for j in range(i + 1, n):
-            err = abs(matrix[i, j] + matrix[j, i] - 1.0)
+            err = abs(matrix_sym[i, j] + matrix_sym[j, i] - 1.0)
             max_err = max(max_err, err)
-    print(f"  Zero-sum max deviation: {max_err:.6f}")
+    print(f"  Zero-sum max deviation (symmetric): {max_err:.6f}")
 
     # Finalise progress
     progress["status"] = "done"
@@ -471,7 +528,8 @@ def run_tournament(
 
     return {
         "universe": tag,
-        "matrix": matrix.tolist(),
+        "matrix": matrix_sym.tolist(),
+        "matrix_role_separated": matrix_chess.tolist(),
         "labels": labels,
         "nash": nash_result,
     }
