@@ -58,9 +58,9 @@ python -m scripts.egta_tournament --preset v4 --outdir runs/egta
 | Document | Content |
 |---|---|
 | [Game Rules](docs/game_rules.md) | Board, pieces, termination, ablation variants |
+| [Game Spec V2](docs/game_spec_v2.md) | Canonical game definition (protocol lock) |
 | [Methodology](docs/methodology.md) | C++ engine, agents, training pipeline, GPU scaling |
 | [Results: AB Tournament](docs/results/ab_tournament.md) | AB balance 2×3 matrix, termination analysis |
 | [Results: AZ Training](docs/results/az_training.md) | V1–V4 runs, champion eval, sim scaling |
-| [Results: EGTA Pilot](docs/results/egta_pilot.md) | 720-game pilot, transitivity analysis |
-| [Results: EGTA N=100](docs/results/egta_n100.md) | Dual-universe N=100 tournament, Nash equilibria |
+| [Legacy EGTA](docs/results/legacy_pre_v2/) | Pre-V2 results (invalidated — see INVALIDATED.md) |
 | [Timeline](docs/timeline.md) | Development phases 0–56 |
