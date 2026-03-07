@@ -350,6 +350,78 @@ static void order_moves_inplace(Board& board, Side stm,
 }
 
 // ═══════════════════════════════════════════════════════════════
+// Conversion mode detection
+// ═══════════════════════════════════════════════════════════════
+
+struct ConversionInfo {
+    bool active;           // Is conversion mode triggered?
+    Side attacker;         // Side with material advantage
+    int  attacker_pieces;  // Attacker piece count (excl. royal)
+    int  defender_pieces;  // Defender piece count (excl. royal)
+    double attacker_mat;   // Attacker material value (excl. royal)
+    double defender_mat;   // Defender material value (excl. royal)
+};
+
+static ConversionInfo detect_conversion(const Board& board, Side root_perspective) {
+    ConversionInfo ci{};
+    ci.active = false;
+
+    double mat_chess = 0.0, mat_xiangqi = 0.0;
+    int count_chess = 0, count_xiangqi = 0;
+    int total_pieces = 0;
+
+    for (int y = 0; y < BOARD_H; ++y)
+        for (int x = 0; x < BOARD_W; ++x) {
+            auto& cell = board.grid[y][x];
+            if (cell.has_value()) {
+                total_pieces++;
+                double v = piece_value(cell->kind);
+                if (v < 0.01) continue;  // Skip royals (value=0)
+                if (cell->side == Side::CHESS) {
+                    mat_chess += v;
+                    count_chess++;
+                } else {
+                    mat_xiangqi += v;
+                    count_xiangqi++;
+                }
+            }
+        }
+
+    // Determine attacker/defender
+    Side attacker, defender;
+    double att_mat, def_mat;
+    int att_count, def_count;
+    if (mat_chess >= mat_xiangqi) {
+        attacker = Side::CHESS; defender = Side::XIANGQI;
+        att_mat = mat_chess; def_mat = mat_xiangqi;
+        att_count = count_chess; def_count = count_xiangqi;
+    } else {
+        attacker = Side::XIANGQI; defender = Side::CHESS;
+        att_mat = mat_xiangqi; def_mat = mat_chess;
+        att_count = count_xiangqi; def_count = count_chess;
+    }
+
+    // Trigger conditions:
+    // 1. Defender has only royal (0 non-royal pieces), OR
+    // 2. Defender has ≤1 non-royal piece and attacker leads by ≥5 material, OR
+    // 3. Total pieces ≤ 5
+    bool trigger = false;
+    if (def_count == 0) trigger = true;
+    else if (def_count <= 1 && (att_mat - def_mat) >= 5.0) trigger = true;
+    else if (total_pieces <= 5 && (att_mat - def_mat) >= 3.0) trigger = true;
+
+    if (trigger) {
+        ci.active = true;
+        ci.attacker = attacker;
+        ci.attacker_pieces = att_count;
+        ci.defender_pieces = def_count;
+        ci.attacker_mat = att_mat;
+        ci.defender_mat = def_mat;
+    }
+    return ci;
+}
+
+// ═══════════════════════════════════════════════════════════════
 // Leaf evaluation — reuses stm_moves_count, only generates opp
 // ═══════════════════════════════════════════════════════════════
 
@@ -363,6 +435,14 @@ static constexpr double KING_PROXIMITY_WEIGHT  = 0.5;    // Weight for own king 
 static constexpr double CONFINE_WEIGHT         = 1.0;    // King confinement weight
 static constexpr double SQUEEZE_WEIGHT         = 0.3;    // Per-move mobility restriction bonus
 static constexpr double STALEMATE_PENALTY      = 8.0;    // Penalty for stalemating (not mating)
+
+// Conversion mode constants
+static constexpr double CONV_REP_PENALTY       = 500.0;  // Heavy penalty for repetition in winning endgame
+static constexpr double CONV_MOBILITY_WEIGHT   = 50.0;   // Weight for restricting defender mobility
+static constexpr double CONV_CHECK_WEIGHT      = 30.0;   // Bonus for giving check
+static constexpr double CONV_APPROACH_WEIGHT   = 2.0;    // Piece approach to enemy king
+static constexpr double CONV_KING_PROX_WEIGHT  = 3.0;    // Own king approaching enemy king
+static constexpr double CONV_CONFINE_WEIGHT    = 5.0;    // Push enemy to edge/corner
 
 // Chebyshev distance between two squares
 static inline int chebyshev(int x1, int y1, int x2, int y2) {
@@ -494,6 +574,90 @@ static inline double evaluate_leaf(
 }
 
 // ═══════════════════════════════════════════════════════════════
+// Conversion-mode leaf evaluation — lexicographic objective
+// ═══════════════════════════════════════════════════════════════
+
+static inline double evaluate_conversion(
+        Board& board,
+        Side root_perspective,
+        Side stm,
+        int stm_moves_count,
+        const ConversionInfo& ci,
+        SearchContext& ctx,
+        int sply) {
+
+    // Base: large material bonus (we're winning, keep it obvious)
+    double score = (ci.attacker_mat - ci.defender_mat) * MATERIAL_AMP_FACTOR;
+
+    // Generate opponent moves for mobility analysis
+    Side opp = opponent(stm);
+    auto& opp_moves = ctx.bufs[sply].moves_opp;
+    opp_moves.clear();
+    generate_legal_moves_inplace(board, opp, opp_moves, ctx.bufs[sply].pseudo);
+    int opp_moves_count = static_cast<int>(opp_moves.size());
+
+    // Perspective-relative mobility
+    int defender_moves, attacker_moves;
+    if (ci.attacker == stm) {
+        attacker_moves = stm_moves_count;
+        defender_moves = opp_moves_count;
+    } else {
+        attacker_moves = opp_moves_count;
+        defender_moves = stm_moves_count;
+    }
+
+    // 1. Mobility squeeze — heavily reward restricting defender
+    //    Max moves on 9x10 board ~60, so (40 - defender_moves) gives gradient
+    score += CONV_MOBILITY_WEIGHT * (40.0 - static_cast<double>(defender_moves));
+
+    // 2. Stalemate bonus — if defender has 0-1 moves, this is WINNING
+    //    (Hybrid Chess: stalemate = loss for the stalemated side)
+    Side defender_side = opponent(ci.attacker);
+    bool defender_in_check = is_in_check(board, defender_side);
+    if (defender_moves <= 1) {
+        score += 200.0;  // Huge bonus for near-stalemate/near-checkmate
+    }
+
+    // 3. Check bonus — giving check is strong in conversion
+    if (defender_in_check) {
+        score += CONV_CHECK_WEIGHT;
+    }
+
+    // 4. Locate enemy royal for proximity calculations
+    int opp_royal_sq = board.royal_square(defender_side);
+    int my_royal_sq  = board.royal_square(ci.attacker);
+
+    if (opp_royal_sq >= 0) {
+        int ekx = opp_royal_sq % BOARD_W;
+        int eky = opp_royal_sq / BOARD_W;
+
+        // 5. King confinement — push enemy to edges/corners
+        score += CONV_CONFINE_WEIGHT * king_edge_distance(ekx, eky);
+
+        // 6. Approach bonus — all attacker pieces close to enemy king
+        for (int y = 0; y < BOARD_H; ++y)
+            for (int x = 0; x < BOARD_W; ++x) {
+                auto& cell = board.grid[y][x];
+                if (cell.has_value() && cell->side == ci.attacker) {
+                    int dist = chebyshev(x, y, ekx, eky);
+                    score += CONV_APPROACH_WEIGHT * (10.0 - dist);
+                }
+            }
+
+        // 7. Own king proximity — cooperation to deliver mate
+        if (my_royal_sq >= 0) {
+            int mkx = my_royal_sq % BOARD_W;
+            int mky = my_royal_sq / BOARD_W;
+            int king_dist = chebyshev(mkx, mky, ekx, eky);
+            score += CONV_KING_PROX_WEIGHT * (10.0 - king_dist);
+        }
+    }
+
+    // Return from root_perspective
+    return (ci.attacker == root_perspective) ? score : -score;
+}
+
+// ═══════════════════════════════════════════════════════════════
 // Repetition guards — RAII push/pop
 // ═══════════════════════════════════════════════════════════════
 
@@ -549,7 +713,20 @@ static double negamax_z(Board& board, Side stm, int depth,
 
     // Threefold repetition
     int rep_count = ctx.rep_count_z(stm_key);
-    if (rep_count >= 3) return 0.0;
+
+    // In conversion mode: penalize ANY repetition (>= 2), not just threefold
+    // This is crucial to prevent "visiting every position twice" shuffling
+    ConversionInfo ci_early = detect_conversion(board, root_perspective);
+    if (ci_early.active && rep_count >= 2) {
+        return (ci_early.attacker == root_perspective) ? -CONV_REP_PENALTY : CONV_REP_PENALTY;
+    }
+
+    if (rep_count >= 3) {
+        if (ci_early.active) {
+            return (ci_early.attacker == root_perspective) ? -CONV_REP_PENALTY : CONV_REP_PENALTY;
+        }
+        return 0.0;
+    }
 
     // ── TT probe ──
     uint64_t k1 = stm_key.lo, k2 = stm_key.hi;
@@ -583,8 +760,36 @@ static double negamax_z(Board& board, Side stm, int depth,
         return (winner == root_perspective) ? score : -score;
     }
 
+    // ── Conversion mode detection ──
+    ConversionInfo ci = detect_conversion(board, root_perspective);
+
+    // ── Search extensions in conversion mode ──
+    int ext_depth = depth;
+    if (ci.active && depth <= 0 && sply < MAX_SEARCH_PLY - 4) {
+        // Check extension: if defender is in check, extend by 2 ply
+        Side defender = opponent(ci.attacker);
+        bool defender_checked = is_in_check(board, defender);
+        if (defender_checked) {
+            ext_depth += 2;
+        }
+        // Low-mobility extension: if defender has very few moves, extend
+        else {
+            // Count defender's moves
+            auto& opp_moves = ctx.bufs[sply].moves_opp;
+            opp_moves.clear();
+            generate_legal_moves_inplace(board, defender, opp_moves, ctx.bufs[sply].pseudo);
+            if (static_cast<int>(opp_moves.size()) <= 3) {
+                ext_depth += 1;
+            }
+        }
+    }
+
     // ── Leaf evaluation (reuse stm move count) ──
-    if (depth <= 0) {
+    if (ext_depth <= 0) {
+        if (ci.active) {
+            return evaluate_conversion(board, root_perspective, stm,
+                                       static_cast<int>(moves.size()), ci, ctx, sply);
+        }
         return evaluate_leaf(board, root_perspective, stm,
                              static_cast<int>(moves.size()), ctx, sply);
     }
@@ -605,27 +810,27 @@ static double negamax_z(Board& board, Side stm, int depth,
         double v;
         if (first_move) {
             // First move: full window
-            v = -negamax_z(board, opp, depth - 1, -beta, -alpha,
+            v = -negamax_z(board, opp, ext_depth - 1, -beta, -alpha,
                            ctx, child_key,
                            ply + 1, max_plies,
                            root_perspective, nodes, sply + 1);
             first_move = false;
         } else if (alpha + PVS_EPS < beta) {
             // Null-window scout
-            v = -negamax_z(board, opp, depth - 1, -alpha - PVS_EPS, -alpha,
+            v = -negamax_z(board, opp, ext_depth - 1, -alpha - PVS_EPS, -alpha,
                            ctx, child_key,
                            ply + 1, max_plies,
                            root_perspective, nodes, sply + 1);
             // Re-search if scout found a better move within true window
             if (v > alpha && v < beta) {
-                v = -negamax_z(board, opp, depth - 1, -beta, -alpha,
+                v = -negamax_z(board, opp, ext_depth - 1, -beta, -alpha,
                                ctx, child_key,
                                ply + 1, max_plies,
                                root_perspective, nodes, sply + 1);
             }
         } else {
             // Window already narrow, full search
-            v = -negamax_z(board, opp, depth - 1, -beta, -alpha,
+            v = -negamax_z(board, opp, ext_depth - 1, -beta, -alpha,
                            ctx, child_key,
                            ply + 1, max_plies,
                            root_perspective, nodes, sply + 1);
@@ -641,7 +846,7 @@ static double negamax_z(Board& board, Side stm, int depth,
             bool is_capture = board.get(mv.tx, mv.ty).has_value();
             if (!is_capture) {
                 ctx.update_killers(sply, mv);
-                ctx.update_history(mv, depth);
+                ctx.update_history(mv, ext_depth);
             }
             break;
         }
@@ -653,7 +858,7 @@ static double negamax_z(Board& board, Side stm, int depth,
     else if (best >= beta)  flag = TT_LOWER;
     else                    flag = TT_EXACT;
 
-    g_tt.store(k1, k2, rb, depth, tt_pack(best, ply), flag, best_mv);
+    g_tt.store(k1, k2, rb, ext_depth, tt_pack(best, ply), flag, best_mv);
 
     return best;
 }
@@ -858,7 +1063,14 @@ SearchResult best_move(
         return SearchResult{Move{0,0,0,0,PieceKind::NONE}, 0.0, 0};
 
     SearchContext ctx;
-    ctx.init_buffers(depth + 2);
+    ctx.init_buffers(MAX_SEARCH_PLY);
+
+    // In conversion mode, boost search depth to find the mating/stalemate sequence
+    ConversionInfo root_ci = detect_conversion(b, side_to_move);
+    int effective_depth = depth;
+    if (root_ci.active) {
+        effective_depth = std::max(depth, std::min(depth + 4, 8));
+    }
 
     int64_t total_nodes = 0;
     Move best_mv = root_moves[0];
@@ -874,7 +1086,7 @@ SearchResult best_move(
 
         ZKey128 root_key = b.zobrist_key(side_to_move);
 
-        for (int d = 1; d <= depth; ++d) {
+        for (int d = 1; d <= effective_depth; ++d) {
             // Aspiration window
             double asp_alpha, asp_beta;
             if (d == 1) {
@@ -969,7 +1181,7 @@ SearchResult best_move(
     } else {
         std::string root_key = b.board_hash(side_to_move);
 
-        for (int d = 1; d <= depth; ++d) {
+        for (int d = 1; d <= effective_depth; ++d) {
             double asp_alpha, asp_beta;
             if (d == 1) {
                 asp_alpha = -INF;

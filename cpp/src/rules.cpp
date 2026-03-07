@@ -726,32 +726,32 @@ GameInfo terminal_info(const Board& board, Side side_to_move,
     if (!xiangqi_has)
         return {TerminalStatus::CHESS_WIN, 1, "Xiangqi general captured"};
 
-    // 2) Move limit
+    // 2) Legal moves — checked BEFORE repetition/ply limit.
+    //    No legal moves = decisive result (stalemate = loss in Hybrid Chess).
+    auto legal = generate_legal_moves(board, side_to_move);
+    if (legal.empty()) {
+        Side winner = opponent(side_to_move);
+        std::string status = (winner == Side::CHESS)
+            ? TerminalStatus::CHESS_WIN : TerminalStatus::XIANGQI_WIN;
+        int w = (winner == Side::CHESS) ? 1 : 2;
+        if (is_in_check(board, side_to_move)) {
+            return {status, w, "Checkmate"};
+        } else {
+            return {status, w, "Stalemate (loss for stalemated side)"};
+        }
+    }
+
+    // 3) Move limit
     if (ply >= max_plies)
         return {TerminalStatus::DRAW, 0, "Max plies reached"};
 
-    // 3) Threefold repetition
+    // 4) Threefold repetition
     std::string key = board.board_hash(side_to_move);
     auto it = repetition_table.find(key);
     if (it != repetition_table.end() && it->second >= 3)
         return {TerminalStatus::DRAW, 0, "Threefold repetition"};
 
-    // 4) Legal moves
-    auto legal = generate_legal_moves(board, side_to_move);
-    if (!legal.empty())
-        return {TerminalStatus::ONGOING, 0, ""};
-
-    // No legal moves: both checkmate and stalemate are a loss for
-    // the side to move (Xiangqi convention — stalemate = loss).
-    Side winner = opponent(side_to_move);
-    std::string status = (winner == Side::CHESS)
-        ? TerminalStatus::CHESS_WIN : TerminalStatus::XIANGQI_WIN;
-    int w = (winner == Side::CHESS) ? 1 : 2;
-    if (is_in_check(board, side_to_move)) {
-        return {status, w, "Checkmate"};
-    } else {
-        return {status, w, "Stalemate (loss for stalemated side)"};
-    }
+    return {TerminalStatus::ONGOING, 0, ""};
 }
 
 // ── Perft (Performance Test / Move Path Enumeration) ──

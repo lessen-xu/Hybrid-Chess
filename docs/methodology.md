@@ -7,8 +7,8 @@
 | **Random** | Uniform random legal move | Baseline anchor |
 | **Greedy** | 1-ply capture maximizer (highest-value target, random tiebreak) | Short-sighted rational |
 | **Pure MCTS** | AlphaZero MCTS with uniform policy + random rollout (no NN) | Brute-force search |
-| **AlphaBeta** | Negamax + α-β + hand-crafted eval (material + mobility + check bonus). Configurable depth (d1/d2/d4). | d1: tactical. d2: defensive. d4: strong. |
-| **AlphaBeta C++** | Full C++ negamax via `best_move()` — zero Python overhead. `_CppABAgent` wrapper in `eval_arena.py`. | Same logic, orders of magnitude faster. |
+| **AlphaBeta** | Negamax + α-β + hand-crafted eval (material + mobility + check bonus). Configurable depth (d1/d2/d4). | d1: tactical. d2: defensive. d4: strong. **⚠ Demoted (Sprint 4): 0% endgame conversion.** |
+| **AlphaBeta C++** | Full C++ negamax via `best_move()` — zero Python overhead. `_CppABAgent` wrapper in `eval_arena.py`. Includes conversion mode (auto D8 boost + lexicographic eval). | Same logic, orders of magnitude faster. **⚠ Demoted: heuristic eval cannot encode tactical mating patterns.** |
 | **AlphaZero-Mini** | Small ResNet (4 blocks, 64 filters) + MCTS. Configurable simulations (50–800). | Best agent. Beats AB-d2 at 800 sims. |
 
 ---
@@ -27,7 +27,7 @@ The C++ engine (`hybrid_cpp_engine.pyd`) provides both a rules engine and a full
 | `make_move` / `unmake_move` | In-place board mutation + reversal (captures, pawn promotion) |
 | `apply_move` | Clone-based wrapper (for Python API compatibility) |
 | `is_in_check` / `is_square_attacked` | Direct grid scan for attackers |
-| `terminal_info` | Full terminal detection (royal, ply, repetition, checkmate) |
+| `terminal_info` | Full terminal detection. Priority: royal capture → no legal moves (stalemate=loss) → ply limit → threefold repetition |
 
 ### AB Search Engine (`ab_search.h/cpp`)
 
@@ -54,7 +54,8 @@ The C++ engine (`hybrid_cpp_engine.pyd`) provides both a rules engine and a full
 - **Transposition Table** (512K entries, rep_bucket, generation isolation, mate-score pack/unpack)
 - **Iterative Deepening** (depth 1..D, TT PV reuse)
 - **Move ordering:** TT PV → captures+checks → killer moves → history heuristic → tie-break
-- Evaluation: material + mobility (0.05×) + check bonus (0.3). **V2 endgame:** 3× material amp, Chebyshev piece→enemy king, own-king proximity, mobility squeeze, anti-stalemate penalty (8.0), check bonus 5.0 when winning
+- Evaluation: material + mobility (0.05×) + check bonus (0.3). **V2 endgame:** 3× material amp, Chebyshev piece→enemy king, own-king proximity, mobility squeeze, check bonus 5.0 when winning
+- **Conversion mode (Sprint 4):** `detect_conversion()` triggers on defender ≤1 piece / attacker mat lead ≥5. Lexicographic `evaluate_conversion()` (mobility×50 > check×30 > approach×2 > king prox×3 > confine×5). Check extension (+2 ply), low-mobility extension (+1 ply), twofold rep penalty (−500), auto depth boost D4→D8. **Still insufficient for ≥80% conversion target.**
 - **Stalemate = loss** for the stalemated side (Xiangqi convention)
 
 ---
