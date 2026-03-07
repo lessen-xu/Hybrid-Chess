@@ -4,24 +4,25 @@
 
 ```
 hybrid-chess/
-├── README.md                       # This file
-├── docs/                           # Technical documentation
-│   ├── game_rules.md               #   Rules, pieces, ablation variants
-│   ├── methodology.md              #   Engine, agents, training pipeline
-│   ├── results/                    #   Experiment results (one file per study)
-│   │   ├── ab_tournament.md        #     AB balance matrix (2×3)
-│   │   ├── az_training.md          #     V1–V4 training + champion eval
-│   │   └── egta_pilot.md           #     EGTA pilot results (pending)
-│   └── timeline.md                 #   Development log (Phase 0–50)
-├── paper/                          # LaTeX drafts
-├── notebooks/                      # Analysis scripts
+├── README.md
+├── requirements.txt
+├── docs/
+│   ├── game_rules.md               # Rules, pieces, termination, ablation variants
+│   ├── methodology.md              # Engine, agents, training pipeline
+│   ├── results/
+│   │   ├── ab_tournament.md        # AB balance matrix (2×3)
+│   │   ├── az_training.md          # V1–V4 training + champion eval
+│   │   ├── egta_pilot.md           # EGTA pilot (720 games)
+│   │   └── egta_n100.md            # EGTA N=100 dual-universe results
+│   └── timeline.md                 # Development log (Phase 0–56)
 ├── hybrid/                         # Core library
 │   ├── core/                       #   Game engine (Python + C++ backend)
 │   ├── agents/                     #   Agent implementations
+│   ├── cpp_engine/                 #   Compiled C++ pyd
 │   └── rl/                         #   AlphaZero training pipeline
-├── cpp/                            # C++ engine (pybind11)
+├── cpp/                            # C++ engine source (pybind11)
 ├── scripts/                        # CLI tools (train, eval, tournament)
-├── tests/                          # pytest suite (~150 tests)
+├── tests/                          # pytest suite
 └── runs/                           # Experiment outputs (not in repo)
 ```
 
@@ -60,4 +61,6 @@ python -m scripts.egta_tournament --preset v4 --outdir runs/egta
 | [Methodology](docs/methodology.md) | C++ engine, agents, training pipeline, GPU scaling |
 | [Results: AB Tournament](docs/results/ab_tournament.md) | AB balance 2×3 matrix, termination analysis |
 | [Results: AZ Training](docs/results/az_training.md) | V1–V4 runs, champion eval, sim scaling |
-| [Timeline](docs/timeline.md) | Development phases 0–50 |
+| [Results: EGTA Pilot](docs/results/egta_pilot.md) | 720-game pilot, transitivity analysis |
+| [Results: EGTA N=100](docs/results/egta_n100.md) | Dual-universe N=100 tournament, Nash equilibria |
+| [Timeline](docs/timeline.md) | Development phases 0–56 |
