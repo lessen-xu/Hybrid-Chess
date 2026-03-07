@@ -230,12 +230,13 @@ def _run_pair(args_tuple):
     scores_j_as_chess = []   # role-separated: j=Chess, i=Xiangqi → j's score
     game_count = 0
 
+    # Create agents ONCE per pair (not per game) — avoids repeated model loading
+    agent_i = _create_agent(spec_i, simulations, seed, use_cpp)
+    agent_j = _create_agent(spec_j, simulations, seed + 500, use_cpp)
+
     for half_label, i_is_chess in [("i=Chess", True), ("i=Xiangqi", False)]:
         for gi in range(games_per_half):
             game_seed = seed + pair_idx * 10000 + gi + (0 if i_is_chess else 5000)
-
-            agent_i = _create_agent(spec_i, simulations, game_seed, use_cpp)
-            agent_j = _create_agent(spec_j, simulations, game_seed + 500, use_cpp)
 
             if i_is_chess:
                 agent_chess, agent_xiangqi = agent_i, agent_j
