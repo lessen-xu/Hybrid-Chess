@@ -4,7 +4,7 @@
 Sweeps V4 AZ checkpoints through the Readiness Gate:
   - 8 Tier-A positions × 5 trials = 40 games per checkpoint
   - Records: conversion rate, repetition rate, median win length
-  - Outputs pass/fail (≥80% conversion = PASS)
+  - Outputs pass/fail (�?0% conversion = PASS)
   - Parallel via ProcessPoolExecutor
 
 Usage:
@@ -58,7 +58,7 @@ _SIDE_MAP = {
 }
 
 
-def load_oracle(path: str = "paper/tier_a_oracle.json") -> list:
+def load_oracle(path: str = "paper/data/tier_a_oracle.json") -> list:
     """Load and parse oracle positions from JSON."""
     with open(path, "r", encoding="utf-8") as f:
         raw = json.load(f)
@@ -259,8 +259,8 @@ def main():
                         help="Single checkpoint to test (default: all V4)")
     parser.add_argument("--run-dir", type=str, default="runs/az_grand_run_v4",
                         help="Directory with AZ checkpoints. Default: runs/az_grand_run_v4")
-    parser.add_argument("--oracle", type=str, default="paper/tier_a_oracle.json",
-                        help="Path to oracle JSON. Default: paper/tier_a_oracle.json")
+    parser.add_argument("--oracle", type=str, default="paper/data/tier_a_oracle.json",
+                        help="Path to oracle JSON. Default: paper/data/tier_a_oracle.json")
     parser.add_argument("--trials", type=int, default=5,
                         help="Trials per position per checkpoint. Default: 5")
     parser.add_argument("--positions", type=int, default=None,

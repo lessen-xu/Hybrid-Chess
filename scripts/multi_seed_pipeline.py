@@ -36,7 +36,7 @@ CHECKPOINTS = [
 # Step 1: Gate sweep (parallel, 8 workers)
 # ============================================================
 log("=" * 60)
-log("STEP 1: Gate Sweep â€” 9 checkpoints")
+log("STEP 1: Gate Sweep â€?9 checkpoints")
 log("=" * 60)
 
 gate_results = {}
@@ -47,7 +47,7 @@ for label, ckpt_path in CHECKPOINTS:
     cmd = [
         sys.executable, "-u", "-m", "scripts.gate_az_checkpoints",
         "--checkpoint", ckpt_path,
-        "--oracle", "paper/tier_a_oracle.json",
+        "--oracle", "paper/data/tier_a_oracle.json",
         "--trials", "5",
         "--workers", "8",
         "--outdir", OUTDIR,
@@ -81,7 +81,7 @@ log("GATE SUMMARY")
 log("=" * 60)
 passed_agents = []
 for label, info in gate_results.items():
-    status = "PASS âœ“" if info["passed"] else "FAIL âœ—"
+    status = "PASS âœ? if info["passed"] else "FAIL âœ?
     log(f"  {label:>8s}: {status}")
     if info["passed"]:
         passed_agents.append((label, info["path"]))
@@ -106,7 +106,7 @@ log(f"  Gate results saved: {gate_json}")
 # Step 2: Round-robin tournament (parallel, 4 workers per pair)
 # ============================================================
 log("\n" + "=" * 60)
-log(f"STEP 2: Round-Robin Tournament â€” {len(passed_agents)} agents")
+log(f"STEP 2: Round-Robin Tournament â€?{len(passed_agents)} agents")
 log("=" * 60)
 
 # Build agent specs for tournament
@@ -149,7 +149,7 @@ log(f"  Tournament completed in {elapsed:.1f}s ({elapsed/60:.1f} min)")
 for line in result.stdout.split("\n"):
     if any(k in line for k in ["Nash", "matrix", "Matrix", "payoff", "Payoff", "value", "RESULT", "winner", "Winner"]):
         log(f"  {line.strip()}")
-    if "â”‚" in line or "â”€" in line or "|" in line:
+    if "â”? in line or "â”€" in line or "|" in line:
         log(f"  {line.strip()}")
 
 log(f"\n  Full output: {tourn_log}")

@@ -75,7 +75,7 @@ def _baseline_gate_worker(args):
 
 def main():
     parser = argparse.ArgumentParser(description="Gate baseline agents on Tier-A oracle")
-    parser.add_argument("--oracle", default="paper/tier_a_oracle.json")
+    parser.add_argument("--oracle", default="paper/data/tier_a_oracle.json")
     parser.add_argument("--outdir", default="paper")
     parser.add_argument("--trials", type=int, default=5)
     parser.add_argument("--workers", type=int, default=8)
