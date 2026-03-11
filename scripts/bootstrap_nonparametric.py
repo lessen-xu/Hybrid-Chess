@@ -168,10 +168,10 @@ def main():
     # Bar chart with CIs
     fig, ax = plt.subplots(figsize=(8, 5))
     ranked_data = sorted(zip(labels, means, ci_lo, ci_hi), key=lambda x: -x[1])
-    names = [n for n, _, _, _ in ranked_data]
+    names = [nm for nm, _, _, _ in ranked_data]
     bar_means = [m for _, m, _, _ in ranked_data]
-    err_lo = [m - lo for _, m, lo, _ in ranked_data]
-    err_hi = [hi - m for _, _, _, hi in ranked_data]
+    err_lo = [max(0, m - lo) for _, m, lo, _ in ranked_data]
+    err_hi = [max(0, hi - m) for _, _, _, hi in ranked_data]
     
     bars = ax.barh(range(len(names)), bar_means,
                    xerr=[err_lo, err_hi],
@@ -179,10 +179,10 @@ def main():
                    capsize=3, error_kw={'linewidth': 1.2, 'color': '#333'})
     ax.set_yticks(range(len(names)))
     ax.set_yticklabels(names, fontsize=9)
-    ax.set_xlabel(f'α-Rank probability (α={ALPHA_BOOT})', fontsize=10)
-    ax.set_title(f'N=200 Non-Parametric Bootstrap α-Rank\n(Gated Pool, {N_BOOT} resamples)',
+    ax.set_xlabel(r'$\alpha$-Rank probability ($\alpha$={})'.format(ALPHA_BOOT), fontsize=10)
+    ax.set_title('N=200 Non-Parametric Bootstrap\n(Gated Pool, {} resamples)'.format(N_BOOT),
                  fontsize=12, fontweight='bold')
-    ax.axvline(x=1/n, color='gray', linestyle='--', alpha=0.5, label=f'Uniform (1/{n})')
+    ax.axvline(x=1/n, color='gray', linestyle='--', alpha=0.5, label='Uniform (1/{})'.format(n))
     ax.legend()
     ax.invert_yaxis()
     plt.tight_layout()
@@ -203,8 +203,8 @@ def main():
     ax.set_yticks(range(n))
     ax.set_xticklabels(labels, rotation=45, ha='right', fontsize=8)
     ax.set_yticklabels(labels, fontsize=8)
-    ax.set_xlabel("Xiangqi Agent ↓", fontsize=10)
-    ax.set_ylabel("Chess Agent →", fontsize=10)
+    ax.set_xlabel("Xiangqi Agent", fontsize=10)
+    ax.set_ylabel("Chess Agent", fontsize=10)
     fig.colorbar(im, label='Win Rate (Chess agent)')
     ax.set_title('N=200 Gated Role-Separated Payoff Matrix', fontsize=12, fontweight='bold')
     plt.tight_layout()
