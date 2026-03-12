@@ -11,7 +11,7 @@ Includes resign and draw adjudication mechanisms for self-play only.
 
 from __future__ import annotations
 from dataclasses import dataclass, field
-from typing import List, Optional, Tuple
+from typing import Callable, List, Optional, Tuple
 
 import numpy as np
 
@@ -144,6 +144,9 @@ class SelfPlayConfig:
     draw_adjudicate_min_ply: int = 60
     draw_adjudicate_patience: int = 15
     draw_adjudicate_value_abs_thr: float = 0.08
+    # Reward shaping (optional). Called as reward_shaper(state, move, next_state).
+    # Return value is added to z during backfill. Default: None (pure AlphaZero).
+    reward_shaper: Optional["Callable"] = None
 
 
 def self_play_game(

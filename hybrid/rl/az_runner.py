@@ -118,6 +118,10 @@ class AZIterConfig:
     inference_timeout_ms: float = 5.0
     inference_device: str = "auto"
 
+    # Optional logging (lazy import, no hard dependency)
+    use_wandb: bool = False
+    use_tensorboard: bool = False
+
     def to_dict(self) -> dict:
         return {k: v for k, v in self.__dict__.items()}
 
@@ -379,6 +383,43 @@ def _append_csv(path: str, row: dict) -> None:
         writer = csv.DictWriter(f, fieldnames=CSV_COLUMNS)
         writer.writerow(row)
 
+
+# ---- Optional metric logging (lazy import, no hard dependency) ----
+
+_wandb_run = None          # cached wandb.run
+_tb_writer = None          # cached SummaryWriter
+
+def _log_metrics(cfg: AZIterConfig, row: dict, step: int) -> None:
+    """Log metrics to WandB / TensorBoard if enabled."""
+    global _wandb_run, _tb_writer
+
+    if cfg.use_wandb:
+        if _wandb_run is None:
+            try:
+                import wandb
+                _wandb_run = wandb.run or wandb.init(
+                    project="hybrid-chess", config=cfg.to_dict()
+                )
+            except ImportError:
+                print("[Runner] WARNING: wandb not installed, disabling --use-wandb")
+                cfg.use_wandb = False
+                return
+        # Log only numeric values
+        _wandb_run.log({k: v for k, v in row.items()
+                        if isinstance(v, (int, float))}, step=step)
+
+    if cfg.use_tensorboard:
+        if _tb_writer is None:
+            try:
+                from torch.utils.tensorboard import SummaryWriter
+                _tb_writer = SummaryWriter()
+            except ImportError:
+                print("[Runner] WARNING: tensorboard not installed, disabling")
+                cfg.use_tensorboard = False
+                return
+        for k, v in row.items():
+            if isinstance(v, (int, float)):
+                _tb_writer.add_scalar(k, v, step)
 
 def _save_game_recordings(recordings: List[dict], outdir: Path,
                           iteration: int, label: str) -> None:
@@ -924,6 +965,7 @@ def run_iterations(cfg: AZIterConfig, outdir: Path) -> None:
         row.update(sp_diag)
 
         _append_csv(str(csv_path), row)
+        _log_metrics(cfg, row, iteration)
 
         elapsed = time.time() - iter_start
         print(f"\n  Iteration {iteration} done in {elapsed:.1f}s "

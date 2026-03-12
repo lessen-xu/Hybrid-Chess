@@ -5,9 +5,23 @@ Architecture:
   - Backbone: Conv3x3 (14→64 ch) + 3 residual blocks (64 ch each).
   - Policy head: 1x1 conv → (B, 92, 10, 9) raw logits.
   - Value head: 1x1 conv → BN → ReLU → flatten(90) → FC(64) → ReLU → FC(1) → tanh.
+
+To use a custom architecture (e.g. Transformer), subclass ``BaseModel``::
+
+    class MyTransformerModel(BaseModel):
+        def __init__(self, ...):
+            super().__init__()
+            ...
+
+        def forward(self, x):
+            # x: (B, C, H, W) encoded state
+            # Return: (policy_logits: (B,92,10,9), value: (B,1))
+            ...
 """
 
 from __future__ import annotations
+from abc import abstractmethod
+from typing import Tuple
 
 import torch
 import torch.nn as nn
@@ -15,6 +29,23 @@ import torch.nn.functional as F
 
 from .az_encoding import NUM_STATE_CHANNELS, TOTAL_POLICY_PLANES
 from hybrid.core.config import BOARD_W, BOARD_H
+
+
+class BaseModel(nn.Module):
+    """Abstract base class for policy-value networks.
+
+    All custom network architectures must subclass this and implement
+    ``forward()``. The training pipeline only depends on this interface.
+
+    Input:  (B, C, H, W) — encoded board state.
+    Output: (policy_logits: (B, P, H, W), value: (B, 1)) where
+            P = TOTAL_POLICY_PLANES, H = BOARD_H, W = BOARD_W.
+    """
+
+    @abstractmethod
+    def forward(self, x: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+        """Return (policy_logits, value)."""
+        ...
 
 
 class ResidualBlock(nn.Module):
@@ -36,7 +67,7 @@ class ResidualBlock(nn.Module):
         return out
 
 
-class PolicyValueNet(nn.Module):
+class PolicyValueNet(BaseModel):
     """Dual-head network: shared backbone → policy logits + value scalar.
 
     Input:  (B, 14, 10, 9)
