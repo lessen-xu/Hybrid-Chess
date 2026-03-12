@@ -11,7 +11,11 @@ from dataclasses import dataclass
 from typing import List, Optional, Tuple, Iterable, Dict
 import hashlib
 
-from .config import BOARD_W, BOARD_H, ENABLE_FLYING_GENERAL_CAPTURE
+from .config import BOARD_W, BOARD_H, ENABLE_FLYING_GENERAL_CAPTURE, DEFAULT_VARIANT
+
+# Module-level active variant, set by HybridChessEnv to avoid threading issues.
+# When None, functions fall back to legacy global flags.
+_active_variant = None
 from .types import Side, PieceKind, Piece, Move
 from .board import Board
 
@@ -163,11 +167,16 @@ def _chess_pawn_moves(board: Board, x: int, y: int, side: Side) -> List[Move]:
 
 def _maybe_promotions(fx: int, fy: int, tx: int, ty: int) -> List[Move]:
     """If Pawn reaches y=9, generate promotion moves (Q/R/B/N)."""
-    from .config import ABLATION_NO_QUEEN_PROMOTION
     if ty != 9:
         return [Move(fx, fy, tx, ty)]
+    # Check variant config first, fallback to legacy global
+    if _active_variant is not None:
+        no_queen_promo = _active_variant.no_queen_promotion
+    else:
+        from .config import ABLATION_NO_QUEEN_PROMOTION
+        no_queen_promo = ABLATION_NO_QUEEN_PROMOTION
     promos = [PieceKind.ROOK, PieceKind.BISHOP, PieceKind.KNIGHT]
-    if not ABLATION_NO_QUEEN_PROMOTION:
+    if not no_queen_promo:
         promos.insert(0, PieceKind.QUEEN)
     return [Move(fx, fy, tx, ty, promotion=k) for k in promos]
 
@@ -283,8 +292,12 @@ def _xiangqi_general_moves(board: Board, x: int, y: int, side: Side) -> List[Mov
             out.append(Move(x, y, nx, ny))
 
     # Flying-general capture: if King is on the same file with no pieces in between
-    from .config import ABLATION_NO_FLYING_GENERAL
-    if ENABLE_FLYING_GENERAL_CAPTURE and not ABLATION_NO_FLYING_GENERAL:
+    if _active_variant is not None:
+        fg_enabled = _active_variant.flying_general
+    else:
+        from .config import ABLATION_NO_FLYING_GENERAL
+        fg_enabled = ENABLE_FLYING_GENERAL_CAPTURE and not ABLATION_NO_FLYING_GENERAL
+    if fg_enabled:
         king_pos = _find_royal(board, Side.CHESS)
         if king_pos is not None:
             kx, ky = king_pos

@@ -8,7 +8,9 @@ from typing import Dict, List, Optional, Tuple
 from .types import Side, PieceKind, Piece, Move
 from .board import Board, initial_board
 from .rules import apply_move, generate_legal_moves, terminal_info, GameInfo, TerminalStatus, board_hash
-from .config import MAX_PLIES, ENABLE_THREEFOLD_REPETITION_DRAW, BOARD_W, BOARD_H
+from .rules import _active_variant as _rules_active_variant  # noqa: F401
+import hybrid.core.rules as _rules_module
+from .config import MAX_PLIES, ENABLE_THREEFOLD_REPETITION_DRAW, BOARD_W, BOARD_H, VariantConfig, DEFAULT_VARIANT
 
 
 @dataclass
@@ -121,13 +123,27 @@ def _py_to_cpp_move(pm: Move):
 
 
 class HybridChessEnv:
-    """Hybrid chess game environment."""
+    """Hybrid chess game environment.
 
-    def __init__(self, max_plies: int = MAX_PLIES, use_cpp: bool = False):
+    Args:
+        max_plies: Maximum half-moves before forced draw.
+        use_cpp: Use C++ engine for game logic.
+        variant: Game variant configuration. Controls piece setup and rules.
+
+    Example::
+
+        from hybrid.core.config import VariantConfig
+        env = HybridChessEnv(variant=VariantConfig(no_queen=True))
+        state = env.reset()  # board has no Chess Queen
+    """
+
+    def __init__(self, max_plies: int = MAX_PLIES, use_cpp: bool = False,
+                 variant: VariantConfig = DEFAULT_VARIANT):
         if max_plies <= 0:
             raise ValueError("max_plies must be > 0")
         self.max_plies = max_plies
         self.use_cpp = use_cpp
+        self.variant = variant
         self.state: Optional[GameState] = None
         self._cpp_board = None
         self._cpp_side = None
@@ -146,8 +162,13 @@ class HybridChessEnv:
         self._cpp_board = _sync_to_cpp(py_board)
         self._cpp_side = _PY_TO_CPP_SIDE[side]
 
+    def _set_active_variant(self) -> None:
+        """Set the module-level active variant so rules functions use our config."""
+        _rules_module._active_variant = self.variant
+
     def reset(self) -> GameState:
-        b = initial_board()
+        self._set_active_variant()
+        b = initial_board(variant=self.variant)
         s = GameState(board=b, side_to_move=Side.CHESS, ply=0, repetition={})
         if ENABLE_THREEFOLD_REPETITION_DRAW:
             key = board_hash(s.board, s.side_to_move)
@@ -161,6 +182,7 @@ class HybridChessEnv:
 
     def reset_from_board(self, board: Board, side_to_move: Side) -> GameState:
         """Reset to a custom board position (for endgame curriculum learning)."""
+        self._set_active_variant()
         s = GameState(board=board.clone(), side_to_move=side_to_move, ply=0, repetition={})
         if ENABLE_THREEFOLD_REPETITION_DRAW:
             key = board_hash(s.board, s.side_to_move)

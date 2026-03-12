@@ -142,8 +142,8 @@ def _split_games_evenly(total_games: int, num_workers: int) -> List[int]:
     return [base + (1 if i < rem else 0) for i in range(num_workers)]
 
 
-def _apply_ablation(ablation: str) -> None:
-    """Apply ablation experiment settings.
+def _apply_ablation(ablation: str) -> "VariantConfig":
+    """Apply ablation experiment settings and return a VariantConfig.
 
     Supports named presets and comma-separated combinations:
         'none'                     → standard rules
@@ -154,10 +154,14 @@ def _apply_ablation(ablation: str) -> None:
         'one_rook'                 → remove Chess second rook
         'no_flying_general'        → disable flying-general rule
         'extra_cannon,no_bishop'   → combine multiple
+
+    Returns a VariantConfig object for passing to HybridChessEnv.
+    Also sets legacy global flags for backwards compatibility.
     """
     import hybrid.core.config as cfg
+    from hybrid.core.config import VariantConfig
 
-    # Reset all ablation flags
+    # Reset all ablation flags (legacy)
     _DEFAULTS = {
         'ABLATION_NO_QUEEN': False,
         'ABLATION_NO_QUEEN_PROMOTION': False,
@@ -172,10 +176,21 @@ def _apply_ablation(ablation: str) -> None:
         setattr(cfg, k, v)
 
     if ablation == "none":
-        return
+        return VariantConfig()
 
-    # Named presets → config flag mapping
-    _PRESETS = {
+    # Named presets → VariantConfig field mapping
+    _PRESET_TO_FIELD = {
+        'extra_cannon':     {'extra_cannon': True},
+        'no_queen':         {'no_queen': True},
+        'no_bishop':        {'no_bishop': True},
+        'extra_soldier':    {'extra_soldier': True},
+        'one_rook':         {'one_rook': True},
+        'no_flying_general': {'flying_general': False},
+        'remove_pawn':      {'remove_extra_pawn': True},
+        'no_queen_promo':   {'no_queen_promotion': True},
+    }
+    # Legacy preset → global flag mapping (for backwards compat)
+    _PRESET_TO_GLOBAL = {
         'extra_cannon':     {'ABLATION_EXTRA_CANNON': True},
         'no_queen':         {'ABLATION_NO_QUEEN': True},
         'no_bishop':        {'ABLATION_CHESS_NO_BISHOP': True},
@@ -186,13 +201,18 @@ def _apply_ablation(ablation: str) -> None:
         'no_queen_promo':   {'ABLATION_NO_QUEEN_PROMOTION': True},
     }
 
+    variant_fields: dict = {}
     parts = [p.strip() for p in ablation.split(',')]
     for part in parts:
-        if part in _PRESETS:
-            for k, v in _PRESETS[part].items():
+        if part in _PRESET_TO_FIELD:
+            variant_fields.update(_PRESET_TO_FIELD[part])
+            # Also set legacy globals
+            for k, v in _PRESET_TO_GLOBAL[part].items():
                 setattr(cfg, k, v)
         else:
             print(f"[WARNING] Unknown ablation: {part!r}, skipping")
+
+    return VariantConfig(**variant_fields)
 
 
 def _save_checkpoint(

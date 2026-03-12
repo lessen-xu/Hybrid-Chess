@@ -56,17 +56,36 @@ class Board:
                     yield x, y, p
 
 
-def initial_board() -> Board:
+def initial_board(variant: "VariantConfig | None" = None) -> Board:
     """Create the initial hybrid-chess layout.
 
     y=0/1: Chess back rank and pawn rank.
     y=9: Xiangqi back rank; y=7: cannons; y=6: soldiers.
+
+    Args:
+        variant: Game variant configuration. If None, reads from legacy
+                 global flags in config.py (backwards compatible).
     """
-    from .config import (CHESS_EXTRA_PAWN_ON_I_FILE,
-                          ABLATION_NO_QUEEN, ABLATION_EXTRA_CANNON,
-                          ABLATION_REMOVE_EXTRA_PAWN,
-                          ABLATION_CHESS_NO_BISHOP, ABLATION_XIANGQI_EXTRA_SOLDIER,
-                          ABLATION_CHESS_ONE_ROOK)
+    if variant is not None:
+        # ---- New path: read from VariantConfig ----
+        v = variant
+    else:
+        # ---- Legacy path: read from global flags ----
+        from .config import (CHESS_EXTRA_PAWN_ON_I_FILE,
+                              ABLATION_NO_QUEEN, ABLATION_EXTRA_CANNON,
+                              ABLATION_REMOVE_EXTRA_PAWN,
+                              ABLATION_CHESS_NO_BISHOP, ABLATION_XIANGQI_EXTRA_SOLDIER,
+                              ABLATION_CHESS_ONE_ROOK)
+        from .config import VariantConfig
+        v = VariantConfig(
+            extra_pawn_i_file=CHESS_EXTRA_PAWN_ON_I_FILE,
+            no_queen=ABLATION_NO_QUEEN,
+            no_bishop=ABLATION_CHESS_NO_BISHOP,
+            one_rook=ABLATION_CHESS_ONE_ROOK,
+            remove_extra_pawn=ABLATION_REMOVE_EXTRA_PAWN,
+            extra_cannon=ABLATION_EXTRA_CANNON,
+            extra_soldier=ABLATION_XIANGQI_EXTRA_SOLDIER,
+        )
 
     b = Board.empty()
 
@@ -74,12 +93,12 @@ def initial_board() -> Board:
     chess_back = [
         PieceKind.ROOK,
         PieceKind.KNIGHT,
-        None if ABLATION_CHESS_NO_BISHOP else PieceKind.BISHOP,
-        None if ABLATION_NO_QUEEN else PieceKind.QUEEN,
+        None if v.no_bishop else PieceKind.BISHOP,
+        None if v.no_queen else PieceKind.QUEEN,
         PieceKind.KING,
         PieceKind.BISHOP,
         PieceKind.KNIGHT,
-        None if ABLATION_CHESS_ONE_ROOK else PieceKind.ROOK,
+        None if v.one_rook else PieceKind.ROOK,
         None,  # 9th file empty by default
     ]
     for x, kind in enumerate(chess_back):
@@ -89,7 +108,7 @@ def initial_board() -> Board:
     # Pawn rank: 8 pawns + optional 9th
     for x in range(8):
         b.set(x, 1, Piece(PieceKind.PAWN, Side.CHESS))
-    extra_pawn = CHESS_EXTRA_PAWN_ON_I_FILE and not ABLATION_REMOVE_EXTRA_PAWN
+    extra_pawn = v.extra_pawn_i_file and not v.remove_extra_pawn
     if extra_pawn:
         b.set(8, 1, Piece(PieceKind.PAWN, Side.CHESS))
 
@@ -110,12 +129,13 @@ def initial_board() -> Board:
 
     b.set(1, 7, Piece(PieceKind.CANNON, Side.XIANGQI))
     b.set(7, 7, Piece(PieceKind.CANNON, Side.XIANGQI))
-    if ABLATION_EXTRA_CANNON:
+    if v.extra_cannon:
         b.set(4, 7, Piece(PieceKind.CANNON, Side.XIANGQI))
 
     for x in [0, 2, 4, 6, 8]:
         b.set(x, 6, Piece(PieceKind.SOLDIER, Side.XIANGQI))
-    if ABLATION_XIANGQI_EXTRA_SOLDIER:
+    if v.extra_soldier:
         b.set(4, 5, Piece(PieceKind.SOLDIER, Side.XIANGQI))
 
     return b
+
