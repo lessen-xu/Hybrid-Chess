@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Play — Hybrid Chess</title>
+  <meta name="description" content="Play Hybrid Chess interactively — choose your side, pick an AI opponent, and experience International Chess vs Chinese Chess.">
+  <link rel="stylesheet" href="../shared/base.css">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="page-header">
+    <a href="../" class="back-link">← Home</a>
+    <h1>♟ Play Hybrid Chess</h1>
+    <p class="subtitle">Choose your side and challenge the AI</p>
+  </header>
+
+  <main class="play-layout">
+    <!-- Left: Setup Panel -->
+    <aside class="panel panel-setup">
+      <div class="card">
+        <h3>⚙️ Game Setup</h3>
+
+        <div class="setup-group">
+          <label class="setup-label">Play as</label>
+          <div class="side-picker">
+            <button class="side-btn active" data-side="chess" id="sideChess">
+              <span class="side-icon">♔</span>
+              <span>Chess</span>
+            </button>
+            <button class="side-btn" data-side="xiangqi" id="sideXiangqi">
+              <span class="side-icon xq-icon">將</span>
+              <span>Xiangqi</span>
+            </button>
+          </div>
+        </div>
+
+        <div class="setup-group">
+          <label class="setup-label">AI Opponent</label>
+          <select id="aiSelect" class="select-styled" style="width:100%">
+            <option value="random">Random</option>
+            <option value="greedy">Greedy</option>
+            <option value="ab_d1" selected>AlphaBeta d=1</option>
+            <option value="ab_d2">AlphaBeta d=2</option>
+            <option value="ab_d4">AlphaBeta d=4</option>
+          </select>
+        </div>
+
+        <div class="setup-group">
+          <label class="setup-label">Rule Variant</label>
+          <select id="variantSelect" class="select-styled" style="width:100%">
+            <option value="none">Standard</option>
+            <option value="no_queen">No Queen</option>
+            <option value="extra_cannon">Extra Cannon</option>
+          </select>
+        </div>
+
+        <button class="btn btn-primary" id="btnNewGame" style="width:100%;margin-top:12px">
+          🎮 New Game
+        </button>
+      </div>
+
+      <!-- Game Status -->
+      <div class="card" id="statusCard">
+        <h3>📋 Status</h3>
+        <div class="status-info">
+          <div class="status-row">
+            <span class="status-key">Turn</span>
+            <span class="status-val" id="statusTurn">—</span>
+          </div>
+          <div class="status-row">
+            <span class="status-key">Ply</span>
+            <span class="status-val" id="statusPly">0</span>
+          </div>
+          <div class="status-row">
+            <span class="status-key">State</span>
+            <span class="status-val" id="statusState">Not started</span>
+          </div>
+          <div class="status-row">
+            <span class="status-key">Your side</span>
+            <span class="status-val" id="statusYourSide">—</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Controls -->
+      <div class="card">
+        <h3>🎛️ Controls</h3>
+        <div class="ctrl-buttons">
+          <button class="btn" id="btnUndo" disabled>↩ Undo</button>
+          <button class="btn" id="btnResign" disabled>🏳 Resign</button>
+          <button class="btn" id="btnFlip">🔄 Flip Board</button>
+        </div>
+      </div>
+    </aside>
+
+    <!-- Center: Board -->
+    <div class="board-center">
+      <!-- Top player label -->
+      <div class="player-label" id="playerTop">
+        <span class="player-name" id="playerTopName">Xiangqi (AI)</span>
+        <span class="player-badge" id="playerTopBadge"></span>
+      </div>
+
+      <div class="board-frame" id="boardFrame">
+        <svg id="boardSvg" xmlns="http://www.w3.org/2000/svg"></svg>
+      </div>
+
+      <!-- Bottom player label -->
+      <div class="player-label" id="playerBottom">
+        <span class="player-name" id="playerBottomName">Chess (You)</span>
+        <span class="player-badge" id="playerBottomBadge"></span>
+      </div>
+
+      <!-- Message overlay -->
+      <div class="game-message" id="gameMessage" style="display:none">
+        <span class="msg-text" id="msgText"></span>
+      </div>
+    </div>
+
+    <!-- Right: Move History -->
+    <aside class="panel panel-history">
+      <div class="card">
+        <h3>📜 Move History</h3>
+        <div id="moveHistory" class="move-history">
+          <p class="text-dim">Start a game to see moves</p>
+        </div>
+      </div>
+
+      <div class="card">
+        <h3>💡 How to Play</h3>
+        <ul class="help-list">
+          <li>Click a piece to select it</li>
+          <li>Green dots = legal moves</li>
+          <li>Red dots = captures</li>
+          <li>Click a dot to move</li>
+          <li>AI responds automatically</li>
+        </ul>
+      </div>
+    </aside>
+  </main>
+
+  <div class="server-notice" id="serverNotice">
+    <span>⚠️ Server not connected.</span>
+    <span>Run <code>python -m hybrid.server</code> then refresh.</span>
+  </div>
+
+  <script src="../shared/board-renderer.js"></script>
+  <script src="play.js"></script>
+</body>
+</html>

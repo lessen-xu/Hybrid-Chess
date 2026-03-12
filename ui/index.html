@@ -1,124 +1,315 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Hybrid Chess — Chinese Chess vs International Chess</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Noto+Serif+SC:wght@600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="style.css">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Hybrid Chess — International Chess vs Chinese Chess</title>
+  <meta name="description" content="An asymmetric board game engine where International Chess faces Chinese Chess on a shared 9×10 board. Full AlphaZero RL training pipeline, C++ engine, and interactive web UI.">
+  <link rel="stylesheet" href="shared/base.css">
+  <style>
+    /* ── Landing Page Layout ── */
+    .landing {
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* ── Hero Section ── */
+    .hero {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      padding: 60px 24px;
+      position: relative;
+      overflow: hidden;
+    }
+    .hero::before {
+      content: '';
+      position: absolute;
+      top: -50%; left: -50%;
+      width: 200%; height: 200%;
+      background: radial-gradient(ellipse at 30% 50%, rgba(212,168,67,0.06) 0%, transparent 60%),
+                  radial-gradient(ellipse at 70% 50%, rgba(194,74,74,0.06) 0%, transparent 60%);
+      animation: heroGlow 12s ease-in-out infinite alternate;
+    }
+    @keyframes heroGlow {
+      0% { transform: translate(0, 0) rotate(0deg); }
+      100% { transform: translate(20px, -20px) rotate(3deg); }
+    }
+
+    .hero-content { position: relative; z-index: 1; max-width: 800px; }
+
+    /* ── Piece showcase ── */
+    .piece-showcase {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 16px;
+      margin-bottom: 32px;
+      font-size: 3rem;
+      opacity: 0.85;
+    }
+    .piece-showcase .chess-side {
+      display: flex; gap: 6px;
+      filter: drop-shadow(0 2px 8px rgba(212,168,67,0.3));
+    }
+    .piece-showcase .xiangqi-side {
+      display: flex; gap: 6px;
+      filter: drop-shadow(0 2px 8px rgba(194,74,74,0.3));
+    }
+    .piece-showcase .vs {
+      font-size: 1.4rem;
+      font-weight: 900;
+      color: var(--text-dim);
+      font-family: var(--font-display);
+      padding: 0 8px;
+    }
+    .xiangqi-char {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 52px; height: 52px;
+      background: #6b2c2c;
+      color: #f0c860;
+      border-radius: 50%;
+      font-size: 1.3rem;
+      font-family: 'Noto Serif SC', serif;
+      font-weight: 700;
+      border: 2px solid #3a1515;
+    }
+
+    .hero h1 {
+      font-family: var(--font-display);
+      font-size: 3.2rem;
+      font-weight: 900;
+      letter-spacing: -0.02em;
+      margin-bottom: 12px;
+      background: linear-gradient(135deg, var(--accent-gold) 0%, #e8d5a0 40%, var(--xiangqi-color) 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+
+    .hero .tagline {
+      font-size: 1.25rem;
+      color: var(--text-secondary);
+      margin-bottom: 40px;
+      line-height: 1.6;
+    }
+    .hero .tagline strong {
+      color: var(--text-primary);
+    }
+
+    /* ── CTA Buttons ── */
+    .cta-group {
+      display: flex;
+      gap: 20px;
+      justify-content: center;
+      flex-wrap: wrap;
+      margin-bottom: 48px;
+    }
+    .cta-btn {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 18px 36px;
+      border-radius: var(--radius-lg);
+      font-family: var(--font-display);
+      font-size: 1.2rem;
+      font-weight: 700;
+      text-decoration: none;
+      transition: all 0.3s ease;
+      border: 2px solid transparent;
+      position: relative;
+      overflow: hidden;
+    }
+    .cta-btn::after {
+      content: '';
+      position: absolute;
+      top: 0; left: -100%;
+      width: 100%; height: 100%;
+      background: linear-gradient(90deg, transparent, rgba(255,255,255,0.1), transparent);
+      transition: left 0.5s ease;
+    }
+    .cta-btn:hover::after { left: 100%; }
+    .cta-btn:hover { transform: translateY(-3px); box-shadow: var(--shadow-lg); }
+
+    .cta-play {
+      background: linear-gradient(135deg, var(--accent-gold), #c49530);
+      color: #1a1000;
+    }
+    .cta-play:hover { color: #1a1000; }
+
+    .cta-replay {
+      background: var(--bg-card);
+      color: var(--text-primary);
+      border-color: var(--border);
+    }
+    .cta-replay:hover {
+      border-color: var(--accent-blue);
+      color: var(--text-primary);
+    }
+
+    .cta-icon { font-size: 1.5rem; }
+
+    /* ── Features ── */
+    .features {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 20px;
+      max-width: 900px;
+      margin: 0 auto;
+      padding: 0 24px;
+    }
+    .feature-card {
+      background: var(--bg-secondary);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md);
+      padding: 20px;
+      text-align: left;
+      transition: all 0.3s ease;
+    }
+    .feature-card:hover {
+      border-color: var(--border-accent);
+      transform: translateY(-2px);
+      box-shadow: var(--shadow-md);
+    }
+    .feature-card .icon {
+      font-size: 1.8rem;
+      margin-bottom: 8px;
+    }
+    .feature-card h3 {
+      font-size: 0.95rem;
+      font-weight: 700;
+      margin-bottom: 4px;
+    }
+    .feature-card p {
+      font-size: 0.8rem;
+      color: var(--text-secondary);
+      line-height: 1.5;
+    }
+
+    /* ── Footer ── */
+    .footer {
+      text-align: center;
+      padding: 32px 24px;
+      color: var(--text-dim);
+      font-size: 0.8rem;
+      border-top: 1px solid var(--border);
+    }
+    .footer a { color: var(--text-secondary); }
+
+    /* ── Quick Start ── */
+    .quick-start {
+      max-width: 600px;
+      margin: 48px auto 0;
+      text-align: left;
+    }
+    .quick-start h3 {
+      font-family: var(--font-display);
+      font-size: 1.1rem;
+      margin-bottom: 12px;
+      color: var(--accent-gold);
+    }
+    .code-block {
+      background: var(--bg-tertiary);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      padding: 14px 18px;
+      font-family: var(--font-mono);
+      font-size: 0.85rem;
+      color: var(--accent-green);
+      overflow-x: auto;
+      line-height: 1.8;
+    }
+    .code-block .comment { color: var(--text-dim); }
+    .code-block .cmd { color: var(--text-primary); }
+
+    @media (max-width: 600px) {
+      .hero h1 { font-size: 2.2rem; }
+      .cta-btn { padding: 14px 24px; font-size: 1rem; }
+      .piece-showcase { font-size: 2.2rem; }
+      .xiangqi-char { width: 40px; height: 40px; font-size: 1.1rem; }
+    }
+  </style>
 </head>
 <body>
-
-<div class="app">
-  <!-- Header -->
-  <header class="header">
-    <div class="logo">
-      <span class="logo-icon">♔</span>
-      <h1>Hybrid Chess</h1>
-      <span class="logo-icon mirror">將</span>
-    </div>
-    <p class="subtitle">International Chess vs Chinese Chess — Asymmetric Battle</p>
-  </header>
-
-  <!-- Main content -->
-  <main class="main">
-    <!-- Left panel: info -->
-    <aside class="panel panel-left">
-      <div class="panel-section">
-        <h3 class="panel-title">
-          <span class="side-indicator chess-side"></span>
-          Chess (Bottom)
-        </h3>
-        <div class="piece-legend" id="chessLegend"></div>
-      </div>
-      <div class="panel-section">
-        <h3 class="panel-title">
-          <span class="side-indicator xiangqi-side"></span>
-          Xiangqi (Top)
-        </h3>
-        <div class="piece-legend" id="xiangqiLegend"></div>
-      </div>
-    </aside>
-
-    <!-- Center: board -->
-    <div class="board-container">
-      <div class="board-frame">
-        <svg id="boardSvg" viewBox="0 0 540 600" xmlns="http://www.w3.org/2000/svg">
-          <!-- Defined in JS -->
-        </svg>
-      </div>
-
-      <!-- Controls -->
-      <div class="controls">
-        <button id="btnFirst" class="ctrl-btn" title="First (Home)">
-          <svg viewBox="0 0 24 24" width="20" height="20"><path fill="currentColor" d="M6 6h2v12H6zm3.5 6l8.5 6V6z"/></svg>
-        </button>
-        <button id="btnPrev" class="ctrl-btn" title="Previous (←)">
-          <svg viewBox="0 0 24 24" width="20" height="20"><path fill="currentColor" d="M6 6l8.5 6L6 18zm9.5 0v12l8.5-6z" transform="rotate(180 12 12)"/></svg>
-        </button>
-        <div class="step-display">
-          <span id="stepLabel">Initial Position</span>
-          <input type="range" id="slider" min="0" max="0" value="0" class="slider">
-          <span id="stepCount" class="step-count">0 / 0</span>
+  <div class="landing">
+    <section class="hero">
+      <div class="hero-content">
+        <div class="piece-showcase">
+          <span class="chess-side">♔ ♕ ♖ ♗ ♘</span>
+          <span class="vs">VS</span>
+          <span class="xiangqi-side">
+            <span class="xiangqi-char">將</span>
+            <span class="xiangqi-char">車</span>
+            <span class="xiangqi-char">馬</span>
+            <span class="xiangqi-char">砲</span>
+          </span>
         </div>
-        <button id="btnNext" class="ctrl-btn" title="Next (→)">
-          <svg viewBox="0 0 24 24" width="20" height="20"><path fill="currentColor" d="M6 6l8.5 6L6 18zm9.5 0v12l8.5-6z"/></svg>
-        </button>
-        <button id="btnLast" class="ctrl-btn" title="Last (End)">
-          <svg viewBox="0 0 24 24" width="20" height="20"><path fill="currentColor" d="M16 6h2v12h-2zm-3.5 6L4 6v12z"/></svg>
-        </button>
-        <button id="btnAutoPlay" class="ctrl-btn auto-btn" title="Auto-play (Space)">
-          <svg viewBox="0 0 24 24" width="20" height="20" id="playIcon"><path fill="currentColor" d="M8 5v14l11-7z"/></svg>
-        </button>
-      </div>
-    </div>
 
-    <!-- Right panel: move list -->
-    <aside class="panel panel-right">
-      <div class="panel-section">
-        <h3 class="panel-title">Game Info</h3>
-        <div class="game-info" id="gameInfo">
-          <div class="info-row">
-            <span class="info-label">Status</span>
-            <span class="info-value" id="infoStatus">—</span>
+        <h1>Hybrid Chess</h1>
+        <p class="tagline">
+          An <strong>asymmetric board game</strong> where International Chess
+          faces Chinese Chess on a shared 9×10 board.<br>
+          Full <strong>AlphaZero RL pipeline</strong>, C++ engine, and interactive web UI.
+        </p>
+
+        <div class="cta-group">
+          <a href="play/" class="cta-btn cta-play">
+            <span class="cta-icon">♟</span>
+            Play Now
+          </a>
+          <a href="replay/" class="cta-btn cta-replay">
+            <span class="cta-icon">📊</span>
+            Analyze Replays
+          </a>
+        </div>
+
+        <div class="features">
+          <div class="feature-card">
+            <div class="icon">🎮</div>
+            <h3>Human vs AI</h3>
+            <p>Play as either side against built-in AI agents — Random, Greedy, or AlphaBeta search.</p>
           </div>
-          <div class="info-row">
-            <span class="info-label">Result</span>
-            <span class="info-value" id="infoResult">—</span>
+          <div class="feature-card">
+            <div class="icon">🧠</div>
+            <h3>RL Training</h3>
+            <p>Train your own AlphaZero agent with a single command. CPU &amp; GPU supported.</p>
           </div>
-          <div class="info-row">
-            <span class="info-label">Plies</span>
-            <span class="info-value" id="infoPlies">—</span>
+          <div class="feature-card">
+            <div class="icon">⚡</div>
+            <h3>C++ Engine</h3>
+            <p>High-performance move generation and alpha-beta search via pybind11.</p>
           </div>
-          <div class="info-row">
-            <span class="info-label">Reason</span>
-            <span class="info-value" id="infoReason">—</span>
+          <div class="feature-card">
+            <div class="icon">⚖️</div>
+            <h3>Balance Variants</h3>
+            <p>Rule variants to explore asymmetric game balance — no queen, extra cannon, and more.</p>
+          </div>
+        </div>
+
+        <div class="quick-start">
+          <h3>⚡ Quick Start</h3>
+          <div class="code-block">
+            <span class="comment"># Install &amp; play</span><br>
+            <span class="cmd">pip install -r requirements.txt</span><br>
+            <span class="cmd">python -m hybrid.server</span><br>
+            <br>
+            <span class="comment"># Train your own AI</span><br>
+            <span class="cmd">python -m scripts.train_az_iter --iterations 20 --games 100</span>
           </div>
         </div>
       </div>
-      <div class="panel-section move-list-section">
-        <h3 class="panel-title">Moves</h3>
-        <div class="move-list" id="moveList">
-          <p class="placeholder">Load a game to see moves</p>
-        </div>
-      </div>
-      <div class="panel-section">
-        <h3 class="panel-title">Load Game</h3>
-        <div class="load-controls">
-          <label class="file-btn" for="fileInput">
-            <svg viewBox="0 0 24 24" width="16" height="16"><path fill="currentColor" d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6zm4 18H6V4h7v5h5v11z"/></svg>
-            Open JSON
-          </label>
-          <input type="file" id="fileInput" accept=".json,.jsonl" style="display:none">
-          <select id="gameSelect" class="game-select" style="display:none"></select>
-        </div>
-      </div>
-    </aside>
-  </main>
-</div>
+    </section>
 
-<script src="board.js"></script>
+    <footer class="footer">
+      <a href="https://github.com/lessen-xu/Hybrid-Chess">GitHub</a>
+      &nbsp;·&nbsp; MIT License &nbsp;·&nbsp; Hybrid Chess
+    </footer>
+  </div>
 </body>
 </html>

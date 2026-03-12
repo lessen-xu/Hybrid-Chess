@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Game Replay — Hybrid Chess</title>
+  <meta name="description" content="Load and analyze Hybrid Chess game replays. Step through moves, view board states, and study AI strategies.">
+  <link rel="stylesheet" href="../shared/base.css">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="page-header">
+    <a href="../" class="back-link">← Home</a>
+    <h1>📊 Game Replay</h1>
+    <p class="subtitle">Load game files and analyze move-by-move</p>
+  </header>
+
+  <main class="replay-layout">
+    <!-- Left Panel: Piece Legends -->
+    <aside class="panel panel-left">
+      <div class="card legend-card">
+        <h3><span class="badge badge-chess">●</span> Chess (Bottom)</h3>
+        <div id="chessLegend" class="legend-list"></div>
+      </div>
+      <div class="card legend-card">
+        <h3><span class="badge badge-xiangqi">●</span> Xiangqi (Top)</h3>
+        <div id="xiangqiLegend" class="legend-list"></div>
+      </div>
+    </aside>
+
+    <!-- Center: Board -->
+    <div class="board-center">
+      <div class="board-frame" id="boardFrame">
+        <svg id="boardSvg" xmlns="http://www.w3.org/2000/svg"></svg>
+      </div>
+
+      <!-- Controls -->
+      <div class="controls-bar">
+        <button class="btn btn-icon" id="btnFirst" title="First (Home)">⏮</button>
+        <button class="btn btn-icon" id="btnPrev" title="Previous (←)">◀◀</button>
+        <div class="step-display">
+          <span class="dot"></span>
+          <span id="stepLabel">0 / 0</span>
+        </div>
+        <button class="btn btn-icon" id="btnNext" title="Next (→)">▶▶</button>
+        <button class="btn btn-icon" id="btnLast" title="Last (End)">⏭</button>
+        <button class="btn btn-icon" id="btnAuto" title="Auto-play (Space)">▶</button>
+      </div>
+
+      <input type="range" id="stepSlider" min="0" max="0" value="0" class="step-slider">
+    </div>
+
+    <!-- Right Panel: Game Info -->
+    <aside class="panel panel-right">
+      <div class="card">
+        <h3>Game Info</h3>
+        <div class="info-grid">
+          <span class="info-label">Status</span><span id="infoStatus" class="info-value">—</span>
+          <span class="info-label">Result</span><span id="infoResult" class="info-value">—</span>
+          <span class="info-label">Plies</span><span id="infoPlies" class="info-value">—</span>
+          <span class="info-label">Reason</span><span id="infoReason" class="info-value">—</span>
+        </div>
+      </div>
+
+      <div class="card">
+        <h3>Moves</h3>
+        <div id="moveList" class="move-list">
+          <p class="text-dim">Load a game to see moves</p>
+        </div>
+      </div>
+
+      <div class="card">
+        <h3>Load Game</h3>
+        <label class="btn btn-primary" style="width:100%;justify-content:center" for="fileInput">
+          📂 Open JSON
+        </label>
+        <input type="file" id="fileInput" accept=".json,.jsonl" style="display:none">
+        <select id="gameSelect" class="select-styled" style="width:100%;margin-top:10px;display:none"></select>
+      </div>
+    </aside>
+  </main>
+
+  <script src="../shared/board-renderer.js"></script>
+  <script src="replay.js"></script>
+</body>
+</html>

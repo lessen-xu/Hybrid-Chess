@@ -1,0 +1,237 @@
+/* ═══════════════════════════════════════════════
+   Hybrid Chess — Shared Base Styles
+   Dark theme tokens, typography, utilities
+   ═══════════════════════════════════════════════ */
+
+/* ── Google Fonts ── */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=Noto+Serif+SC:wght@600;700&family=Outfit:wght@600;700;800&display=swap');
+
+/* ── Design Tokens ── */
+:root {
+  --bg-primary:    #0d1117;
+  --bg-secondary:  #161b22;
+  --bg-tertiary:   #1c2333;
+  --bg-card:       #21262d;
+  --border:        #30363d;
+  --border-accent: #3d444d;
+
+  --text-primary:  #e6edf3;
+  --text-secondary:#8b949e;
+  --text-dim:      #6e7681;
+
+  --accent-gold:   #d4a843;
+  --accent-green:  #3fb950;
+  --accent-blue:   #58a6ff;
+  --accent-red:    #f85149;
+  --accent-orange: #d29922;
+  --accent-purple: #a371f7;
+
+  --chess-color:   #faf0d6;
+  --chess-accent:  #bfa44e;
+  --xiangqi-color: #c24a4a;
+  --xiangqi-accent:#6b2c2c;
+
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 16px;
+
+  --shadow-sm: 0 1px 3px rgba(0,0,0,.3);
+  --shadow-md: 0 4px 12px rgba(0,0,0,.4);
+  --shadow-lg: 0 8px 32px rgba(0,0,0,.5);
+
+  --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-display: 'Outfit', 'Inter', sans-serif;
+  --font-serif: 'Noto Serif SC', serif;
+  --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
+
+  --transition: 0.2s ease;
+}
+
+/* ── Reset ── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+html {
+  font-size: 15px;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+body {
+  font-family: var(--font-sans);
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  line-height: 1.5;
+  min-height: 100vh;
+}
+
+a { color: var(--accent-blue); text-decoration: none; transition: color var(--transition); }
+a:hover { color: var(--accent-gold); }
+
+/* ── Common Components ── */
+.card {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 16px;
+}
+
+.badge {
+  display: inline-block;
+  padding: 2px 10px;
+  border-radius: 12px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.badge-chess   { background: var(--chess-accent); color: #1a1a0a; }
+.badge-xiangqi { background: var(--xiangqi-color); color: #fff; }
+.badge-draw    { background: var(--accent-orange); color: #1a1a0a; }
+
+/* ── Buttons ── */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 10px 20px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--bg-card);
+  color: var(--text-primary);
+  font-family: var(--font-sans);
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all var(--transition);
+  user-select: none;
+}
+.btn:hover {
+  background: var(--bg-tertiary);
+  border-color: var(--border-accent);
+  transform: translateY(-1px);
+}
+.btn:active { transform: translateY(0); }
+
+.btn-primary {
+  background: var(--accent-gold);
+  color: #1a1000;
+  border-color: var(--accent-gold);
+}
+.btn-primary:hover {
+  background: #e0b84e;
+  border-color: #e0b84e;
+}
+
+.btn-lg {
+  padding: 14px 32px;
+  font-size: 1.1rem;
+  border-radius: var(--radius-md);
+}
+
+.btn-icon {
+  width: 38px;
+  height: 38px;
+  padding: 0;
+  font-size: 1.1rem;
+}
+
+/* ── Select / Input ── */
+.select-styled {
+  padding: 8px 12px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--bg-card);
+  color: var(--text-primary);
+  font-family: var(--font-sans);
+  font-size: 0.85rem;
+  cursor: pointer;
+  transition: border-color var(--transition);
+}
+.select-styled:focus {
+  outline: none;
+  border-color: var(--accent-gold);
+}
+
+/* ── Board container ── */
+.board-frame {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 12px;
+  box-shadow: var(--shadow-lg);
+  display: inline-block;
+}
+
+.board-frame svg {
+  display: block;
+  width: 528px;
+  max-width: 100%;
+  height: auto;
+}
+
+/* ── Piece interaction styles ── */
+.piece-disk {
+  cursor: pointer;
+  transition: filter 0.15s ease;
+}
+.piece-disk:hover {
+  filter: brightness(1.15);
+}
+.piece-disk.selected {
+  filter: brightness(1.3) drop-shadow(0 0 6px rgba(212,168,67,0.8));
+}
+
+/* ── Highlight dots for legal moves ── */
+.highlight.legal-move {
+  fill: rgba(76, 175, 80, 0.45);
+  stroke: rgba(76, 175, 80, 0.7);
+  cursor: pointer;
+  pointer-events: auto !important;
+  transition: fill 0.15s ease;
+}
+.highlight.legal-move:hover {
+  fill: rgba(76, 175, 80, 0.7);
+}
+.highlight.capture-move {
+  fill: rgba(248, 81, 73, 0.35);
+  stroke: rgba(248, 81, 73, 0.7);
+  cursor: pointer;
+  pointer-events: auto !important;
+}
+.highlight.capture-move:hover {
+  fill: rgba(248, 81, 73, 0.6);
+}
+
+/* ── Status bar ── */
+.status-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 16px;
+  background: var(--bg-tertiary);
+  border-radius: var(--radius-sm);
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+}
+.status-bar .dot {
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  background: var(--accent-green);
+  animation: pulse 2s infinite;
+}
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
+/* ── Scrollbar ── */
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: var(--bg-secondary); }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--border-accent); }
+
+/* ── Responsive ── */
+@media (max-width: 768px) {
+  html { font-size: 13px; }
+}
