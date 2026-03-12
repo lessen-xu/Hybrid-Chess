@@ -1,41 +1,212 @@
-# Hybrid Chess ♔♚
+# Hybrid Chess ♔ vs 將
 
-## Project Structure
+> An **asymmetric board game** where International Chess faces Chinese Chess (Xiangqi) on a shared 9×10 board — with a full **AlphaZero RL pipeline**, **C++ engine**, and **interactive web UI**.
 
 ```
-hybrid-chess/
-├── docs/          # Game rules, methodology, results, timeline
-├── hybrid/        # Core library (game engine, agents, RL pipeline)
-├── cpp/           # C++ engine source (pybind11)
-├── scripts/       # CLI tools (train, eval, tournament, diagnostics)
-├── tests/         # pytest suite
-└── runs/          # Experiment outputs (not in repo)
+  ♖ ♘ ♗ ♕ ♔ ♗ ♘ ♖ ♖       車 馬 象 士 將 士 象 馬 車
+  ♙ ♙ ♙ ♙ ♙ ♙ ♙ ♙ ♙             砲             砲
+         楚  河  漢  界         卒   卒   卒   卒   卒
 ```
+
+## Features
+
+| Area | What you get |
+|------|-------------|
+| **Play** | Browser-based UI — play as Chess or Xiangqi against AI (Random / Greedy / AlphaBeta) |
+| **Train** | AlphaZero pipeline: MCTS + ResNet, self-play, gating, curriculum learning |
+| **Evaluate** | Side-switching arena, EGTA tournament, built-in baselines |
+| **Engine** | Pure-Python engine + optional C++ engine (pybind11, ~50× faster) |
+| **Gymnasium** | `gym.make("HybridChess-v0")` — drop into any RL framework |
+| **Balance** | Rule variants (no queen, extra cannon) for asymmetric fairness tuning |
+
+---
+
+## Installation
+
+```bash
+# Clone
+git clone https://github.com/lessen-xu/Hybrid-Chess.git
+cd Hybrid-Chess
+
+# Install (editable, core only)
+pip install -e .
+
+# With dev tools (pytest, matplotlib, pandas)
+pip install -e ".[dev]"
+
+# With Gymnasium support
+pip install -e ".[gym]"
+```
+
+### Optional: C++ Engine
+
+The C++ engine is **not required** — everything works with the pure-Python engine.  
+For ~50× faster move generation (useful for deep AlphaBeta and large-scale training):
+
+```bash
+# Requires: g++ / MSVC, pybind11
+cd cpp
+# Windows
+.\build.ps1
+# Linux/macOS
+./build.sh
+```
+
+---
 
 ## Quick Start
 
+### Play in the Browser
+
 ```bash
-pip install -r requirements.txt
-
-# Build C++ engine
-.\cpp\build.ps1
-
-# Run tests
-pytest -q
-
-# Train AlphaZero
-python -m scripts.train_az_iter --iterations 20 \
-    --curriculum-schedule 3phase_v2 \
-    --simulations 200 --eval-simulations 400 \
-    --num-workers 8 --use-inference-server --inference-device cuda \
-    --use-cpp --ablation extra_cannon \
-    --outdir runs/az_run
-
-# Side-switching evaluation arena
-python -m scripts.eval_arena --model-a ab_d4 --model-b ab_d1 \
-    --games 20 --use-cpp
-
-# EGTA dual-matrix tournament
-python -m scripts.egta_tournament --preset v4 --outdir runs/egta
+python -m hybrid server
+# Opens http://localhost:8000 — choose your side and play!
 ```
 
+### Train AlphaZero
+
+```bash
+# Basic training (CPU, 10 iterations)
+python -m hybrid train --iterations 10 --games 50 --simulations 50
+
+# Full training (GPU, parallel, C++ engine)
+python -m hybrid train \
+    --iterations 100 --games 200 --simulations 200 \
+    --device cuda --workers 8 --use-cpp \
+    --output runs/my_experiment
+```
+
+### Evaluate Agents
+
+```bash
+# AlphaZero checkpoint vs AlphaBeta depth 2
+python -m hybrid eval --model runs/my_experiment/best_model.pt --vs ab_d2 --games 50
+
+# AlphaBeta vs Random
+python -m hybrid eval --vs random --games 100
+```
+
+### Use as a Gymnasium Env
+
+```python
+import gymnasium as gym
+import hybrid.gym_env  # registers HybridChess-v0
+
+env = gym.make("HybridChess-v0")
+obs, info = env.reset()
+
+# info["legal_actions"] → list of valid action indices
+action = info["legal_actions"][0]
+obs, reward, terminated, truncated, info = env.step(action)
+```
+
+### Use as a Python Library
+
+```python
+from hybrid import HybridChessEnv, Side, Move
+
+env = HybridChessEnv()
+state = env.reset()
+legal = env.legal_moves()
+
+# Make a move
+state, reward, done, info = env.step(legal[0])
+print(f"Ply {state.ply}, turn: {state.side_to_move.name}")
+```
+
+### Write a Custom Agent
+
+```python
+from hybrid.agents.base import Agent
+from hybrid.core.env import GameState
+from hybrid.core.types import Move
+
+class MyAgent(Agent):
+    name = "my_agent"
+
+    def select_move(self, state: GameState, legal_moves: list[Move]) -> Move:
+        # Your logic here — MCTS, neural net, heuristic, ...
+        return legal_moves[0]
+```
+
+---
+
+## Architecture
+
+```
+hybrid-chess/
+├── hybrid/                  # Core Python package
+│   ├── core/                # Game engine
+│   │   ├── types.py         #   Side, PieceKind, Move, Piece
+│   │   ├── board.py         #   Board representation
+│   │   ├── rules.py         #   Legal move generation, terminal detection
+│   │   ├── config.py        #   Rule switches & ablation flags
+│   │   ├── env.py           #   HybridChessEnv (gym-like API)
+│   │   └── render.py        #   ASCII board renderer
+│   ├── agents/              # AI players
+│   │   ├── base.py          #   Agent ABC
+│   │   ├── random_agent.py  #   Random baseline
+│   │   ├── greedy_agent.py  #   1-ply capture maximizer
+│   │   ├── alphabeta_agent.py  # Negamax α-β with hand-crafted eval
+│   │   ├── alphazero_stub.py   # MCTS + policy/value network
+│   │   └── eval.py          #   Hand-crafted evaluation function
+│   ├── rl/                  # AlphaZero training pipeline
+│   │   ├── az_network.py    #   Dual-head ResNet (14ch → policy + value)
+│   │   ├── az_encoding.py   #   State/action encoding (92 move planes)
+│   │   ├── az_selfplay.py   #   Self-play game generation
+│   │   ├── az_train.py      #   Training loop (policy CE + value MSE)
+│   │   ├── az_eval.py       #   Match evaluation
+│   │   ├── az_runner.py     #   Full iterative runner
+│   │   └── ...              #   Inference server, parallel workers, replay buffer
+│   ├── server.py            # Zero-dep HTTP game server
+│   ├── gym_env.py           # Gymnasium wrapper
+│   └── __main__.py          # CLI entry point
+├── cpp/                     # C++ engine (pybind11)
+│   └── src/                 #   board, rules, ab_search, bindings
+├── ui/                      # Web UI
+│   ├── index.html           #   Landing page
+│   ├── play/                #   Interactive play (human vs AI)
+│   ├── replay/              #   Game replay viewer
+│   └── shared/              #   Shared board renderer & CSS
+├── scripts/                 # CLI tools
+│   ├── train_az_iter.py     #   AZ training launcher
+│   ├── eval_arena.py        #   Side-switching evaluation
+│   └── egta_tournament.py   #   EGTA payoff matrix generation
+├── tests/                   # pytest suite
+└── runs/                    # Experiment outputs (gitignored)
+```
+
+---
+
+## Rule Variants & Balance
+
+The asymmetric design creates a natural balance challenge.  
+Built-in rule variants for fairness tuning:
+
+| Variant | Effect | Balance impact |
+|---------|--------|----------------|
+| `none` (standard) | Full Chess army vs full Xiangqi army | Chess favored (Queen is dominant) |
+| `extra_cannon` | Xiangqi gets a 3rd Cannon at center | More balanced |
+| `no_queen` | Chess loses the Queen | Xiangqi favored |
+
+Applied via CLI: `--ablation extra_cannon` or in the UI's "Rule Variant" dropdown.
+
+---
+
+## CLI Reference
+
+```
+python -m hybrid server   [--port 8000] [--host 127.0.0.1] [--no-browser]
+python -m hybrid train    [--iterations N] [--games N] [--simulations N]
+                          [--device auto|cpu|cuda] [--workers N] [--use-cpp]
+                          [--ablation none|extra_cannon|no_queen]
+                          [--lr 1e-3] [--batch-size 256] [--output DIR]
+python -m hybrid eval     [--model PATH] [--vs random|ab_d1|ab_d2|ab_d4]
+                          [--games N] [--simulations N] [--device auto]
+```
+
+---
+
+## License
+
+MIT
