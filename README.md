@@ -25,7 +25,7 @@
 
 📊 **Evaluate** — Side-switching arena, EGTA tournament, built-in baselines
 
-⚡ **Engine** — Pure-Python engine + optional C++ engine via pybind11 (~50× faster)
+⚡ **Performance** — C++ engine, GPU batch inference, shared-memory IPC, MCTS leaf batching, FP16 AMP
 
 🏋️ **Gymnasium** — `gym.make("HybridChess-v0")` — drop into any RL framework
 
@@ -50,10 +50,10 @@ pip install -e ".[dev]"
 pip install -e ".[gym]"
 ```
 
-### Optional: C++ Engine
+### C++ Engine (Recommended)
 
-The C++ engine is **not required** — everything works with the pure-Python engine.  
-For ~50× faster move generation (useful for deep AlphaBeta and large-scale training):
+The pure-Python engine can run simple games, but is **significantly slower** in practice.  
+For any serious training or AlphaBeta search beyond depth 2, the C++ engine (~50× faster) is strongly recommended:
 
 ```bash
 # Requires: g++ / MSVC, pybind11
@@ -63,6 +63,23 @@ cd cpp
 # Linux/macOS
 ./build.sh
 ```
+
+### Built-in Performance Optimizations
+
+The training pipeline includes multiple layers of acceleration:
+
+| Optimization | Description |
+|-------------|-------------|
+| **C++ engine** | Board, legal-move gen, terminal detection, full α-β search in C++ via pybind11 |
+| **GPU batch inference** | Centralized inference server batches N workers' requests into one forward pass |
+| **Zero-copy shared memory** | Workers ↔ server communicate via `SharedMemoryPool` — no pickle, only 8-byte signals through Queue |
+| **MCTS leaf batching** | Gathers up to K leaves per MCTS round with virtual loss, then evaluates in a single batch |
+| **FP16 / TF32 AMP** | Automatic mixed precision on Ampere+ GPUs (TF32 matmul + FP16 autocast) |
+| **GPU state encoding** | `encode_batch_gpu()` — vectorized scatter-based one-hot encoding on GPU, zero-allocation hot path |
+| **Parallel self-play** | Multi-process `spawn` workers with independent MCTS trees |
+| **Parallel evaluation** | Gating and eval matches distributed across CPU workers |
+| **Pinned memory DMA** | Pre-allocated pinned CPU buffers for async GPU transfer |
+| **Static batching** | Fixed batch-size forward pass eliminates CUDA graph recompilation |
 
 ---
 
