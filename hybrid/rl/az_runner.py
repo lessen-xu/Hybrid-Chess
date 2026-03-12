@@ -53,6 +53,10 @@ class AZIterConfig:
     selfplay_move_limit_value_mode: str = "penalty"
     selfplay_move_limit_value_scale: float = 4.0
 
+    # Network architecture
+    res_blocks: int = 3
+    channels: int = 64
+
     # Training
     batch_size: int = 256
     train_epochs: int = 1
@@ -206,6 +210,7 @@ def _save_checkpoint(
         "config": cfg.to_dict(),
         "iteration": iteration,
         "global_step": global_step,
+        "arch": {"res_blocks": cfg.res_blocks, "channels": cfg.channels},
     }, path)
 
 
@@ -213,6 +218,25 @@ def _load_model_weights(net: PolicyValueNet, path: str, device: torch.device) ->
     """Load model weights from checkpoint."""
     ckpt = torch.load(path, map_location=device, weights_only=True)
     net.load_state_dict(ckpt["model"])
+
+
+def build_net_from_checkpoint(
+    path: str, device: str = "cpu",
+    fallback_res_blocks: int = 3, fallback_channels: int = 64,
+) -> PolicyValueNet:
+    """Build a PolicyValueNet with architecture matching the checkpoint.
+
+    Reads 'arch' key from the checkpoint if present; otherwise falls back
+    to the given defaults (backward-compatible with older checkpoints).
+    """
+    ckpt = torch.load(path, map_location=device, weights_only=True)
+    arch = ckpt.get("arch", {})
+    res_blocks = arch.get("res_blocks", fallback_res_blocks)
+    channels = arch.get("channels", fallback_channels)
+    net = PolicyValueNet(num_res_blocks=res_blocks, channels=channels)
+    net.load_state_dict(ckpt["model"])
+    net.eval()
+    return net
 
 
 # ====================================================================
@@ -407,7 +431,9 @@ def run_iterations(cfg: AZIterConfig, outdir: Path) -> None:
         print(f"[Runner] WARNING: found existing metrics.csv — backed up to {backup.name}")
     _init_csv(str(csv_path))
 
-    net = PolicyValueNet().to(device)
+    net = PolicyValueNet(
+        num_res_blocks=cfg.res_blocks, channels=cfg.channels,
+    ).to(device)
     optimizer = torch.optim.AdamW(
         net.parameters(), lr=cfg.lr, weight_decay=cfg.weight_decay
     )
@@ -899,14 +925,9 @@ def _record_eval_games(
     outdir: Path,
 ) -> None:
     """Record a few eval games (single-process, CPU inference)."""
-    import torch as _torch
-    from hybrid.rl.az_network import PolicyValueNet as _PVN
     from hybrid.agents.alphazero_stub import TorchPolicyValueModel as _TPVM
 
-    net = _PVN()
-    ckpt = _torch.load(eval_ckpt, map_location="cpu", weights_only=True)
-    net.load_state_dict(ckpt["model"])
-    net.eval()
+    net = build_net_from_checkpoint(eval_ckpt, device="cpu")
     model = _TPVM(net, device="cpu")
     az = make_eval_az_agent(model, simulations=cfg.eval_simulations, seed=cfg.seed,
                             use_cpp=cfg.use_cpp)

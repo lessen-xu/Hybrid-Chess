@@ -48,10 +48,8 @@ def _eval_worker(
 
     _apply_ablation(ablation)
 
-    net = PolicyValueNet()
-    ckpt = torch.load(model_ckpt_path, map_location="cpu", weights_only=True)
-    net.load_state_dict(ckpt["model"])
-    net.eval()
+    from hybrid.rl.az_runner import build_net_from_checkpoint
+    net = build_net_from_checkpoint(model_ckpt_path, device="cpu")
     model = TorchPolicyValueModel(net, device="cpu")
 
     az_agent = AlphaZeroMiniAgent(
@@ -122,10 +120,9 @@ def _gating_worker(
 
     _apply_ablation(ablation)
 
-    cand_net = PolicyValueNet()
-    cand_ckpt_data = torch.load(candidate_ckpt, map_location="cpu", weights_only=True)
-    cand_net.load_state_dict(cand_ckpt_data["model"])
-    cand_net.eval()
+    from hybrid.rl.az_runner import build_net_from_checkpoint
+
+    cand_net = build_net_from_checkpoint(candidate_ckpt, device="cpu")
     cand_model = TorchPolicyValueModel(cand_net, device="cpu")
     cand_agent = AlphaZeroMiniAgent(
         model=cand_model,
@@ -134,10 +131,7 @@ def _gating_worker(
         use_cpp=use_cpp,
     )
 
-    best_net = PolicyValueNet()
-    best_ckpt_data = torch.load(best_ckpt, map_location="cpu", weights_only=True)
-    best_net.load_state_dict(best_ckpt_data["model"])
-    best_net.eval()
+    best_net = build_net_from_checkpoint(best_ckpt, device="cpu")
     best_model = TorchPolicyValueModel(best_net, device="cpu")
     best_agent = AlphaZeroMiniAgent(
         model=best_model,
@@ -205,10 +199,9 @@ def play_match_parallel(
         from hybrid.agents.random_agent import RandomAgent
         from hybrid.agents.alphabeta_agent import AlphaBetaAgent, SearchConfig
 
-        net = PolicyValueNet()
-        ckpt = torch.load(model_ckpt_path, map_location="cpu", weights_only=True)
-        net.load_state_dict(ckpt["model"])
-        net.eval()
+        from hybrid.rl.az_runner import build_net_from_checkpoint
+
+        net = build_net_from_checkpoint(model_ckpt_path, device="cpu")
         model = TorchPolicyValueModel(net, device="cpu")
         az = make_eval_az_agent(model, simulations=simulations, seed=seed, use_cpp=use_cpp)
 
@@ -286,17 +279,13 @@ def gating_match_parallel(
         from hybrid.rl.az_network import PolicyValueNet
         from hybrid.agents.alphazero_stub import TorchPolicyValueModel
 
-        cnet = PolicyValueNet()
-        cdata = torch.load(candidate_ckpt, map_location="cpu", weights_only=True)
-        cnet.load_state_dict(cdata["model"])
-        cnet.eval()
+        from hybrid.rl.az_runner import build_net_from_checkpoint
+
+        cnet = build_net_from_checkpoint(candidate_ckpt, device="cpu")
         cm = TorchPolicyValueModel(cnet, device="cpu")
         ca = make_eval_az_agent(cm, simulations=simulations, seed=seed, use_cpp=use_cpp)
 
-        bnet = PolicyValueNet()
-        bdata = torch.load(best_ckpt, map_location="cpu", weights_only=True)
-        bnet.load_state_dict(bdata["model"])
-        bnet.eval()
+        bnet = build_net_from_checkpoint(best_ckpt, device="cpu")
         bm = TorchPolicyValueModel(bnet, device="cpu")
         ba = make_eval_az_agent(bm, simulations=simulations, seed=seed + 1, use_cpp=use_cpp)
 

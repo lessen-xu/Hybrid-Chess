@@ -42,6 +42,23 @@ def cmd_train(args):
         ablation=args.ablation,
         lr=args.lr,
         batch_size=args.batch_size,
+        # Network architecture
+        res_blocks=args.res_blocks,
+        channels=args.channels,
+        # Inference server
+        use_inference_server=args.use_inference_server,
+        inference_batch_size=args.inference_batch_size,
+        # Evaluation
+        eval_games=args.eval_games,
+        eval_simulations=args.eval_simulations,
+        gating_simulations=args.gating_simulations,
+        # Curriculum / endgame
+        curriculum_schedule=args.curriculum,
+        endgame_ratio=args.endgame_ratio,
+        # Training
+        buffer_capacity_states=args.buffer_capacity,
+        train_epochs=args.train_epochs,
+        seed=args.seed,
     )
     outdir = Path(args.output)
     run_iterations(cfg, outdir)
@@ -103,7 +120,7 @@ def build_parser():
     p_train.add_argument("--games", type=int, default=50,
                          help="Self-play games per iteration")
     p_train.add_argument("--simulations", type=int, default=50,
-                         help="MCTS simulations per move")
+                         help="MCTS simulations per move (self-play)")
     p_train.add_argument("--device", default="auto",
                          help="cpu / cuda / auto")
     p_train.add_argument("--use-cpp", action="store_true",
@@ -111,11 +128,43 @@ def build_parser():
     p_train.add_argument("--workers", type=int, default=1,
                          help="Parallel self-play workers")
     p_train.add_argument("--ablation", default="extra_cannon",
-                         help="Rule variant: none, extra_cannon, no_queen")
+                         help="Rule variant(s), comma-separated: "
+                              "none, extra_cannon, no_queen, no_bishop, "
+                              "extra_soldier, one_rook, no_flying_general, "
+                              "remove_pawn, no_queen_promo")
     p_train.add_argument("--lr", type=float, default=1e-3)
     p_train.add_argument("--batch-size", type=int, default=256)
     p_train.add_argument("--output", default="runs/az_run",
                          help="Output directory for checkpoints and logs")
+    # Network architecture
+    p_train.add_argument("--res-blocks", type=int, default=3,
+                         help="Number of residual blocks (default: 3)")
+    p_train.add_argument("--channels", type=int, default=64,
+                         help="Conv channel width (default: 64)")
+    # Inference server (GPU batching)
+    p_train.add_argument("--use-inference-server", action="store_true",
+                         help="Enable GPU batch inference server for parallel self-play")
+    p_train.add_argument("--inference-batch-size", type=int, default=32,
+                         help="Max batch size for inference server")
+    # Evaluation
+    p_train.add_argument("--eval-games", type=int, default=20,
+                         help="Games per evaluation round")
+    p_train.add_argument("--eval-simulations", type=int, default=200,
+                         help="MCTS sims for evaluation (decoupled from self-play)")
+    p_train.add_argument("--gating-simulations", type=int, default=20,
+                         help="MCTS sims for gating matches")
+    # Curriculum / endgame
+    p_train.add_argument("--curriculum", default="none",
+                         choices=["none", "3phase", "3phase_v2"],
+                         help="Curriculum schedule")
+    p_train.add_argument("--endgame-ratio", type=float, default=0.0,
+                         help="Fraction of self-play starting from endgame")
+    # Training
+    p_train.add_argument("--buffer-capacity", type=int, default=50_000,
+                         help="Replay buffer capacity (states)")
+    p_train.add_argument("--train-epochs", type=int, default=1,
+                         help="Training epochs per iteration")
+    p_train.add_argument("--seed", type=int, default=0)
 
     # ── eval ──
     p_eval = sub.add_parser("eval", help="Evaluate agent vs baseline")

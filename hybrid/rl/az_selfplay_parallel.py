@@ -60,10 +60,8 @@ def selfplay_worker(
         )
         model = RemotePolicyValueModel(client)
     else:
-        net = PolicyValueNet()
-        ckpt = torch.load(model_ckpt_path, map_location="cpu", weights_only=True)
-        net.load_state_dict(ckpt["model"])
-        net.eval()
+        from hybrid.rl.az_runner import build_net_from_checkpoint
+        net = build_net_from_checkpoint(model_ckpt_path, device="cpu")
         model = TorchPolicyValueModel(net, device="cpu")
 
     agent = AlphaZeroMiniAgent(model=model, cfg=mcts_cfg, seed=seed, use_cpp=use_cpp)

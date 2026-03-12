@@ -61,11 +61,9 @@ class InferenceServer:
     def run(self) -> None:
         """Server main loop."""
         dev = torch.device(self.device)
-        net = PolicyValueNet()
-        ckpt = torch.load(self.model_ckpt_path, map_location=dev, weights_only=True)
-        net.load_state_dict(ckpt["model"])
+        from hybrid.rl.az_runner import build_net_from_checkpoint
+        net = build_net_from_checkpoint(self.model_ckpt_path, device=str(dev))
         net.to(dev)
-        net.eval()
 
         use_amp = dev.type == 'cuda'
         B_max = self.max_batch_size
