@@ -194,6 +194,15 @@ class HybridChessEnv:
 
         return s.clone()
 
+    def reset_from_fen(self, fen: str) -> GameState:
+        """Reset to a position specified by a FEN-like string.
+
+        See ``hybrid.core.fen`` for the notation format.
+        """
+        from .fen import parse_fen
+        board, side = parse_fen(fen)
+        return self.reset_from_board(board, side)
+
     def legal_moves(self) -> List[Move]:
         assert self.state is not None
         if self.use_cpp:
