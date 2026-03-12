@@ -23,7 +23,7 @@
 
 🧠 **Train**: Full AlphaZero pipeline, MCTS + ResNet, self-play, gating, curriculum learning
 
-📊 **Evaluate**: Side-switching arena, EGTA tournament, built-in baselines
+📊 **Evaluate**: Side-switching arena, built-in baselines (Random / AlphaBeta)
 
 ⚡ **Performance**: C++ engine, GPU batch inference, shared-memory IPC, MCTS leaf batching, FP16 AMP
 
@@ -199,9 +199,9 @@ hybrid-chess/
 │   └── shared/              #   Shared board renderer & CSS
 ├── scripts/                 # CLI tools
 │   ├── train_az_iter.py     #   AZ training launcher
-│   ├── eval_arena.py        #   Side-switching evaluation
-│   └── egta_tournament.py   #   EGTA payoff matrix generation
+│   └── eval_arena.py        #   Side-switching evaluation
 ├── tests/                   # pytest suite
+├── RULES.md                 # Game rules & piece reference
 └── runs/                    # Experiment outputs (gitignored)
 ```
 

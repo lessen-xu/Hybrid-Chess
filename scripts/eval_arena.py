@@ -111,15 +111,12 @@ def _create_agent(
         return AlphaBetaAgent(SearchConfig(depth=depth))
 
     # AZ checkpoint
-    import torch
-    from hybrid.rl.az_network import PolicyValueNet
+    from hybrid.rl.az_runner import build_net_from_checkpoint
     from hybrid.agents.alphazero_stub import (
         AlphaZeroMiniAgent, MCTSConfig, TorchPolicyValueModel,
     )
-    net = PolicyValueNet()
-    ckpt = torch.load(spec, map_location="cpu", weights_only=True)
-    net.load_state_dict(ckpt["model"])
-    net.eval()
+    net = build_net_from_checkpoint(spec, device="cuda")
+    net.to("cuda")
     model = TorchPolicyValueModel(net, device="cuda")
     return AlphaZeroMiniAgent(
         model=model,

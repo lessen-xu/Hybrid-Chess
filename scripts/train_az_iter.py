@@ -135,6 +135,11 @@ def main():
                              "(default: 0)")
     parser.add_argument("--use-cpp", action="store_true",
                         help="use C++ engine for game logic (legal moves, apply, terminal)")
+    # Network architecture
+    parser.add_argument("--res-blocks", type=int, default=3,
+                        help="number of residual blocks (default: 3)")
+    parser.add_argument("--channels", type=int, default=64,
+                        help="conv channel width (default: 64)")
     args = parser.parse_args()
 
     cfg = AZIterConfig(
@@ -183,6 +188,8 @@ def main():
         curriculum_schedule=args.curriculum_schedule,
         disable_gating=bool(args.disable_gating),
         use_cpp=args.use_cpp,
+        res_blocks=args.res_blocks,
+        channels=args.channels,
     )
 
     if args.outdir:
