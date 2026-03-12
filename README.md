@@ -19,17 +19,17 @@
 
 ### ✨ Features
 
-🎮 **Play** — Browser UI to play as Chess or Xiangqi against AI (Random / Greedy / AlphaBeta)
+🎮 **Play**: Browser UI, play as Chess or Xiangqi against AI (Random / Greedy / AlphaBeta)
 
-🧠 **Train** — Full AlphaZero pipeline: MCTS + ResNet, self-play, gating, curriculum learning
+🧠 **Train**: Full AlphaZero pipeline, MCTS + ResNet, self-play, gating, curriculum learning
 
-📊 **Evaluate** — Side-switching arena, EGTA tournament, built-in baselines
+📊 **Evaluate**: Side-switching arena, EGTA tournament, built-in baselines
 
-⚡ **Performance** — C++ engine, GPU batch inference, shared-memory IPC, MCTS leaf batching, FP16 AMP
+⚡ **Performance**: C++ engine, GPU batch inference, shared-memory IPC, MCTS leaf batching, FP16 AMP
 
-🏋️ **Gymnasium** — `gym.make("HybridChess-v0")` — drop into any RL framework
+🏋️ **Gymnasium**: `gym.make("HybridChess-v0")`, drop into any RL framework
 
-⚖️ **Balance** — Rule variants (`no_queen`, `extra_cannon`) for asymmetric fairness tuning
+⚖️ **Balance**: Rule variants (`no_queen`, `extra_cannon`) for asymmetric fairness tuning
 
 ---
 
@@ -72,10 +72,10 @@ The training pipeline includes multiple layers of acceleration:
 |-------------|-------------|
 | **C++ engine** | Board, legal-move gen, terminal detection, full α-β search in C++ via pybind11 |
 | **GPU batch inference** | Centralized inference server batches N workers' requests into one forward pass |
-| **Zero-copy shared memory** | Workers ↔ server communicate via `SharedMemoryPool` — no pickle, only 8-byte signals through Queue |
+| **Zero-copy shared memory** | Workers ↔ server communicate via `SharedMemoryPool`, no pickle, only 8-byte signals through Queue |
 | **MCTS leaf batching** | Gathers up to K leaves per MCTS round with virtual loss, then evaluates in a single batch |
 | **FP16 / TF32 AMP** | Automatic mixed precision on Ampere+ GPUs (TF32 matmul + FP16 autocast) |
-| **GPU state encoding** | `encode_batch_gpu()` — vectorized scatter-based one-hot encoding on GPU, zero-allocation hot path |
+| **GPU state encoding** | `encode_batch_gpu()`, vectorized scatter-based one-hot encoding on GPU, zero-allocation hot path |
 | **Parallel self-play** | Multi-process `spawn` workers with independent MCTS trees |
 | **Parallel evaluation** | Gating and eval matches distributed across CPU workers |
 | **Pinned memory DMA** | Pre-allocated pinned CPU buffers for async GPU transfer |
@@ -89,7 +89,7 @@ The training pipeline includes multiple layers of acceleration:
 
 ```bash
 python -m hybrid server
-# Opens http://localhost:8000 — choose your side and play!
+# Opens http://localhost:8000, choose your side and play!
 ```
 
 ### Train AlphaZero
@@ -124,7 +124,7 @@ import hybrid.gym_env  # registers HybridChess-v0
 env = gym.make("HybridChess-v0")
 obs, info = env.reset()
 
-# info["legal_actions"] → list of valid action indices
+# info["legal_actions"] = list of valid action indices
 action = info["legal_actions"][0]
 obs, reward, terminated, truncated, info = env.step(action)
 ```
@@ -154,7 +154,7 @@ class MyAgent(Agent):
     name = "my_agent"
 
     def select_move(self, state: GameState, legal_moves: list[Move]) -> Move:
-        # Your logic here — MCTS, neural net, heuristic, ...
+        # Your logic here: MCTS, neural net, heuristic, ...
         return legal_moves[0]
 ```
 
