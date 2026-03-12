@@ -56,12 +56,11 @@ The pure-Python engine can run simple games, but is **significantly slower** in 
 For any serious training or AlphaBeta search beyond depth 2, the C++ engine (~50× faster) is strongly recommended:
 
 ```bash
-# Requires: g++ / MSVC, pybind11
-cd cpp
-# Windows
-.\build.ps1
-# Linux/macOS
-./build.sh
+# Requires: pip install pybind11
+# Windows (PowerShell, needs MSYS2 g++)
+.\cpp\build.ps1
+# macOS / Linux (auto-detects g++ or clang++)
+bash cpp/build.sh
 ```
 
 ### Built-in Performance Optimizations
