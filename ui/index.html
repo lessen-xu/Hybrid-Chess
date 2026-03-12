@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Hybrid Chess — Chinese Chess vs International Chess</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Noto+Serif+SC:wght@600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div class="app">
+  <!-- Header -->
+  <header class="header">
+    <div class="logo">
+      <span class="logo-icon">♔</span>
+      <h1>Hybrid Chess</h1>
+      <span class="logo-icon mirror">將</span>
+    </div>
+    <p class="subtitle">International Chess vs Chinese Chess — Asymmetric Battle</p>
+  </header>
+
+  <!-- Main content -->
+  <main class="main">
+    <!-- Left panel: info -->
+    <aside class="panel panel-left">
+      <div class="panel-section">
+        <h3 class="panel-title">
+          <span class="side-indicator chess-side"></span>
+          Chess (Bottom)
+        </h3>
+        <div class="piece-legend" id="chessLegend"></div>
+      </div>
+      <div class="panel-section">
+        <h3 class="panel-title">
+          <span class="side-indicator xiangqi-side"></span>
+          Xiangqi (Top)
+        </h3>
+        <div class="piece-legend" id="xiangqiLegend"></div>
+      </div>
+    </aside>
+
+    <!-- Center: board -->
+    <div class="board-container">
+      <div class="board-frame">
+        <svg id="boardSvg" viewBox="0 0 540 600" xmlns="http://www.w3.org/2000/svg">
+          <!-- Defined in JS -->
+        </svg>
+      </div>
+
+      <!-- Controls -->
+      <div class="controls">
+        <button id="btnFirst" class="ctrl-btn" title="First (Home)">
+          <svg viewBox="0 0 24 24" width="20" height="20"><path fill="currentColor" d="M6 6h2v12H6zm3.5 6l8.5 6V6z"/></svg>
+        </button>
+        <button id="btnPrev" class="ctrl-btn" title="Previous (←)">
+          <svg viewBox="0 0 24 24" width="20" height="20"><path fill="currentColor" d="M6 6l8.5 6L6 18zm9.5 0v12l8.5-6z" transform="rotate(180 12 12)"/></svg>
+        </button>
+        <div class="step-display">
+          <span id="stepLabel">Initial Position</span>
+          <input type="range" id="slider" min="0" max="0" value="0" class="slider">
+          <span id="stepCount" class="step-count">0 / 0</span>
+        </div>
+        <button id="btnNext" class="ctrl-btn" title="Next (→)">
+          <svg viewBox="0 0 24 24" width="20" height="20"><path fill="currentColor" d="M6 6l8.5 6L6 18zm9.5 0v12l8.5-6z"/></svg>
+        </button>
+        <button id="btnLast" class="ctrl-btn" title="Last (End)">
+          <svg viewBox="0 0 24 24" width="20" height="20"><path fill="currentColor" d="M16 6h2v12h-2zm-3.5 6L4 6v12z"/></svg>
+        </button>
+        <button id="btnAutoPlay" class="ctrl-btn auto-btn" title="Auto-play (Space)">
+          <svg viewBox="0 0 24 24" width="20" height="20" id="playIcon"><path fill="currentColor" d="M8 5v14l11-7z"/></svg>
+        </button>
+      </div>
+    </div>
+
+    <!-- Right panel: move list -->
+    <aside class="panel panel-right">
+      <div class="panel-section">
+        <h3 class="panel-title">Game Info</h3>
+        <div class="game-info" id="gameInfo">
+          <div class="info-row">
+            <span class="info-label">Status</span>
+            <span class="info-value" id="infoStatus">—</span>
+          </div>
+          <div class="info-row">
+            <span class="info-label">Result</span>
+            <span class="info-value" id="infoResult">—</span>
+          </div>
+          <div class="info-row">
+            <span class="info-label">Plies</span>
+            <span class="info-value" id="infoPlies">—</span>
+          </div>
+          <div class="info-row">
+            <span class="info-label">Reason</span>
+            <span class="info-value" id="infoReason">—</span>
+          </div>
+        </div>
+      </div>
+      <div class="panel-section move-list-section">
+        <h3 class="panel-title">Moves</h3>
+        <div class="move-list" id="moveList">
+          <p class="placeholder">Load a game to see moves</p>
+        </div>
+      </div>
+      <div class="panel-section">
+        <h3 class="panel-title">Load Game</h3>
+        <div class="load-controls">
+          <label class="file-btn" for="fileInput">
+            <svg viewBox="0 0 24 24" width="16" height="16"><path fill="currentColor" d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6zm4 18H6V4h7v5h5v11z"/></svg>
+            Open JSON
+          </label>
+          <input type="file" id="fileInput" accept=".json,.jsonl" style="display:none">
+          <select id="gameSelect" class="game-select" style="display:none"></select>
+        </div>
+      </div>
+    </aside>
+  </main>
+</div>
+
+<script src="board.js"></script>
+</body>
+</html>
