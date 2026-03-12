@@ -1,23 +1,35 @@
-# Hybrid Chess ♔ vs 將
+<div align="center">
 
-> An **asymmetric board game** where International Chess faces Chinese Chess (Xiangqi) on a shared 9×10 board — with a full **AlphaZero RL pipeline**, **C++ engine**, and **interactive web UI**.
+# ♔ Hybrid Chess 將
 
-```
-  ♖ ♘ ♗ ♕ ♔ ♗ ♘ ♖ ♖       車 馬 象 士 將 士 象 馬 車
-  ♙ ♙ ♙ ♙ ♙ ♙ ♙ ♙ ♙             砲             砲
-         楚  河  漢  界         卒   卒   卒   卒   卒
-```
+**International Chess vs Chinese Chess on a shared 9×10 board**
 
-## Features
+[![Python 3.9+](https://img.shields.io/badge/Python-3.9%2B-3776ab?logo=python&logoColor=white)](https://python.org)
+[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+[![PyTorch](https://img.shields.io/badge/PyTorch-2.0%2B-ee4c2c?logo=pytorch&logoColor=white)](https://pytorch.org)
+[![Gymnasium](https://img.shields.io/badge/Gymnasium-compatible-0081a7)](https://gymnasium.farama.org)
 
-| Area | What you get |
-|------|-------------|
-| **Play** | Browser-based UI — play as Chess or Xiangqi against AI (Random / Greedy / AlphaBeta) |
-| **Train** | AlphaZero pipeline: MCTS + ResNet, self-play, gating, curriculum learning |
-| **Evaluate** | Side-switching arena, EGTA tournament, built-in baselines |
-| **Engine** | Pure-Python engine + optional C++ engine (pybind11, ~50× faster) |
-| **Gymnasium** | `gym.make("HybridChess-v0")` — drop into any RL framework |
-| **Balance** | Rule variants (no queen, extra cannon) for asymmetric fairness tuning |
+♖ ♘ ♗ ♕ ♔ &nbsp;&nbsp;⚔️&nbsp;&nbsp; 將 車 馬 象 砲
+
+*An asymmetric board game with a full AlphaZero RL pipeline, C++ engine, and interactive web UI.*
+
+</div>
+
+---
+
+### ✨ Features
+
+🎮 **Play** — Browser UI to play as Chess or Xiangqi against AI (Random / Greedy / AlphaBeta)
+
+🧠 **Train** — Full AlphaZero pipeline: MCTS + ResNet, self-play, gating, curriculum learning
+
+📊 **Evaluate** — Side-switching arena, EGTA tournament, built-in baselines
+
+⚡ **Engine** — Pure-Python engine + optional C++ engine via pybind11 (~50× faster)
+
+🏋️ **Gymnasium** — `gym.make("HybridChess-v0")` — drop into any RL framework
+
+⚖️ **Balance** — Rule variants (`no_queen`, `extra_cannon`) for asymmetric fairness tuning
 
 ---
 
