@@ -283,7 +283,8 @@ def _xiangqi_general_moves(board: Board, x: int, y: int, side: Side) -> List[Mov
             out.append(Move(x, y, nx, ny))
 
     # Flying-general capture: if King is on the same file with no pieces in between
-    if ENABLE_FLYING_GENERAL_CAPTURE:
+    from .config import ABLATION_NO_FLYING_GENERAL
+    if ENABLE_FLYING_GENERAL_CAPTURE and not ABLATION_NO_FLYING_GENERAL:
         king_pos = _find_royal(board, Side.CHESS)
         if king_pos is not None:
             kx, ky = king_pos

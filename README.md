@@ -215,8 +215,16 @@ Built-in rule variants for fairness tuning:
 | Variant | Effect | Balance impact |
 |---------|--------|----------------|
 | `none` (standard) | Full Chess army vs full Xiangqi army | Chess favored (Queen is dominant) |
-| `extra_cannon` | Xiangqi gets a 3rd Cannon at center | More balanced |
+| `extra_cannon` | Xiangqi gets a 3rd Cannon at center (4,7) | More balanced |
 | `no_queen` | Chess loses the Queen | Xiangqi favored |
+| `no_bishop` | Chess loses the left Bishop (c1) | Slight Chess nerf |
+| `extra_soldier` | Xiangqi gets a 6th Soldier at center (4,5) | Slight Xiangqi buff |
+| `one_rook` | Chess loses the right Rook (h1) | Significant Chess nerf |
+| `no_flying_general` | Disables Flying-General capture rule | Weakens Xiangqi General |
+| `remove_pawn` | Removes the extra 9th-file Chess Pawn | Slight Chess nerf |
+| `no_queen_promo` | Pawns cannot promote to Queen (only R/B/N) | Reduces late-game Chess power |
+
+Variants can be **combined** with commas: `--ablation extra_cannon,no_bishop`
 
 Applied via CLI: `--ablation extra_cannon` or in the UI's "Rule Variant" dropdown.
 
@@ -228,7 +236,9 @@ Applied via CLI: `--ablation extra_cannon` or in the UI's "Rule Variant" dropdow
 python -m hybrid server   [--port 8000] [--host 127.0.0.1] [--no-browser]
 python -m hybrid train    [--iterations N] [--games N] [--simulations N]
                           [--device auto|cpu|cuda] [--workers N] [--use-cpp]
-                          [--ablation none|extra_cannon|no_queen]
+                          [--ablation none|extra_cannon|no_queen|no_bishop|
+                                      extra_soldier|one_rook|no_flying_general|
+                                      remove_pawn|no_queen_promo]
                           [--lr 1e-3] [--batch-size 256] [--output DIR]
 python -m hybrid eval     [--model PATH] [--vs random|ab_d1|ab_d2|ab_d4]
                           [--games N] [--simulations N] [--device auto]

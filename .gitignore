@@ -29,6 +29,7 @@ runs/
 # IDE
 .vscode/
 .idea/
+pyrightconfig.json
 
 # Paper drafts (unpublished)
 paper/

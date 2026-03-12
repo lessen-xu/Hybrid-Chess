@@ -139,29 +139,56 @@ def _split_games_evenly(total_games: int, num_workers: int) -> List[int]:
 
 
 def _apply_ablation(ablation: str) -> None:
-    """Apply ablation experiment settings."""
+    """Apply ablation experiment settings.
+
+    Supports named presets and comma-separated combinations:
+        'none'                     → standard rules
+        'extra_cannon'             → extra cannon for Xiangqi
+        'no_queen'                 → remove Chess queen
+        'no_bishop'                → remove one Chess bishop
+        'extra_soldier'            → 6th Xiangqi soldier
+        'one_rook'                 → remove Chess second rook
+        'no_flying_general'        → disable flying-general rule
+        'extra_cannon,no_bishop'   → combine multiple
+    """
     import hybrid.core.config as cfg
+
+    # Reset all ablation flags
+    _DEFAULTS = {
+        'ABLATION_NO_QUEEN': False,
+        'ABLATION_NO_QUEEN_PROMOTION': False,
+        'ABLATION_EXTRA_CANNON': False,
+        'ABLATION_REMOVE_EXTRA_PAWN': False,
+        'ABLATION_CHESS_NO_BISHOP': False,
+        'ABLATION_XIANGQI_EXTRA_SOLDIER': False,
+        'ABLATION_CHESS_ONE_ROOK': False,
+        'ABLATION_NO_FLYING_GENERAL': False,
+    }
+    for k, v in _DEFAULTS.items():
+        setattr(cfg, k, v)
+
     if ablation == "none":
-        cfg.ABLATION_NO_QUEEN = False
-        cfg.ABLATION_NO_QUEEN_PROMOTION = False
-        cfg.ABLATION_EXTRA_CANNON = False
-        cfg.ABLATION_REMOVE_EXTRA_PAWN = False
-    elif ablation == "extra_cannon":
-        cfg.ABLATION_NO_QUEEN = False
-        cfg.ABLATION_NO_QUEEN_PROMOTION = False
-        cfg.ABLATION_EXTRA_CANNON = True
-        cfg.ABLATION_REMOVE_EXTRA_PAWN = False
-    elif ablation == "no_queen":
-        cfg.ABLATION_NO_QUEEN = True
-        cfg.ABLATION_NO_QUEEN_PROMOTION = False
-        cfg.ABLATION_EXTRA_CANNON = False
-        cfg.ABLATION_REMOVE_EXTRA_PAWN = False
-    else:
-        from scripts.play_match import apply_ablation, ABLATION_PRESETS
-        if ablation in ABLATION_PRESETS:
-            apply_ablation(ablation)
+        return
+
+    # Named presets → config flag mapping
+    _PRESETS = {
+        'extra_cannon':     {'ABLATION_EXTRA_CANNON': True},
+        'no_queen':         {'ABLATION_NO_QUEEN': True},
+        'no_bishop':        {'ABLATION_CHESS_NO_BISHOP': True},
+        'extra_soldier':    {'ABLATION_XIANGQI_EXTRA_SOLDIER': True},
+        'one_rook':         {'ABLATION_CHESS_ONE_ROOK': True},
+        'no_flying_general': {'ABLATION_NO_FLYING_GENERAL': True},
+        'remove_pawn':      {'ABLATION_REMOVE_EXTRA_PAWN': True},
+        'no_queen_promo':   {'ABLATION_NO_QUEEN_PROMOTION': True},
+    }
+
+    parts = [p.strip() for p in ablation.split(',')]
+    for part in parts:
+        if part in _PRESETS:
+            for k, v in _PRESETS[part].items():
+                setattr(cfg, k, v)
         else:
-            print(f"[WARNING] Unknown ablation: {ablation!r}, using default (no ablation)")
+            print(f"[WARNING] Unknown ablation: {part!r}, skipping")
 
 
 def _save_checkpoint(

@@ -64,7 +64,9 @@ def initial_board() -> Board:
     """
     from .config import (CHESS_EXTRA_PAWN_ON_I_FILE,
                           ABLATION_NO_QUEEN, ABLATION_EXTRA_CANNON,
-                          ABLATION_REMOVE_EXTRA_PAWN)
+                          ABLATION_REMOVE_EXTRA_PAWN,
+                          ABLATION_CHESS_NO_BISHOP, ABLATION_XIANGQI_EXTRA_SOLDIER,
+                          ABLATION_CHESS_ONE_ROOK)
 
     b = Board.empty()
 
@@ -72,12 +74,12 @@ def initial_board() -> Board:
     chess_back = [
         PieceKind.ROOK,
         PieceKind.KNIGHT,
-        PieceKind.BISHOP,
+        None if ABLATION_CHESS_NO_BISHOP else PieceKind.BISHOP,
         None if ABLATION_NO_QUEEN else PieceKind.QUEEN,
         PieceKind.KING,
         PieceKind.BISHOP,
         PieceKind.KNIGHT,
-        PieceKind.ROOK,
+        None if ABLATION_CHESS_ONE_ROOK else PieceKind.ROOK,
         None,  # 9th file empty by default
     ]
     for x, kind in enumerate(chess_back):
@@ -113,5 +115,7 @@ def initial_board() -> Board:
 
     for x in [0, 2, 4, 6, 8]:
         b.set(x, 6, Piece(PieceKind.SOLDIER, Side.XIANGQI))
+    if ABLATION_XIANGQI_EXTRA_SOLDIER:
+        b.set(4, 5, Piece(PieceKind.SOLDIER, Side.XIANGQI))
 
     return b

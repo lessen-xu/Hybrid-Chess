@@ -32,3 +32,15 @@ ABLATION_EXTRA_CANNON = False
 
 # 8) Remove Chess extra pawn on i-file (overrides CHESS_EXTRA_PAWN_ON_I_FILE)
 ABLATION_REMOVE_EXTRA_PAWN = False
+
+# 9) Remove one Chess Bishop (left-side, (2,0))
+ABLATION_CHESS_NO_BISHOP = False
+
+# 10) Xiangqi gets a 6th Soldier at center column (4, 5)
+ABLATION_XIANGQI_EXTRA_SOLDIER = False
+
+# 11) Remove Chess second Rook (right-side Rook at (7,0))
+ABLATION_CHESS_ONE_ROOK = False
+
+# 12) Disable Flying-General capture (weakens Xiangqi General's threat)
+ABLATION_NO_FLYING_GENERAL = False
