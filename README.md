@@ -2,7 +2,7 @@
 
 # ♔ Hybrid Chess 將
 
-**International Chess vs Chinese Chess on a shared 9×10 board**
+**An extensible RL framework for asymmetric chess variants**
 
 [![Python 3.9+](https://img.shields.io/badge/Python-3.9%2B-3776ab?logo=python&logoColor=white)](https://python.org)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
@@ -11,7 +11,7 @@
 
 ♖ ♘ ♗ ♕ ♔ &nbsp;&nbsp;⚔️&nbsp;&nbsp; 將 車 馬 象 砲
 
-*An asymmetric board game with a full AlphaZero RL pipeline, C++ engine, and interactive web UI.*
+*Define your own rules, train AlphaZero agents, and experiment — all in a few lines of Python.*
 
 </div>
 
@@ -19,17 +19,21 @@
 
 ### ✨ Features
 
+🧩 **Extensible**: Composable `VariantConfig` API — mix & match rule tweaks without touching source code
+
 🎮 **Play**: Browser UI, play as Chess or Xiangqi against AI (Random / Greedy / AlphaBeta)
 
 🧠 **Train**: Full AlphaZero pipeline, MCTS + ResNet, self-play, gating, curriculum learning
 
-📊 **Evaluate**: Side-switching arena, built-in baselines (Random / AlphaBeta)
+🔌 **Pluggable**: `BaseModel` ABC for custom networks (Transformer, MobileNet, ...); reward shaping hooks
 
-⚡ **Performance**: C++ engine, GPU batch inference, shared-memory IPC, MCTS leaf batching, FP16 AMP
+📊 **Track**: WandB / TensorBoard integration (lazy import, zero config)
+
+⚡ **Fast**: C++ engine, GPU batch inference, shared-memory IPC, FP16 AMP
 
 🏋️ **Gymnasium**: `gym.make("HybridChess-v0")`, drop into any RL framework
 
-⚖️ **Balance**: Rule variants (`no_queen`, `extra_cannon`) for asymmetric fairness tuning
+📝 **FEN Support**: Load/save arbitrary positions via FEN notation
 
 ---
 
@@ -128,18 +132,43 @@ action = info["legal_actions"][0]
 obs, reward, terminated, truncated, info = env.step(action)
 ```
 
-### Use as a Python Library
+### Define a Custom Variant (new!)
 
 ```python
-from hybrid import HybridChessEnv, Side, Move
+from hybrid.core.config import VariantConfig
+from hybrid.core.env import HybridChessEnv
 
-env = HybridChessEnv()
+# No queen, extra cannon, disable flying general
+my_rules = VariantConfig(no_queen=True, extra_cannon=True, flying_general=False)
+env = HybridChessEnv(variant=my_rules)
 state = env.reset()
-legal = env.legal_moves()
+print(env.legal_moves())  # rules applied automatically
+```
 
-# Make a move
-state, reward, done, info = env.step(legal[0])
-print(f"Ply {state.ply}, turn: {state.side_to_move.name}")
+### Load a Custom Position via FEN (new!)
+
+```python
+env = HybridChessEnv()
+state = env.reset_from_fen("cheagaehc/9/1n5n1/s1s1s1s1s/9/9/9/9/PPPPPPPPP/RNBQKBNR1 c")
+print(f"{len(env.legal_moves())} legal moves")
+```
+
+### Custom Network Architecture (new!)
+
+```python
+from hybrid.rl.az_network import BaseModel
+import torch, torch.nn as nn
+
+class MyTinyNet(BaseModel):
+    def __init__(self):
+        super().__init__()
+        self.conv = nn.Conv2d(14, 92, 1)
+        self.value = nn.Linear(92 * 10 * 9, 1)
+
+    def forward(self, x):
+        p = self.conv(x)
+        v = torch.tanh(self.value(p.flatten(1)))
+        return p, v.unsqueeze(-1)
 ```
 
 ### Write a Custom Agent
@@ -168,8 +197,9 @@ hybrid-chess/
 │   │   ├── types.py         #   Side, PieceKind, Move, Piece
 │   │   ├── board.py         #   Board representation
 │   │   ├── rules.py         #   Legal move generation, terminal detection
-│   │   ├── config.py        #   Rule switches & ablation flags
+│   │   ├── config.py        #   VariantConfig + legacy flags
 │   │   ├── env.py           #   HybridChessEnv (gym-like API)
+│   │   ├── fen.py           #   FEN parser/serializer
 │   │   └── render.py        #   ASCII board renderer
 │   ├── agents/              # AI players
 │   │   ├── base.py          #   Agent ABC
@@ -179,12 +209,12 @@ hybrid-chess/
 │   │   ├── alphazero_stub.py   # MCTS + policy/value network
 │   │   └── eval.py          #   Hand-crafted evaluation function
 │   ├── rl/                  # AlphaZero training pipeline
-│   │   ├── az_network.py    #   Dual-head ResNet (14ch → policy + value)
+│   │   ├── az_network.py    #   BaseModel ABC + PolicyValueNet
 │   │   ├── az_encoding.py   #   State/action encoding (92 move planes)
-│   │   ├── az_selfplay.py   #   Self-play game generation
+│   │   ├── az_selfplay.py   #   Self-play + reward shaping hook
 │   │   ├── az_train.py      #   Training loop (policy CE + value MSE)
 │   │   ├── az_eval.py       #   Match evaluation
-│   │   ├── az_runner.py     #   Full iterative runner
+│   │   ├── az_runner.py     #   Iterative runner + WandB/TB logging
 │   │   └── ...              #   Inference server, parallel workers, replay buffer
 │   ├── server.py            # Zero-dep HTTP game server
 │   ├── gym_env.py           # Gymnasium wrapper
@@ -199,6 +229,8 @@ hybrid-chess/
 ├── scripts/                 # CLI tools
 │   ├── train_az_iter.py     #   AZ training launcher
 │   └── eval_arena.py        #   Side-switching evaluation
+├── examples/                # Usage examples
+│   └── custom_variant.py    #   Creating & training a custom variant
 ├── tests/                   # pytest suite
 ├── RULES.md                 # Game rules & piece reference
 └── runs/                    # Experiment outputs (gitignored)
@@ -227,6 +259,13 @@ Variants can be **combined** with commas: `--ablation extra_cannon,no_bishop`
 
 Applied via CLI: `--ablation extra_cannon` or in the UI's "Rule Variant" dropdown.
 
+**Programmatic API** (preferred for new code):
+
+```python
+from hybrid.core.config import VariantConfig
+env = HybridChessEnv(variant=VariantConfig(extra_cannon=True, no_bishop=True))
+```
+
 ---
 
 ## CLI Reference
@@ -250,6 +289,17 @@ python -m hybrid train    [--iterations N] [--games N] [--simulations N]
 python -m hybrid eval     [--model PATH] [--vs random|ab_d1|ab_d2|ab_d4]
                           [--games N] [--simulations N] [--device auto]
 ```
+
+---
+
+## Contributing
+
+Pull requests welcome! Some ideas:
+
+- 🧠 New network architectures (subclass `BaseModel`)
+- ⚖️ Novel rule variants via `VariantConfig`
+- 📊 Reward shaping experiments
+- 🌐 Translations of game rules
 
 ---
 
