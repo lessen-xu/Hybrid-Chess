@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Parallel self-play smoke test (Mode A, CPU only, no GPU/server).
 
 Verifies:

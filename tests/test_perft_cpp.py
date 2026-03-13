@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Perft regression tests — frozen node counts to catch rule changes.
 
 These values are specific to the Hybrid Chess ruleset of this repository.

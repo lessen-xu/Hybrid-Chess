@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """C++ engine tests — runs the same 40 oracle cases from test_rules.py
 against the C++ engine via pybind11.
 """

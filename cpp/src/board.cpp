@@ -6,11 +6,8 @@
 #include <cstdint>
 #include <cstring>
 #include <cstdio>
-
-// ═══════════════════════════════════════════════════════════════
 // Minimal SHA1 implementation (matches Python's hashlib.sha1).
 // Only used for board_hash() — no external dependency needed.
-// ═══════════════════════════════════════════════════════════════
 
 namespace {
 
@@ -125,10 +122,7 @@ char kind_char(PieceKind k) {
 }
 
 } // anonymous namespace
-
-// ═══════════════════════════════════════════════════════════════
 // Board methods
-// ═══════════════════════════════════════════════════════════════
 
 Board Board::empty() {
     Board b;
@@ -246,10 +240,7 @@ std::string Board::board_hash(Side side_to_move) const {
     sha.update_str(joined);
     return sha.hexdigest();
 }
-
-// ═══════════════════════════════════════════════════════════════
 // Zobrist 128-bit API
-// ═══════════════════════════════════════════════════════════════
 
 ZKey128 Board::zobrist_key_raw() const {
     return zkey;

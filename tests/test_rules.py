@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Comprehensive tests for rules.py — piece move generation, check detection,
 and terminal state logic.  These serve as the Python oracle for the upcoming
 C++ rewrite.

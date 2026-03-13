@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Test game allocation logic for parallel self-play."""
 
 import pytest

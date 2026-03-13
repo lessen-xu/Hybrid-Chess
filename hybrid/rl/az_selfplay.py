@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """AlphaZero self-play data generation.
 
 Produces training samples (state, π, z) where:
@@ -26,10 +25,7 @@ from hybrid.core.config import BOARD_H, BOARD_W, MAX_PLIES
 
 # Action space: 92 planes × 10 rows × 9 cols = 8,280
 ACTION_SPACE_SIZE = TOTAL_POLICY_PLANES * BOARD_H * BOARD_W  # 8280
-
-# ====================================================================
 # Material values (for move-limit truncation)
-# ====================================================================
 PIECE_VALUES = {
     PieceKind.PAWN: 1.0, PieceKind.KNIGHT: 3.0, PieceKind.BISHOP: 3.0,
     PieceKind.ROOK: 5.0, PieceKind.QUEEN: 9.0, PieceKind.KING: 0.0,

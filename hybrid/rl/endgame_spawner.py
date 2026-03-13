@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Endgame position generator for curriculum learning.
 
 Generates sparse endgame boards where one side has a decisive advantage
@@ -24,11 +23,7 @@ from hybrid.core.board import Board
 from hybrid.core.types import Side, PieceKind, Piece
 from hybrid.core.config import BOARD_W, BOARD_H
 from hybrid.core.rules import generate_legal_moves, _find_royal
-
-
-# ====================================================================
 # Placement helpers
-# ====================================================================
 
 def _random_square(rng: random.Random) -> Tuple[int, int]:
     """Random square on the 9×10 board."""
@@ -65,11 +60,7 @@ def _place_random(
             occupied.add((x, y))
             return x, y
     raise RuntimeError("Could not find an empty square for piece placement")
-
-
-# ====================================================================
 # Templates
-# ====================================================================
 
 def _template_chess_kq_vs_general(rng: random.Random) -> Board:
     """Chess K + Q vs Xiangqi bare General."""
@@ -190,11 +181,7 @@ _TEMPLATES = [
     (_template_xiangqi_chariot_horse_vs_king, Side.XIANGQI),
     (_template_xiangqi_chariot_cannon_soldier_vs_king, Side.XIANGQI),
 ]
-
-
-# ====================================================================
 # Public API
-# ====================================================================
 
 def generate_endgame_board(
     rng: Optional[random.Random] = None,

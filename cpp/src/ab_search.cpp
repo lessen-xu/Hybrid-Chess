@@ -25,10 +25,7 @@
 #include <limits>
 #include <tuple>
 #include <vector>
-
-// ═══════════════════════════════════════════════════════════════
 // Piece values — matches hybrid/agents/eval.py PIECE_VALUES
-// ═══════════════════════════════════════════════════════════════
 
 static double piece_value(PieceKind k) {
     switch (k) {
@@ -48,19 +45,11 @@ static double piece_value(PieceKind k) {
         default:                  return 0.0;
     }
 }
-
-
-
-// ═══════════════════════════════════════════════════════════════
 // Evaluation constants
-// ═══════════════════════════════════════════════════════════════
 
 static constexpr double MOBILITY_WEIGHT = 0.05;
 static constexpr double CHECK_BONUS     = 0.3;
-
-// ═══════════════════════════════════════════════════════════════
 // Transposition Table
-// ═══════════════════════════════════════════════════════════════
 
 static constexpr double INF      = 1e18;
 static constexpr double WIN_SCORE = 1e6;
@@ -165,10 +154,7 @@ struct TranspositionTable {
 };
 
 static TranspositionTable g_tt;
-
-// ═══════════════════════════════════════════════════════════════
 // ScoredMove — for sorting without extra pair<MoveKey,Move> alloc
-// ═══════════════════════════════════════════════════════════════
 
 struct ScoredMove {
     Move mv;
@@ -186,10 +172,7 @@ static bool scored_move_cmp(const ScoredMove& a, const ScoredMove& b) {
     auto tb = std::make_tuple(b.mv.fx, b.mv.fy, b.mv.tx, b.mv.ty, static_cast<int>(b.mv.promotion));
     return ta < tb;
 }
-
-// ═══════════════════════════════════════════════════════════════
 // Per-ply buffers — pre-allocated, reused across recursive calls
-// ═══════════════════════════════════════════════════════════════
 
 struct PlyBuffers {
     std::vector<Move> moves;       // stm legal moves
@@ -204,10 +187,7 @@ struct PlyBuffers {
         pseudo.reserve(192);
     }
 };
-
-// ═══════════════════════════════════════════════════════════════
 // Search context — per best_move() call
-// ═══════════════════════════════════════════════════════════════
 
 static constexpr int MAX_SEARCH_PLY = 256;
 
@@ -281,10 +261,7 @@ struct SearchContext {
         return c;
     }
 };
-
-// ═══════════════════════════════════════════════════════════════
 // Move ordering — writes sorted result into moves buffer in-place
-// ═══════════════════════════════════════════════════════════════
 
 static bool moves_equal(const Move& a, const Move& b) {
     return a.fx == b.fx && a.fy == b.fy &&
@@ -348,10 +325,7 @@ static void order_moves_inplace(Board& board, Side stm,
         moves[i] = scored[i].mv;
     }
 }
-
-// ═══════════════════════════════════════════════════════════════
 // Conversion mode detection
-// ═══════════════════════════════════════════════════════════════
 
 struct ConversionInfo {
     bool active;           // Is conversion mode triggered?
@@ -420,10 +394,7 @@ static ConversionInfo detect_conversion(const Board& board, Side root_perspectiv
     }
     return ci;
 }
-
-// ═══════════════════════════════════════════════════════════════
 // Leaf evaluation — reuses stm_moves_count, only generates opp
-// ═══════════════════════════════════════════════════════════════
 
 // Endgame heuristic constants (V2 — much more aggressive guidance)
 static constexpr double ENDGAME_CHECK_BONUS    = 5.0;   // Strong check bonus when winning
@@ -519,8 +490,6 @@ static inline double evaluate_leaf(
     bool self_in_check = is_in_check(board, root_perspective);
     if (opp_in_check)  chk += effective_check_bonus;
     if (self_in_check) chk -= effective_check_bonus;
-
-    // ── Endgame heuristics V2 (winning with large material advantage) ──
     double endgame_bonus = 0.0;
 
     if (winning_big) {
@@ -572,10 +541,7 @@ static inline double evaluate_leaf(
 
     return mat + mob + chk + endgame_bonus;
 }
-
-// ═══════════════════════════════════════════════════════════════
 // Conversion-mode leaf evaluation — lexicographic objective
-// ═══════════════════════════════════════════════════════════════
 
 static inline double evaluate_conversion(
         Board& board,
@@ -656,10 +622,7 @@ static inline double evaluate_conversion(
     // Return from root_perspective
     return (ci.attacker == root_perspective) ? score : -score;
 }
-
-// ═══════════════════════════════════════════════════════════════
 // Repetition guards — RAII push/pop
-// ═══════════════════════════════════════════════════════════════
 
 struct RepGuard {
     std::unordered_map<std::string,int>& rep;
@@ -686,10 +649,7 @@ struct RepGuardZ {
         if (--rep[key] <= 0) rep.erase(key);
     }
 };
-
-// ═══════════════════════════════════════════════════════════════
 // Negamax — ZOBRIST fast path (zero SHA1 in hot path)
-// ═══════════════════════════════════════════════════════════════
 
 static double negamax_z(Board& board, Side stm, int depth,
                         double alpha, double beta,
@@ -699,8 +659,6 @@ static double negamax_z(Board& board, Side stm, int depth,
                         Side root_perspective, int64_t& nodes,
                         int sply) {
     nodes++;
-
-    // ── Inline terminal detection ──
     if (!board.has_royal(Side::CHESS)) {
         double score = WIN_SCORE - static_cast<double>(ply);
         return (Side::XIANGQI == root_perspective) ? score : -score;
@@ -727,8 +685,6 @@ static double negamax_z(Board& board, Side stm, int depth,
         }
         return 0.0;
     }
-
-    // ── TT probe ──
     uint64_t k1 = stm_key.lo, k2 = stm_key.hi;
     uint8_t rb = static_cast<uint8_t>(std::min(rep_count, 3));
 
@@ -746,8 +702,6 @@ static double negamax_z(Board& board, Side stm, int depth,
             if (alpha >= beta) return v;
         }
     }
-
-    // ── Generate legal moves (into pre-allocated buffer) ──
     auto& moves = ctx.bufs[sply].moves;
     moves.clear();
     generate_legal_moves_inplace(board, stm, moves, ctx.bufs[sply].pseudo);
@@ -759,11 +713,7 @@ static double negamax_z(Board& board, Side stm, int depth,
         double score = WIN_SCORE - static_cast<double>(ply);
         return (winner == root_perspective) ? score : -score;
     }
-
-    // ── Conversion mode detection ──
     ConversionInfo ci = detect_conversion(board, root_perspective);
-
-    // ── Search extensions in conversion mode ──
     int ext_depth = depth;
     if (ci.active && depth <= 0 && sply < MAX_SEARCH_PLY - 4) {
         // Check extension: if defender is in check, extend by 2 ply
@@ -783,8 +733,6 @@ static double negamax_z(Board& board, Side stm, int depth,
             }
         }
     }
-
-    // ── Leaf evaluation (reuse stm move count) ──
     if (ext_depth <= 0) {
         if (ci.active) {
             return evaluate_conversion(board, root_perspective, stm,
@@ -793,8 +741,6 @@ static double negamax_z(Board& board, Side stm, int depth,
         return evaluate_leaf(board, root_perspective, stm,
                              static_cast<int>(moves.size()), ctx, sply);
     }
-
-    // ── Search (PVS / Negascout) ──
     order_moves_inplace(board, stm, moves, tt_best, ctx, sply);
     Side opp = opponent(stm);
     double best = -INF;
@@ -851,8 +797,6 @@ static double negamax_z(Board& board, Side stm, int depth,
             break;
         }
     }
-
-    // ── TT store ──
     uint8_t flag;
     if (best <= alpha0)     flag = TT_UPPER;
     else if (best >= beta)  flag = TT_LOWER;
@@ -862,10 +806,7 @@ static double negamax_z(Board& board, Side stm, int depth,
 
     return best;
 }
-
-// ═══════════════════════════════════════════════════════════════
 // Negamax — SHA1 legacy path (backward compatible)
-// ═══════════════════════════════════════════════════════════════
 
 static double negamax_sha1(Board& board, Side stm, int depth,
                            double alpha, double beta,
@@ -997,10 +938,7 @@ static double negamax_sha1(Board& board, Side stm, int depth,
 
     return best;
 }
-
-// ═══════════════════════════════════════════════════════════════
 // Helper: detect repetition table mode
-// ═══════════════════════════════════════════════════════════════
 
 enum class RepMode { ZOBRIST, SHA1 };
 
@@ -1033,10 +971,7 @@ static ZKey128 parse_zkey_hex(const std::string& hex) {
         k.lo = (k.lo << 4) | hex4(hex[i]);
     return k;
 }
-
-// ═══════════════════════════════════════════════════════════════
 // Public API: best_move() — Iterative Deepening wrapper
-// ═══════════════════════════════════════════════════════════════
 
 SearchResult best_move(
         const Board& board,

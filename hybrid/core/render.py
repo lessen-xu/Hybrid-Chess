@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """ASCII board renderer. Chess pieces = uppercase, Xiangqi = lowercase."""
 
 from __future__ import annotations

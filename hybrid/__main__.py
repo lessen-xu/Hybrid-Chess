@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Hybrid Chess — Unified CLI entry point.
 
 Usage:

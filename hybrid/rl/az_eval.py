@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Unified evaluation module: standardized match play and statistical testing.
 
 Self-play mode uses Dirichlet noise + temperature for exploration.
@@ -22,11 +21,7 @@ from hybrid.agents.alphazero_stub import (
 )
 from hybrid.agents.random_agent import RandomAgent
 from hybrid.agents.alphabeta_agent import AlphaBetaAgent, SearchConfig
-
-
-# ====================================================================
 # Wilson CI — for adaptive gating
-# ====================================================================
 
 def wilson_ci(
     wins: int,

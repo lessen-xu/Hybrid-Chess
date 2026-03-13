@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """FEN-like notation parser/serializer for Hybrid Chess.
 
 Format: ``<rank9>/<rank8>/.../<rank0> <side>``
@@ -23,9 +22,6 @@ from typing import Tuple
 from .board import Board
 from .config import BOARD_W, BOARD_H
 from .types import Side, PieceKind, Piece
-
-
-# ---- Piece ↔ Character mapping ----
 
 _PIECE_TO_CHAR = {
     (PieceKind.KING, Side.CHESS): 'K',

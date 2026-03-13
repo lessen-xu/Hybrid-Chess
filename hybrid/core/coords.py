@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Coordinate conversion utilities. Convention: a1 = (0,0), i10 = (8,9)."""
 
 from __future__ import annotations

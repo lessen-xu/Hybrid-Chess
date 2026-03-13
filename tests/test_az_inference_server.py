@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Tests for batched inference server with shared memory IPC (CPU mode).
 
 Verifies:

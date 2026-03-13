@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Terminal semantics gate tests — must 100% pass.
 
 Tests checkmate, stalemate (= loss), threefold repetition, max plies,

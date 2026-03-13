@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Tests for the endgame position spawner and env.reset_from_board."""
 
 import random

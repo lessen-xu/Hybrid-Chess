@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Live training monitor — periodically reads metrics.csv and saves a dashboard PNG.
 
 Usage:

@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Env-level comparison: Python backend vs C++ backend.
 
 Runs 100 random games through HybridChessEnv with both use_cpp=False and

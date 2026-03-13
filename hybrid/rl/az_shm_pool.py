@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Shared memory pool for zero-copy IPC between workers and inference server.
 
 Workers write board state into their dedicated slot, send a tiny (wid, K)

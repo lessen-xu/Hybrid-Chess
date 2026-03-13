@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """
 Dual-engine differential fuzzing: Python engine vs C++ engine.
 

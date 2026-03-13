@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Random agent baseline: uniform random move selection."""
 
 from __future__ import annotations

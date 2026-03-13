@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Agent base class."""
 
 from __future__ import annotations

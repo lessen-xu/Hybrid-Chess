@@ -13,16 +13,12 @@ namespace py = pybind11;
 
 PYBIND11_MODULE(hybrid_cpp_engine, m) {
     m.doc() = "C++ hybrid chess engine (pybind11)";
-
-    // ── Side enum ──
     py::enum_<Side>(m, "Side")
         .value("CHESS", Side::CHESS)
         .value("XIANGQI", Side::XIANGQI)
         .export_values();
 
     m.def("opponent", &opponent, "Return the opposing side");
-
-    // ── PieceKind enum ──
     py::enum_<PieceKind>(m, "PieceKind")
         .value("KING", PieceKind::KING)
         .value("QUEEN", PieceKind::QUEEN)
@@ -39,8 +35,6 @@ PYBIND11_MODULE(hybrid_cpp_engine, m) {
         .value("SOLDIER", PieceKind::SOLDIER)
         .value("NONE", PieceKind::NONE)
         .export_values();
-
-    // ── Piece ──
     py::class_<Piece>(m, "Piece")
         .def(py::init<PieceKind, Side>(), py::arg("kind"), py::arg("side"))
         .def_readwrite("kind", &Piece::kind)
@@ -61,8 +55,6 @@ PYBIND11_MODULE(hybrid_cpp_engine, m) {
             auto ss = p.side == Side::CHESS ? "CHESS" : "XIANGQI";
             return std::string("Piece(") + sk(p.kind) + ", " + ss + ")";
         });
-
-    // ── Move ──
     py::class_<Move>(m, "Move")
         .def(py::init<int,int,int,int,PieceKind>(),
              py::arg("fx"), py::arg("fy"), py::arg("tx"), py::arg("ty"),
@@ -84,8 +76,6 @@ PYBIND11_MODULE(hybrid_cpp_engine, m) {
             s += ")";
             return s;
         });
-
-    // ── Board ──
     py::class_<Board>(m, "Board")
         .def_static("empty", &Board::empty)
         .def("clone", &Board::clone)
@@ -102,8 +92,6 @@ PYBIND11_MODULE(hybrid_cpp_engine, m) {
         .def("royal_square", &Board::royal_square, py::arg("side"))
         .def("has_royal", &Board::has_royal, py::arg("side"))
         .def("royal_square_recompute", &Board::royal_square_recompute, py::arg("side"));
-
-    // ── Free functions ──
     m.def("generate_pseudo_legal_moves", &generate_pseudo_legal_moves);
     m.def("generate_legal_moves", &generate_legal_moves);
     m.def("apply_move", &apply_move);
@@ -122,8 +110,6 @@ PYBIND11_MODULE(hybrid_cpp_engine, m) {
     m.def("terminal_info", &terminal_info,
           py::arg("board"), py::arg("side_to_move"),
           py::arg("repetition_table"), py::arg("ply"), py::arg("max_plies"));
-
-    // ── Alpha-Beta search ──
     py::class_<SearchResult>(m, "SearchResult")
         .def_readonly("best_move", &SearchResult::best_move)
         .def_readonly("score",     &SearchResult::score)
@@ -132,8 +118,6 @@ PYBIND11_MODULE(hybrid_cpp_engine, m) {
     m.def("best_move", &best_move,
           py::arg("board"), py::arg("side_to_move"), py::arg("depth"),
           py::arg("repetition_table"), py::arg("ply"), py::arg("max_plies"));
-
-    // ── Constants ──
     m.attr("BOARD_W") = BOARD_W;
     m.attr("BOARD_H") = BOARD_H;
     m.attr("MAX_PLIES") = MAX_PLIES;

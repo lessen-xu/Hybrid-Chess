@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """AlphaZero state and action encoding.
 
 State encoding (14 channels):
@@ -21,10 +20,7 @@ import torch
 from hybrid.core.env import GameState
 from hybrid.core.types import Move, PieceKind, Side
 from hybrid.core.config import BOARD_W, BOARD_H
-
-# ====================================================================
 # State encoding
-# ====================================================================
 
 PIECE_CHANNELS: Dict[PieceKind, int] = {
     PieceKind.KING:     0,
@@ -125,11 +121,7 @@ def encode_batch_gpu(
     out[:, SIDE_TO_MOVE_CHANNEL, :, :] = sides.view(B, 1, 1).expand(B, H, W).float()
 
     return out
-
-
-# ====================================================================
 # Action encoding
-# ====================================================================
 
 # Sliding planes (0..71): 8 directions × 9 distances
 _SLIDE_DIRECTIONS = [
@@ -171,11 +163,7 @@ NUM_PROMO_PLANES = 12
 PROMO_PLANE_OFFSET = KNIGHT_PLANE_OFFSET + NUM_KNIGHT_PLANES  # 80
 
 TOTAL_POLICY_PLANES = NUM_SLIDE_PLANES + NUM_KNIGHT_PLANES + NUM_PROMO_PLANES  # 92
-
-
-# ====================================================================
 # Action encoding functions
-# ====================================================================
 
 def move_to_plane(mv: Move) -> Tuple[int, int, int]:
     """Map a Move to (plane_idx, fy, fx). Policy output is indexed by origin square."""

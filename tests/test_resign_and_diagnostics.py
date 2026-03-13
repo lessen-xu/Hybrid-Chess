@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Tests for resign mechanism, draw adjudication, and diagnostics."""
 
 import pytest
@@ -15,11 +14,7 @@ from hybrid.rl.az_selfplay import (
     material_diff_to_value,
     self_play_game,
 )
-
-
-# ====================================================================
 # A) GameRecord defaults
-# ====================================================================
 
 class TestGameRecord:
     def test_default_values(self):
@@ -53,11 +48,7 @@ class TestGameRecord:
         assert r.resign_side == "xiangqi"
         assert r.rootv_min == -0.9
         assert r.rootv_steps == 40
-
-
-# ====================================================================
 # B) SelfPlayConfig defaults
-# ====================================================================
 
 class TestSelfPlayConfig:
     def test_defaults(self):
@@ -79,11 +70,7 @@ class TestSelfPlayConfig:
     def test_resign_disabled(self):
         cfg = SelfPlayConfig(resign_enabled=False)
         assert cfg.resign_enabled is False
-
-
-# ====================================================================
 # C) compute_material_diff
-# ====================================================================
 
 class TestMaterialDiff:
     def test_initial_board(self):
@@ -115,11 +102,7 @@ class TestMoveLimitValue:
         assert 0.0 < v_pos < 1.0
         assert -1.0 < v_neg < 0.0
         assert v_neg == pytest.approx(-v_pos, abs=1e-6)
-
-
-# ====================================================================
 # D) Resign mechanism integration tests
-# ====================================================================
 
 class TestResignMechanism:
     def _make_mock_agent(self, values_sequence):
@@ -306,11 +289,7 @@ class TestResignMechanism:
         assert record.termination_reason == "Max plies reached"
         assert len(examples) == 2
         assert all(ex.z == 0.0 for ex in examples)
-
-
-# ====================================================================
 # E) Runner diagnostics aggregation
-# ====================================================================
 
 class TestDiagnosticAggregation:
     def test_aggregate_empty(self):
@@ -348,11 +327,7 @@ class TestDiagnosticAggregation:
         assert stats["sp_rootv_min_mean"] == 0.0
         assert stats["sp_low_rootv_steps_sum"] == 0
         assert stats["sp_low_rootv_steps_rate"] == 0.0
-
-
-# ====================================================================
 # F) score_ci tests
-# ====================================================================
 
 class TestScoreCI:
     def test_all_draws_tight_ci(self):

@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """AlphaZero-Mini training logic.
 
 Loss = policy_loss (cross-entropy with MCTS π) + value_loss (MSE with terminal z).

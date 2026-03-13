@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Smoke test for training step.
 
 Runs 1 training step with a tiny buffer and verifies:

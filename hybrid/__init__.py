@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Hybrid Chess — Asymmetric board game engine.
 
 International Chess vs Chinese Chess on a shared 9×10 board,

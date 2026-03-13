@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """AlphaZero encoding layer unit tests.
 
 Verifies:
@@ -107,11 +106,7 @@ def test_extract_policy_logits_empty():
     policy_planes = torch.randn(TOTAL_POLICY_PLANES, BOARD_H, BOARD_W)
     logits = extract_policy_logits(policy_planes, [])
     assert logits.shape == (0,)
-
-
-# ====================================================================
 # GPU encode_batch_gpu verification tests
-# ====================================================================
 
 import random
 import pickle

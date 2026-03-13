@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Alpha-Beta search agent (Negamax variant) with hand-crafted evaluation."""
 
 from __future__ import annotations

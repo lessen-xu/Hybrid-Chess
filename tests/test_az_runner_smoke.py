@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Smoke test for the iterative training runner.
 
 Runs 2 iterations with minimal config and verifies:

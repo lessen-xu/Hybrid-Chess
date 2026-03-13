@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """Hybrid Chess — Game Server
 
 Zero‐dependency HTTP server (Python stdlib only).
@@ -60,7 +59,6 @@ def create_agent(agent_id: str):
         return AlphaBetaAgent(cfg=SearchConfig(depth=depth))
     else:
         raise ValueError(f"Unknown agent: {agent_id}")
-
 
 
 # ═══════════════════════════════════════════════

@@ -15,9 +15,6 @@ std::vector<Move> generate_legal_moves(const Board& board, Side side);
 
 // Apply a move on a cloned board and return the new board.
 Board apply_move(const Board& board, const Move& mv);
-
-// ── In-place move execution / reversal (zero-clone) ──
-
 struct UndoInfo {
     Piece moved;                    // piece that was on from-square
     std::optional<Piece> captured;  // piece that was on to-square (if any)
@@ -44,8 +41,6 @@ void generate_legal_moves_inplace(Board& board, Side side,
 // In-place pseudo-legal move generation (appends to out, caller clears).
 void generate_pseudo_legal_moves_inplace(const Board& board, Side side,
                                           std::vector<Move>& out);
-
-// ── Attack detection ──
 //
 // SEMANTICS: "attacked" here means "reachable by a pseudo-legal move of
 // by_side on the current board", NOT the textbook notion of "control"

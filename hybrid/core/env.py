@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Minimal game environment (gym-like, no gym dependency)."""
 
 from __future__ import annotations

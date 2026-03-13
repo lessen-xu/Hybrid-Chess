@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Gymnasium-compatible environment wrapper for Hybrid Chess.
 
 Usage:

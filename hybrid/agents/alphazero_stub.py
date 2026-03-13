@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """AlphaZero-Mini: MCTS + policy/value network agent.
 
 Value convention (critical for correctness):
@@ -91,10 +90,7 @@ class AlphaZeroMiniAgent(Agent):
             cpp_to_py_move=_env._cpp_to_py_move,
             py_to_cpp_move=_env._py_to_cpp_move,
         )
-
-    # ------------------------------------------------------------------
     # Core MCTS
-    # ------------------------------------------------------------------
 
     def _run_mcts_search(self, state: GameState, legal_moves: List[Move],
                          add_noise: bool = True) -> Node:
@@ -138,10 +134,7 @@ class AlphaZeroMiniAgent(Agent):
             self._backup(path, value)
 
         return root
-
-    # ------------------------------------------------------------------
     # C++ MCTS path
-    # ------------------------------------------------------------------
 
     def _run_mcts_search_cpp(self, state: GameState, legal_moves: List[Move],
                               add_noise: bool = True) -> Node:
@@ -300,10 +293,7 @@ class AlphaZeroMiniAgent(Agent):
                 cpp_board=child_cpp_board,
                 cpp_side=child_cpp_side,
             )
-
-    # ------------------------------------------------------------------
     # Shared methods (used by both Python and C++ paths)
-    # ------------------------------------------------------------------
 
     def select_move(self, state: GameState, legal_moves: List[Move]) -> Move:
         """Return the most-visited move after MCTS."""
@@ -419,11 +409,7 @@ class AlphaZeroMiniAgent(Agent):
         noise = [n / s for n in noise]
         for mv, n in zip(moves, noise):
             priors[mv] = (1 - eps) * priors[mv] + eps * n
-
-
-# ====================================================================
 # TorchPolicyValueModel
-# ====================================================================
 
 import torch
 

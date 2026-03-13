@@ -10,9 +10,6 @@
 #include <array>
 #include <tuple>
 #include <optional>
-
-// ── Geometry helpers ──
-
 static constexpr std::array<std::pair<int,int>, 4> ORTH_DIRS = {{{1,0},{-1,0},{0,1},{0,-1}}};
 static constexpr std::array<std::pair<int,int>, 4> DIAG_DIRS = {{{1,1},{1,-1},{-1,1},{-1,-1}}};
 
@@ -20,9 +17,6 @@ static constexpr std::array<std::pair<int,int>, 8> KNIGHT_DELTAS = {{
     {1,2},{2,1},{-1,2},{-2,1},
     {1,-2},{2,-1},{-1,-2},{-2,-1}
 }};
-
-// ── Helper: find royal piece (direct grid scan, no vector alloc) ──
-
 static std::optional<std::pair<int,int>> find_royal(const Board& board, Side side) {
     PieceKind target = (side == Side::CHESS) ? PieceKind::KING : PieceKind::GENERAL;
     for (int y = 0; y < BOARD_H; ++y) {
@@ -34,16 +28,10 @@ static std::optional<std::pair<int,int>> find_royal(const Board& board, Side sid
     }
     return std::nullopt;
 }
-
-// ── Palace check ──
-
 static bool palace_contains(Side side, int x, int y) {
     if (side != Side::XIANGQI) return true;   // Chess has no palace
     return (x >= 3 && x <= 5) && (y >= 7 && y <= 9);
 }
-
-// ── Sliding moves (Rook/Chariot/Bishop/Queen) ──
-
 template<size_t N>
 static void slide_moves(const Board& board, int x, int y, Side side,
                         const std::array<std::pair<int,int>, N>& dirs,
@@ -64,9 +52,6 @@ static void slide_moves(const Board& board, int x, int y, Side side,
         }
     }
 }
-
-// ── Chess Pawn promotion helper ──
-
 static void maybe_promotions(int fx, int fy, int tx, int ty,
                              bool no_queen_promotion,
                              std::vector<Move>& out) {
@@ -81,9 +66,6 @@ static void maybe_promotions(int fx, int fy, int tx, int ty,
     out.push_back({fx, fy, tx, ty, PieceKind::BISHOP});
     out.push_back({fx, fy, tx, ty, PieceKind::KNIGHT});
 }
-
-// ── Chess Pawn moves ──
-
 static void chess_pawn_moves(const Board& board, int x, int y, Side side,
                              bool no_queen_promotion,
                              std::vector<Move>& out) {
@@ -109,9 +91,6 @@ static void chess_pawn_moves(const Board& board, int x, int y, Side side,
         }
     }
 }
-
-// ── Xiangqi Cannon moves ──
-
 static void xiangqi_cannon_moves(const Board& board, int x, int y, Side side,
                                  std::vector<Move>& out) {
     // Non-capture: slide until blocked
@@ -146,9 +125,6 @@ static void xiangqi_cannon_moves(const Board& board, int x, int y, Side side,
         }
     }
 }
-
-// ── Xiangqi Horse moves (with leg block) ──
-
 static void xiangqi_horse_moves(const Board& board, int x, int y, Side side,
                                 std::vector<Move>& out) {
     // (leg_dx, leg_dy, dst_dx, dst_dy)
@@ -169,9 +145,6 @@ static void xiangqi_horse_moves(const Board& board, int x, int y, Side side,
             out.push_back({x, y, nx, ny});
     }
 }
-
-// ── Xiangqi Elephant moves ──
-
 static void xiangqi_elephant_moves(const Board& board, int x, int y, Side side,
                                    std::vector<Move>& out) {
     static constexpr int deltas[][2] = {{2,2},{2,-2},{-2,2},{-2,-2}};
@@ -186,9 +159,6 @@ static void xiangqi_elephant_moves(const Board& board, int x, int y, Side side,
             out.push_back({x, y, nx, ny});
     }
 }
-
-// ── Xiangqi Advisor moves ──
-
 static void xiangqi_advisor_moves(const Board& board, int x, int y, Side side,
                                   std::vector<Move>& out) {
     for (auto [dx, dy] : DIAG_DIRS) {
@@ -200,9 +170,6 @@ static void xiangqi_advisor_moves(const Board& board, int x, int y, Side side,
             out.push_back({x, y, nx, ny});
     }
 }
-
-// ── Xiangqi General moves (including flying general) ──
-
 static void xiangqi_general_moves(const Board& board, int x, int y, Side side,
                                   std::vector<Move>& out) {
     // Normal orthogonal moves within palace
@@ -235,9 +202,6 @@ static void xiangqi_general_moves(const Board& board, int x, int y, Side side,
         }
     }
 }
-
-// ── Xiangqi Soldier moves ──
-
 static void xiangqi_soldier_moves(const Board& board, int x, int y, Side side,
                                   std::vector<Move>& out) {
     // Forward for Xiangqi is y-1 (towards Chess side)
@@ -252,9 +216,6 @@ static void xiangqi_soldier_moves(const Board& board, int x, int y, Side side,
             out.push_back({x, y, nx, ny});
     }
 }
-
-// ── Piece move dispatch ──
-
 static void piece_moves(const Board& board, int x, int y, const Piece& p,
                         bool no_queen_promotion,
                         std::vector<Move>& out) {
@@ -311,9 +272,6 @@ static void piece_moves(const Board& board, int x, int y, const Piece& p,
     if (k == PieceKind::GENERAL) { xiangqi_general_moves(board, x, y, s, out); return; }
     if (k == PieceKind::SOLDIER) { xiangqi_soldier_moves(board, x, y, s, out); return; }
 }
-
-// ── Pseudo-legal move generation ──
-
 void generate_pseudo_legal_moves_inplace(const Board& board, Side side,
                                          std::vector<Move>& out) {
     // out is assumed already cleared by the caller.
@@ -333,10 +291,7 @@ std::vector<Move> generate_pseudo_legal_moves(const Board& board, Side side) {
     generate_pseudo_legal_moves_inplace(board, side, moves);
     return moves;
 }
-
-// ═══════════════════════════════════════════════════════════════
 // In-place move execution / reversal
-// ═══════════════════════════════════════════════════════════════
 
 void make_move(Board& board, const Move& mv, UndoInfo& undo) {
     auto from_piece = board.get(mv.fx, mv.fy);
@@ -375,18 +330,12 @@ void unmake_move(Board& board, const Move& mv, const UndoInfo& undo) {
     }
 #endif
 }
-
-// ── Apply move (clone-based, for external/pybind API) ──
-
 Board apply_move(const Board& board, const Move& mv) {
     Board nb = board.clone();
     UndoInfo u;
     make_move(nb, mv, u);
     return nb;
 }
-
-// ── Attack detection (SLOW — preserved for equivalence testing) ──
-
 bool is_square_attacked_slow(const Board& board, int x, int y, Side by_side) {
     for (int py = 0; py < BOARD_H; ++py) {
         for (int px = 0; px < BOARD_W; ++px) {
@@ -415,8 +364,6 @@ bool is_square_attacked_slow(const Board& board, int x, int y, Side by_side) {
     }
     return false;
 }
-
-// ── Attack detection (FAST — reverse ray/offset from target square) ──
 //
 // Semantics: pseudo-legal reachability (not textbook "control").
 // See rules.h for full docstring and the three exception cases
@@ -435,8 +382,6 @@ bool is_square_attacked_fast(const Board& board, int x, int y, Side by_side) {
 
     auto& target_cell = board.grid[y][x];
     bool target_friendly = target_cell.has_value() && target_cell->side == by_side;
-
-    // ── CHESS pieces ──
     if (by_side == Side::CHESS) {
         // Pawn: chess pawn attacks diagonally forward (y+1) REGARDLESS of target
         // (standard chess convention: pawns "control" squares diagonally)
@@ -501,8 +446,6 @@ bool is_square_attacked_fast(const Board& board, int x, int y, Side by_side) {
 
         return false;
     }
-
-    // ── XIANGQI pieces ──
     // (by_side == Side::XIANGQI)
 
     // If target square has a friendly XIANGQI piece, no move can land there
@@ -660,24 +603,15 @@ bool is_square_attacked_fast(const Board& board, int x, int y, Side by_side) {
 
     return false;
 }
-
-// ── Public API: uses fast path ──
-
 bool is_square_attacked(const Board& board, int x, int y, Side by_side) {
     return is_square_attacked_fast(board, x, y, by_side);
 }
-
-// ── Check detection ──
-
 bool is_in_check(const Board& board, Side side) {
     int sq = board.royal_square(side);
     if (sq < 0) return true;  // royal captured
     int rx = sq_x(sq), ry = sq_y(sq);
     return is_square_attacked(board, rx, ry, opponent(side));
 }
-
-// ── Legal move generation ──
-
 // Full scratch version: zero hidden heap alloc when buffers are pre-allocated.
 void generate_legal_moves_inplace(Board& board, Side side,
                                    std::vector<Move>& out,
@@ -712,9 +646,6 @@ std::vector<Move> generate_legal_moves(const Board& board, Side side) {
     generate_legal_moves_inplace(tmp, side, out, pseudo);
     return out;
 }
-
-// ── Terminal state detection ──
-
 GameInfo terminal_info(const Board& board, Side side_to_move,
                        const std::unordered_map<std::string,int>& repetition_table,
                        int ply, int max_plies) {
@@ -753,9 +684,6 @@ GameInfo terminal_info(const Board& board, Side side_to_move,
 
     return {TerminalStatus::ONGOING, 0, ""};
 }
-
-// ── Perft (Performance Test / Move Path Enumeration) ──
-
 static uint64_t perft_recurse(Board& board, Side stm, int depth,
                                std::vector<std::vector<Move>>& move_bufs,
                                std::vector<std::vector<Move>>& pseudo_bufs) {

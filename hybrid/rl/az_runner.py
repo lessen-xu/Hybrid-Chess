@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """AlphaZero-Mini iterative training runner.
 
 Each iteration:
@@ -36,11 +35,7 @@ from hybrid.rl.az_replay import ReplayBuffer
 from hybrid.rl.az_train import train_one_epoch
 from hybrid.rl.az_eval import play_match, make_eval_az_agent, MatchStats, wilson_ci, score_ci
 from hybrid.rl.endgame_spawner import generate_endgame_board
-
-
-# ====================================================================
 # Configuration
-# ====================================================================
 
 @dataclass
 class AZIterConfig:
@@ -124,11 +119,7 @@ class AZIterConfig:
 
     def to_dict(self) -> dict:
         return {k: v for k, v in self.__dict__.items()}
-
-
-# ====================================================================
 # Helpers
-# ====================================================================
 
 def _resolve_device(device_str: str) -> torch.device:
     if device_str == "auto":
@@ -147,72 +138,27 @@ def _split_games_evenly(total_games: int, num_workers: int) -> List[int]:
 
 
 def _apply_ablation(ablation: str) -> "VariantConfig":
-    """Apply ablation experiment settings and return a VariantConfig.
-
-    Supports named presets and comma-separated combinations:
-        'none'                     → standard rules
-        'extra_cannon'             → extra cannon for Xiangqi
-        'no_queen'                 → remove Chess queen
-        'no_bishop'                → remove one Chess bishop
-        'extra_soldier'            → 6th Xiangqi soldier
-        'one_rook'                 → remove Chess second rook
-        'no_flying_general'        → disable flying-general rule
-        'extra_cannon,no_bishop'   → combine multiple
-
-    Returns a VariantConfig object for passing to HybridChessEnv.
-    Also sets legacy global flags for backwards compatibility.
-    """
-    import hybrid.core.config as cfg
+    """Return a VariantConfig from an ablation string (comma-separated presets)."""
     from hybrid.core.config import VariantConfig
-
-    # Reset all ablation flags (legacy)
-    _DEFAULTS = {
-        'ABLATION_NO_QUEEN': False,
-        'ABLATION_NO_QUEEN_PROMOTION': False,
-        'ABLATION_EXTRA_CANNON': False,
-        'ABLATION_REMOVE_EXTRA_PAWN': False,
-        'ABLATION_CHESS_NO_BISHOP': False,
-        'ABLATION_XIANGQI_EXTRA_SOLDIER': False,
-        'ABLATION_CHESS_ONE_ROOK': False,
-        'ABLATION_NO_FLYING_GENERAL': False,
-    }
-    for k, v in _DEFAULTS.items():
-        setattr(cfg, k, v)
 
     if ablation == "none":
         return VariantConfig()
 
-    # Named presets → VariantConfig field mapping
     _PRESET_TO_FIELD = {
-        'extra_cannon':     {'extra_cannon': True},
-        'no_queen':         {'no_queen': True},
-        'no_bishop':        {'no_bishop': True},
-        'extra_soldier':    {'extra_soldier': True},
-        'one_rook':         {'one_rook': True},
+        'extra_cannon':      {'extra_cannon': True},
+        'no_queen':          {'no_queen': True},
+        'no_bishop':         {'no_bishop': True},
+        'extra_soldier':     {'extra_soldier': True},
+        'one_rook':          {'one_rook': True},
         'no_flying_general': {'flying_general': False},
-        'remove_pawn':      {'remove_extra_pawn': True},
-        'no_queen_promo':   {'no_queen_promotion': True},
-    }
-    # Legacy preset → global flag mapping (for backwards compat)
-    _PRESET_TO_GLOBAL = {
-        'extra_cannon':     {'ABLATION_EXTRA_CANNON': True},
-        'no_queen':         {'ABLATION_NO_QUEEN': True},
-        'no_bishop':        {'ABLATION_CHESS_NO_BISHOP': True},
-        'extra_soldier':    {'ABLATION_XIANGQI_EXTRA_SOLDIER': True},
-        'one_rook':         {'ABLATION_CHESS_ONE_ROOK': True},
-        'no_flying_general': {'ABLATION_NO_FLYING_GENERAL': True},
-        'remove_pawn':      {'ABLATION_REMOVE_EXTRA_PAWN': True},
-        'no_queen_promo':   {'ABLATION_NO_QUEEN_PROMOTION': True},
+        'remove_pawn':       {'remove_extra_pawn': True},
+        'no_queen_promo':    {'no_queen_promotion': True},
     }
 
     variant_fields: dict = {}
-    parts = [p.strip() for p in ablation.split(',')]
-    for part in parts:
+    for part in (p.strip() for p in ablation.split(',')):
         if part in _PRESET_TO_FIELD:
             variant_fields.update(_PRESET_TO_FIELD[part])
-            # Also set legacy globals
-            for k, v in _PRESET_TO_GLOBAL[part].items():
-                setattr(cfg, k, v)
         else:
             print(f"[WARNING] Unknown ablation: {part!r}, skipping")
 
@@ -261,11 +207,7 @@ def build_net_from_checkpoint(
     net.load_state_dict(ckpt["model"])
     net.eval()
     return net
-
-
-# ====================================================================
 # Self-play diagnostics
-# ====================================================================
 
 def _aggregate_game_records(records: List[GameRecord]) -> Dict[str, Any]:
     """Aggregate GameRecords from one iteration into summary statistics."""
@@ -337,11 +279,7 @@ def _aggregate_game_records(records: List[GameRecord]) -> Dict[str, Any]:
         "sp_avg_legal_chess": avg_legal_chess,
         "sp_avg_legal_xiangqi": avg_legal_xiangqi,
     }
-
-
-# ====================================================================
 # CSV logging
-# ====================================================================
 
 CSV_COLUMNS = [
     "iter", "samples_added", "buffer_size",
@@ -382,9 +320,6 @@ def _append_csv(path: str, row: dict) -> None:
     with open(path, "a", newline="", encoding="utf-8") as f:
         writer = csv.DictWriter(f, fieldnames=CSV_COLUMNS)
         writer.writerow(row)
-
-
-# ---- Optional metric logging (lazy import, no hard dependency) ----
 
 _wandb_run = None          # cached wandb.run
 _tb_writer = None          # cached SummaryWriter
@@ -432,11 +367,7 @@ def _save_game_recordings(recordings: List[dict], outdir: Path,
         path = rec_dir / f"iter{iteration}_{label}_game{i}.json"
         with open(path, "w", encoding="utf-8") as f:
             json.dump(rec, f, ensure_ascii=False, indent=2)
-
-
-# ====================================================================
 # Curriculum annealing
-# ====================================================================
 
 def _get_curriculum_params(
     iteration: int, schedule: str, cfg: AZIterConfig,
@@ -458,11 +389,7 @@ def _get_curriculum_params(
             return 0.15, 150, True
     # No schedule — use static config values
     return cfg.endgame_ratio, cfg.selfplay_max_ply, cfg.disable_gating
-
-
-# ====================================================================
 # Main iteration loop
-# ====================================================================
 
 def run_iterations(cfg: AZIterConfig, outdir: Path) -> None:
     """Run iterative AlphaZero training: self-play → train → gate → eval."""
@@ -541,10 +468,7 @@ def run_iterations(cfg: AZIterConfig, outdir: Path) -> None:
             print(f"  [Curriculum] {phase}: endgame={iter_endgame_ratio}, "
                   f"max_ply={iter_max_ply}, "
                   f"gating={'OFF' if iter_disable_gating else 'ON'}")
-
-        # ============================================================
         # 1. Self-play
-        # ============================================================
 
         selfplay_cfg = SelfPlayConfig(
             temperature=1.0,
@@ -719,10 +643,7 @@ def run_iterations(cfg: AZIterConfig, outdir: Path) -> None:
                   f"rootv_min_p10={sp_diag['sp_rootv_min_p10']}  "
                   f"low_rootv_steps={sp_diag['sp_low_rootv_steps_sum']}  "
                   f"low_rootv_rate={sp_diag['sp_low_rootv_steps_rate']}")
-
-        # ============================================================
         # 2. Train
-        # ============================================================
 
         train_start = time.time()
         print(f"\n  [Train] {cfg.train_epochs} epochs, "
@@ -761,10 +682,7 @@ def run_iterations(cfg: AZIterConfig, outdir: Path) -> None:
         _save_checkpoint(net, optimizer, cfg, iteration, global_step, str(ckpt_path))
         train_seconds = time.time() - train_start
         print(f"    Saved: {ckpt_path}  (train: {train_seconds:.1f}s)")
-
-        # ============================================================
         # 3. Gating (adaptive CI)
-        # ============================================================
 
         from hybrid.rl.az_eval_parallel import gating_match_parallel, play_match_parallel
 
@@ -860,10 +778,7 @@ def run_iterations(cfg: AZIterConfig, outdir: Path) -> None:
         if gate_accepted:
             torch.save({"model": net.state_dict()}, str(best_model_path))
             print(f"    Updated best_model: {best_model_path}")
-
-        # ============================================================
         # 4. Evaluate
-        # ============================================================
 
         is_last_iter = (iteration == cfg.iterations - 1)
         eval_interval = cfg.eval_interval if cfg.eval_interval > 0 else 1
@@ -920,10 +835,7 @@ def run_iterations(cfg: AZIterConfig, outdir: Path) -> None:
         else:
             print(f"\n  [Eval] skipped (next eval at iter "
                   f"{((iteration // eval_interval) + 1) * eval_interval})")
-
-        # ============================================================
         # 5. Log to CSV
-        # ============================================================
 
         row = {
             "iter": iteration,

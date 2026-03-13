@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """GPU batch inference server with zero-copy shared memory IPC.
 
 Architecture:
@@ -25,11 +24,7 @@ from hybrid.rl.az_shm_pool import SharedMemoryPool
 
 
 _STOP_SENTINEL = "STOP"
-
-
-# ====================================================================
 # Inference server
-# ====================================================================
 
 class InferenceServer:
     """GPU batch inference server with shared memory IPC.
@@ -255,11 +250,7 @@ class InferenceServer:
             self._process_batch(net, dev, remaining, use_amp,
                                 pinned_ids, pinned_sides,
                                 gpu_ids, gpu_sides, gpu_states)
-
-
-# ====================================================================
 # Process entry point
-# ====================================================================
 
 def inference_server_process(
     model_ckpt_path: str,
@@ -283,11 +274,7 @@ def inference_server_process(
         stats_queue=stats_queue,
     )
     server.run()
-
-
-# ====================================================================
 # Inference client (used in worker processes)
-# ====================================================================
 
 class InferenceClient:
     """Client that writes to shared memory and signals the server."""

@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Centralized rule switches, ablation flags, and VariantConfig for experiments.
 
 VariantConfig is the recommended way to configure game variants.
@@ -18,11 +17,7 @@ MAX_PLIES = 400
 
 # Threefold repetition draw (simplified; no perpetual-check/chase rules)
 ENABLE_THREEFOLD_REPETITION_DRAW = True
-
-
-# ====================================================================
 # VariantConfig — the clean, composable way to configure game variants
-# ====================================================================
 
 @dataclass(frozen=True)
 class VariantConfig:
@@ -67,11 +62,7 @@ class VariantConfig:
 
 # Default variant — matches standard Hybrid Chess rules
 DEFAULT_VARIANT = VariantConfig()
-
-
-# ====================================================================
 # Legacy global flags — kept for backwards compatibility
-# ====================================================================
 
 # Rule switches
 CHESS_EXTRA_PAWN_ON_I_FILE = True

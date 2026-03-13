@@ -55,9 +55,6 @@ public:
     // Stable hash matching Python's board_hash(board, side_to_move).
     // Uses SHA1 of the same string representation.
     std::string board_hash(Side side_to_move) const;
-
-    // ── Royal cache API ──
-
     // O(1) cached: royal square index (0..89), or -1 if absent.
     int royal_square(Side s) const { return royal_sq[side_index(s)]; }
 
@@ -75,9 +72,6 @@ public:
 
     // Full grid scan — returns square index without modifying cache (for testing).
     int royal_square_recompute(Side s) const;
-
-    // ── Zobrist 128-bit API ──
-
     // Raw Zobrist key (piece configuration only, no side-to-move).
     ZKey128 zobrist_key_raw() const;
 

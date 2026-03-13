@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Rule engine: move generation, legality checks, check/checkmate/draw detection.
 
 Asymmetric rules: Chess Knight has no leg-block; Xiangqi Horse does.
@@ -18,9 +17,6 @@ from .config import BOARD_W, BOARD_H, ENABLE_FLYING_GENERAL_CAPTURE, DEFAULT_VAR
 _active_variant = None
 from .types import Side, PieceKind, Piece, Move
 from .board import Board
-
-
-# ----- Geometry helpers -----
 
 ORTH_DIRS = [(1, 0), (-1, 0), (0, 1), (0, -1)]
 DIAG_DIRS = [(1, 1), (1, -1), (-1, 1), (-1, -1)]
@@ -68,9 +64,6 @@ def _palace_contains(side: Side, x: int, y: int) -> bool:
 def _xiangqi_elephant_can_go(x: int, y: int, nx: int, ny: int) -> bool:
     """Elephant cannot cross the river (must stay at y >= 5)."""
     return ny >= 5
-
-
-# ----- Pseudo-legal move generation -----
 
 def generate_pseudo_legal_moves(board: Board, side: Side) -> List[Move]:
     """Generate pseudo-legal moves (ignoring self-check)."""
@@ -337,9 +330,6 @@ def _xiangqi_soldier_moves(board: Board, x: int, y: int, side: Side) -> List[Mov
             out.append(Move(x, y, nx, ny))
     return out
 
-
-# ----- Attack detection / check -----
-
 def is_square_attacked(board: Board, x: int, y: int, by_side: Side) -> bool:
     """Check if square (x,y) is attacked by any piece of by_side."""
     for px, py, p in board.iter_pieces():
@@ -371,9 +361,6 @@ def is_in_check(board: Board, side: Side) -> bool:
     rx, ry = royal
     return is_square_attacked(board, rx, ry, side.opponent())
 
-
-# ----- Legal move generation -----
-
 def apply_move(board: Board, mv: Move) -> Board:
     """Apply a move on a cloned board and return the new board (copy-on-write)."""
     nb = board.clone()
@@ -397,9 +384,6 @@ def generate_legal_moves(board: Board, side: Side) -> List[Move]:
         if not is_in_check(nb, side):
             out.append(mv)
     return out
-
-
-# ----- Terminal state detection -----
 
 class TerminalStatus:
     ONGOING = "ongoing"

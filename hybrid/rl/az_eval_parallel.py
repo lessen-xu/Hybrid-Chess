@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Multi-process parallel evaluation and gating matches.
 
 play_match_parallel(): AZ agent vs fixed opponent (Random / AB depth=1).
@@ -14,11 +13,7 @@ import multiprocessing as mp
 from dataclasses import dataclass
 
 from hybrid.rl.az_eval import MatchStats
-
-
-# ====================================================================
 # Worker functions
-# ====================================================================
 
 def _eval_worker(
     worker_id: int,
@@ -166,11 +161,7 @@ def _gating_worker(
             stats.win_b += 1  # best wins
 
     result_queue.put((worker_id, stats))
-
-
-# ====================================================================
 # Main-process orchestration
-# ====================================================================
 
 def play_match_parallel(
     model_ckpt_path: str,

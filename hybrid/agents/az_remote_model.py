@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """RemotePolicyValueModel: adapts InferenceClient to the PolicyValueModel protocol.
 
 Allows AlphaZeroMiniAgent and self_play_game() to use remote GPU inference

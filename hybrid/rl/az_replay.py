@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Replay buffer for AlphaZero self-play training samples.
 
 Storage format: npz with sparse π stored as offsets + flat arrays (CSR-like).

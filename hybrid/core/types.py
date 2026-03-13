@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Core type definitions for the hybrid chess engine."""
 
 from __future__ import annotations

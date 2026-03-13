@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Board data structure: 9x10 grid stored as grid[y][x]."""
 
 from __future__ import annotations
@@ -67,10 +66,8 @@ def initial_board(variant: "VariantConfig | None" = None) -> Board:
                  global flags in config.py (backwards compatible).
     """
     if variant is not None:
-        # ---- New path: read from VariantConfig ----
         v = variant
     else:
-        # ---- Legacy path: read from global flags ----
         from .config import (CHESS_EXTRA_PAWN_ON_I_FILE,
                               ABLATION_NO_QUEEN, ABLATION_EXTRA_CANNON,
                               ABLATION_REMOVE_EXTRA_PAWN,

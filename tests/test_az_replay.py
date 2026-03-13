@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """ReplayBuffer save/load round-trip tests.
 
 Ensures serialization and deserialization produce identical data.

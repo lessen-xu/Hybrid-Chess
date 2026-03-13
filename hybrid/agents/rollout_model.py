@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Random-rollout policy-value model for Pure MCTS.
 
 Implements the PolicyValueModel interface WITHOUT any neural network:

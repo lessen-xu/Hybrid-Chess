@@ -1,36 +1,13 @@
-# -*- coding: utf-8 -*-
 """Side-switching evaluation arena.
 
-Evaluates Model A vs Model B with forced side-swapping to neutralize
-asymmetric game bias. Critical for non-symmetric games where faction
-identity (Chess vs Xiangqi) is a core variable.
-
-Protocol:
-  Upper half: A=Chess, B=Xiangqi  ->  play N games
-  Lower half: A=Xiangqi, B=Chess  ->  play N games
-  Total: 2N games, WinRate_A = wins_A / 2N
-
-Usage:
-  # AZ checkpoint vs AlphaBeta-d1
-  python -m scripts.eval_arena \
-      --model-a runs/az_grand_run_v4/ckpt_iter19.pt \
-      --model-b ab_d1 \
-      --games 10 --simulations 200 --ablation extra_cannon --use-cpp
-
-  # Random vs AB-d1 baseline
-  python -m scripts.eval_arena --model-a random --model-b ab_d1 --games 20
-
-  # Two AZ checkpoints head-to-head
-  python -m scripts.eval_arena \
-      --model-a runs/experiment_vanilla/ckpt_iter19.pt \
-      --model-b runs/experiment_no_queen/ckpt_iter19.pt \
-      --games 10 --simulations 200 --use-cpp
+Play Model A vs Model B with forced side-swapping (A=Chess then A=Xiangqi)
+to neutralize asymmetric game bias. Total: 2N games.
 """
 
 from __future__ import annotations
 
 import re
-import scripts._fix_encoding  # noqa: F401
+import sys
 import argparse
 import json
 import os
@@ -38,15 +15,16 @@ import time
 from pathlib import Path
 from typing import List, Optional, Tuple
 
+# Ensure UTF-8 stdout on Windows
+if sys.stdout and hasattr(sys.stdout, "reconfigure"):
+    try: sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    except Exception: pass
+
 from hybrid.core.env import HybridChessEnv
 from hybrid.core.types import Side, Move
 from hybrid.core.rules import generate_legal_moves
 from hybrid.agents.base import Agent
-
-
-# ====================================================================
 # Agent factory
-# ====================================================================
 
 BASELINE_AGENTS = {"random", "greedy", "ab_d1", "ab_d2", "ab_d4"}
 
@@ -134,11 +112,7 @@ def _agent_label(spec: str) -> str:
     if re.match(r"pure_mcts_\d+", spec):
         return spec.upper()
     return Path(spec).stem
-
-
-# ====================================================================
 # Single game with telemetry
-# ====================================================================
 
 def play_arena_game(
     agent_chess: Agent,
@@ -180,11 +154,7 @@ def play_arena_game(
         "reason": reason,
         "legal_move_counts": legal_move_counts,
     }
-
-
-# ====================================================================
 # Arena orchestration
-# ====================================================================
 
 def run_arena(
     agent_a_spec: str,
@@ -323,11 +293,7 @@ def run_arena(
     print(f"{'='*60}\n")
 
     return {"summary": summary, "games": all_games}
-
-
-# ====================================================================
 # CLI
-# ====================================================================
 
 def main():
     parser = argparse.ArgumentParser(

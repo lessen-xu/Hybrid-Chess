@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """AlphaZero-Mini policy/value network (dual-head ResNet).
 
 Architecture:

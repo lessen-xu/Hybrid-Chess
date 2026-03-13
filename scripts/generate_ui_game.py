@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """Generate a game replay JSON file for the Web UI.
 
 Plays a single game between two agents, recording every board state

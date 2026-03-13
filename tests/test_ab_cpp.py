@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Tests for the C++ alpha-beta search engine (best_move)."""
 import pytest
 from hybrid.cpp_engine import hybrid_cpp_engine as eng

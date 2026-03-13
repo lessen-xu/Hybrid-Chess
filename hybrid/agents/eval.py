@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Hand-crafted evaluation function for the AlphaBeta baseline.
 
 Returns a score from the perspective of `perspective_side`:

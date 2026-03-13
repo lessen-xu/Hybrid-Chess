@@ -8,10 +8,7 @@
 #include <cstdio>
 #include <string>
 #include <functional>
-
-// ═══════════════════════════════════════════════════════════════
 // ZKey128 — 128-bit Zobrist key
-// ═══════════════════════════════════════════════════════════════
 
 struct ZKey128 {
     uint64_t lo = 0;
@@ -41,10 +38,7 @@ namespace std {
         }
     };
 }
-
-// ═══════════════════════════════════════════════════════════════
 // PieceKind → index mapping (explicit, future-proof)
-// ═══════════════════════════════════════════════════════════════
 
 static constexpr int ZOBRIST_NUM_KINDS = 13;  // KING..SOLDIER (excl. NONE)
 
@@ -66,10 +60,7 @@ inline int piece_kind_index(PieceKind k) {
         default:                  return -1;  // NONE — should never happen
     }
 }
-
-// ═══════════════════════════════════════════════════════════════
 // Deterministic random table (splitmix64, fixed seed)
-// ═══════════════════════════════════════════════════════════════
 
 namespace {
 
@@ -119,10 +110,7 @@ inline const ZobristTable& zobrist_table() {
 }
 
 }  // anonymous namespace
-
-// ═══════════════════════════════════════════════════════════════
 // Compute full Zobrist key from grid (for init / recompute)
-// ═══════════════════════════════════════════════════════════════
 
 #include <optional>
 

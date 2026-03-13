@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Greedy agent baseline: 1-ply capture maximizer.
 
 Always picks the legal move that captures the highest-value enemy piece.

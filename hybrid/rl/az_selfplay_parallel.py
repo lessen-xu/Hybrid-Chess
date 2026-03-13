@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Multi-process parallel self-play data generation.
 
 Mode A (CPU): each worker loads model locally for CPU inference.
@@ -24,11 +23,7 @@ from hybrid.agents.alphazero_stub import (
     TorchPolicyValueModel,
 )
 from hybrid.core.env import HybridChessEnv
-
-
-# ====================================================================
 # Worker function
-# ====================================================================
 
 def selfplay_worker(
     worker_id: int,
@@ -101,11 +96,7 @@ def selfplay_worker(
     if client is not None and track_latency and client.latencies_ms:
         latency_path = out_npz_path.replace(".npz", "_latency.npy")
         np.save(latency_path, np.array(client.latencies_ms, dtype=np.float64))
-
-
-# ====================================================================
 # Main-process orchestration
-# ====================================================================
 
 def generate_selfplay_parallel(
     num_workers: int,
