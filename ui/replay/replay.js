@@ -33,9 +33,9 @@ function initialBoard() {
     ' 7 s . s . s . s . s',
     ' 6 . . . . . . . . .',
     ' 5 . . . . . . . . .',
-    ' 4 P . P . P . P . P',
+    ' 4 . . . . . . . . .',
     ' 3 . . . . . . . . .',
-    ' 2 . . . . . . . . .',
+    ' 2 P P P P P P P P P',
     ' 1 R N B Q K B N R .',
     '    a b c d e f g h i',
   ].join('\n');
