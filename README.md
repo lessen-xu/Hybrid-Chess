@@ -44,6 +44,8 @@ Most AlphaZero implementations on GitHub are either **too simplified** (tic-tac-
 
 🏋️ **Gymnasium compatible** — `gym.make("HybridChess-v0")`, plug into any RL framework
 
+⚖️ **Rich ablation experiments** — 10+ built-in rule variants for balance tuning; the asymmetric design is inherently Chess-favored, making balance research a core challenge
+
 📊 **Experiment tracking** — WandB / TensorBoard integration (lazy import, zero config)
 
 ---
@@ -259,27 +261,61 @@ The training pipeline includes multiple layers of acceleration:
 
 ---
 
-## Rule Variants
+## ⚖️ Balance & Ablation Experiments
 
-The asymmetric design creates a natural balance challenge. Built-in variants for fairness tuning:
+### The Balance Problem
 
-| Variant | Effect | Balance Impact |
-|---------|--------|----------------|
-| `none` (standard) | Full Chess army vs full Xiangqi army | Chess favored (Queen dominant) |
-| `extra_cannon` | Xiangqi gets a 3rd Cannon | More balanced |
-| `no_queen` | Chess loses Queen | Xiangqi favored |
-| `no_bishop` | Chess loses left Bishop | Slight Chess nerf |
-| `extra_soldier` | Xiangqi gets 6th Soldier | Slight Xiangqi buff |
-| `one_rook` | Chess loses right Rook | Significant Chess nerf |
-| `no_flying_general` | Disables Flying General rule | Weakens Xiangqi General |
-| `no_queen_promo` | Pawns can't promote to Queen | Reduces late-game Chess power |
+When two fundamentally different armies meet, **balance is not guaranteed** — and in Hybrid Chess, early experiments show that **Chess is naturally favored**. The Queen alone (worth ~9 points, moving in 8 directions with unlimited range) outclasses anything in the Xiangqi army. Chess pieces also benefit from unrestricted movement across the entire board, while Xiangqi Elephants can't cross the river and the General is confined to the palace.
 
-Variants can be **combined**: `--ablation extra_cannon,no_bishop`
+This asymmetry is not a bug — it's a **core research question**: *How do you balance two rule systems that were never designed to interact?*
+
+### Rebalancing Strategies
+
+The framework provides a two-pronged approach via `VariantConfig`:
+
+**Strategy 1: Weaken Chess** — Remove or restrict Chess pieces to reduce their natural advantage.
+
+| Flag | Effect | Rationale |
+|------|--------|-----------|
+| `no_queen=True` | Remove the Queen entirely | Eliminates Chess's strongest piece; the most impactful single nerf |
+| `no_bishop=True` | Remove one Bishop | Reduces Chess's diagonal coverage |
+| `one_rook=True` | Remove one Rook | Significantly weakens Chess's endgame |
+| `no_queen_promo=True` | Pawns can only promote to R/B/N | Prevents late-game Queen factory |
+| `remove_extra_pawn=True` | Remove the 9th Pawn | Reduces Chess's pawn mass advantage |
+
+**Strategy 2: Buff Xiangqi** — Give Xiangqi additional pieces or relax restrictions.
+
+| Flag | Effect | Rationale |
+|------|--------|-----------|
+| `extra_cannon=True` | Add a 3rd Cannon at (4,7) | The Cannon's jump-capture mechanic is uniquely powerful |
+| `extra_soldier=True` | Add a 6th Soldier at (4,5) | More soldiers = better river control |
+| `flying_general=True` *(default)* | General can capture King across the board | Xiangqi's "nuclear option" if the file is clear |
+
+**Strategy 3: Combine both** — Mix nerfs and buffs for fine-tuning.
 
 ```python
 from hybrid.core.config import VariantConfig
-env = HybridChessEnv(variant=VariantConfig(extra_cannon=True, no_bishop=True))
+from hybrid.core.env import HybridChessEnv
+
+# Recommended balanced variant: nerf Chess Queen + buff Xiangqi Cannon
+balanced = VariantConfig(no_queen=True, extra_cannon=True)
+env = HybridChessEnv(variant=balanced)
+
+# CLI: combine via comma
+# python -m hybrid train --ablation extra_cannon,no_bishop
 ```
+
+### Research Questions
+
+| Question | How to test |
+|----------|------------|
+| Which single nerf best balances the game? | Train identical agents under each variant, compare win rates |
+| Is `extra_cannon` alone enough? | Compare `extra_cannon` vs `standard` over 200+ games |
+| Does promotion matter in practice? | Compare `no_queen_promo` vs standard — how often do pawns promote? |
+| What's the optimal combination? | Grid-search over variant pairs, measure Elo convergence |
+| Can RL discover balance itself? | Train with reward shaping that penalizes one-sided wins |
+
+> 💡 See [**Tutorial 05: Experiments**](notebooks/05_experiments.ipynb) for runnable code that automates variant ablation and balance testing.
 
 ---
 
