@@ -46,16 +46,6 @@ Most AlphaZero implementations on GitHub are either **too simplified** (tic-tac-
 
 📊 **Experiment tracking** — WandB / TensorBoard integration (lazy import, zero config)
 
-### 📚 Tutorials
-
-| # | Notebook | Topics |
-|---|----------|--------|
-| 01 | [Game Rules & Environment](notebooks/01_game_rules_and_env.ipynb) | Agent-environment loop, GameState, VariantConfig, FEN, Gymnasium |
-| 02 | [Search Algorithms](notebooks/02_search_algorithms.ipynb) | Minimax, Negamax, Alpha-Beta pruning, evaluation functions |
-| 03 | [MCTS Explained](notebooks/03_mcts_explained.ipynb) | UCB1, 4-phase MCTS, exploration vs exploitation, AlphaZero PUCT |
-| 04 | [AlphaZero Training](notebooks/04_alphazero_training.ipynb) | PolicyValueNet, state/action encoding, self-play, loss, gating |
-| 05 | [Experiments](notebooks/05_experiments.ipynb) | Variant ablation, reward shaping, custom architectures, curriculum |
-
 ---
 
 ## The Game
@@ -132,10 +122,10 @@ The best way to learn is through our interactive notebooks:
 | # | Notebook | What You'll Learn |
 |---|----------|-------------------|
 | 01 | [**Game Rules & Environment**](notebooks/01_game_rules_and_env.ipynb) [![Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/lessen-xu/Hybrid-Chess/blob/main/notebooks/01_game_rules_and_env.ipynb) | Create environments, make moves, visualize boards, custom variants |
-| 02 | AI Agents & Search *(coming soon)* | AlphaBeta search, agent comparison, evaluation functions |
-| 03 | MCTS Explained *(coming soon)* | Build MCTS from scratch, visualize the search tree |
-| 04 | AlphaZero Training *(coming soon)* | Full training pipeline walkthrough |
-| 05 | Experiments *(coming soon)* | Reward shaping, custom architectures, variant ablations |
+| 02 | [**Search Algorithms**](notebooks/02_search_algorithms.ipynb) [![Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/lessen-xu/Hybrid-Chess/blob/main/notebooks/02_search_algorithms.ipynb) | Minimax, Negamax, Alpha-Beta pruning, evaluation functions, agent tournament |
+| 03 | [**MCTS Explained**](notebooks/03_mcts_explained.ipynb) [![Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/lessen-xu/Hybrid-Chess/blob/main/notebooks/03_mcts_explained.ipynb) | UCB1, 4-phase MCTS, build from scratch, AlphaZero PUCT |
+| 04 | [**AlphaZero Training**](notebooks/04_alphazero_training.ipynb) [![Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/lessen-xu/Hybrid-Chess/blob/main/notebooks/04_alphazero_training.ipynb) | PolicyValueNet, state/action encoding, self-play, training loss, gating |
+| 05 | [**Experiments**](notebooks/05_experiments.ipynb) [![Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/lessen-xu/Hybrid-Chess/blob/main/notebooks/05_experiments.ipynb) | Variant ablation, reward shaping, custom architectures, curriculum |
 
 ---
 
