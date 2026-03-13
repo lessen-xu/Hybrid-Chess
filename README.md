@@ -14,6 +14,8 @@
 
 [Get Started](#quick-start) · [Tutorials](notebooks/) · [Architecture](docs/ARCHITECTURE.md) · [Game Rules](RULES.md)
 
+<img src="docs/images/hero.png" alt="Chess King vs Xiangqi General" width="360">
+
 </div>
 
 ---
