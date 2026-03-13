@@ -46,6 +46,16 @@ Most AlphaZero implementations on GitHub are either **too simplified** (tic-tac-
 
 📊 **Experiment tracking** — WandB / TensorBoard integration (lazy import, zero config)
 
+### 📚 Tutorials
+
+| # | Notebook | Topics |
+|---|----------|--------|
+| 01 | [Game Rules & Environment](notebooks/01_game_rules_and_env.ipynb) | Agent-environment loop, GameState, VariantConfig, FEN, Gymnasium |
+| 02 | [Search Algorithms](notebooks/02_search_algorithms.ipynb) | Minimax, Negamax, Alpha-Beta pruning, evaluation functions |
+| 03 | [MCTS Explained](notebooks/03_mcts_explained.ipynb) | UCB1, 4-phase MCTS, exploration vs exploitation, AlphaZero PUCT |
+| 04 | [AlphaZero Training](notebooks/04_alphazero_training.ipynb) | PolicyValueNet, state/action encoding, self-play, loss, gating |
+| 05 | [Experiments](notebooks/05_experiments.ipynb) | Variant ablation, reward shaping, custom architectures, curriculum |
+
 ---
 
 ## The Game
