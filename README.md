@@ -4,7 +4,7 @@
 
 ### A Production-Grade AlphaZero Implementation for Asymmetric Board Games
 
-[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/lessen-xu/Hybrid-Chess/blob/main/notebooks/01_game_rules_and_env.ipynb)
+
 [![Python 3.9+](https://img.shields.io/badge/Python-3.9%2B-3776ab?logo=python&logoColor=white)](https://python.org)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![PyTorch](https://img.shields.io/badge/PyTorch-2.0%2B-ee4c2c?logo=pytorch&logoColor=white)](https://pytorch.org)
@@ -12,7 +12,7 @@
 
 **Learn AlphaZero from a real-world codebase. Train your own agents. Play in the browser.**
 
-[Get Started](#quick-start) · [Tutorials](notebooks/) · [Architecture](docs/ARCHITECTURE.md) · [Game Rules](RULES.md)
+[Get Started](#quick-start) · [Architecture](docs/ARCHITECTURE.md) · [Game Rules](RULES.md)
 
 <img src="docs/images/hero.png" alt="Chess King vs Xiangqi General" width="360">
 
@@ -116,18 +116,6 @@ python -m hybrid eval --model runs/my_experiment/best_model.pt --vs ab_d2 --game
 ```
 
 ---
-
-## 📓 Tutorials
-
-The best way to learn is through our interactive notebooks:
-
-| # | Notebook | What You'll Learn |
-|---|----------|-------------------|
-| 01 | [**Game Rules & Environment**](notebooks/01_game_rules_and_env.ipynb) [![Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/lessen-xu/Hybrid-Chess/blob/main/notebooks/01_game_rules_and_env.ipynb) | Create environments, make moves, visualize boards, custom variants |
-| 02 | [**Search Algorithms**](notebooks/02_search_algorithms.ipynb) [![Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/lessen-xu/Hybrid-Chess/blob/main/notebooks/02_search_algorithms.ipynb) | Minimax, Negamax, Alpha-Beta pruning, evaluation functions, agent tournament |
-| 03 | [**MCTS Explained**](notebooks/03_mcts_explained.ipynb) [![Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/lessen-xu/Hybrid-Chess/blob/main/notebooks/03_mcts_explained.ipynb) | UCB1, 4-phase MCTS, build from scratch, AlphaZero PUCT |
-| 04 | [**AlphaZero Training**](notebooks/04_alphazero_training.ipynb) [![Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/lessen-xu/Hybrid-Chess/blob/main/notebooks/04_alphazero_training.ipynb) | PolicyValueNet, state/action encoding, self-play, training loss, gating |
-| 05 | [**Experiments**](notebooks/05_experiments.ipynb) [![Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/lessen-xu/Hybrid-Chess/blob/main/notebooks/05_experiments.ipynb) | Variant ablation, reward shaping, custom architectures, curriculum |
 
 ---
 
@@ -236,7 +224,7 @@ hybrid-chess/
 │   └── __main__.py          # CLI entry point
 ├── cpp/                     # C++ engine (pybind11, ~50× faster)
 ├── ui/                      # Browser UI (play, replay, shared renderer)
-├── notebooks/               # Interactive tutorials
+
 ├── docs/                    # Architecture documentation
 ├── tests/                   # pytest suite
 └── runs/                    # Experiment outputs (gitignored)
@@ -315,7 +303,7 @@ env = HybridChessEnv(variant=balanced)
 | What's the optimal combination? | Grid-search over variant pairs, measure Elo convergence |
 | Can RL discover balance itself? | Train with reward shaping that penalizes one-sided wins |
 
-> 💡 See [**Tutorial 05: Experiments**](notebooks/05_experiments.ipynb) for runnable code that automates variant ablation and balance testing.
+
 
 ---
 
@@ -344,7 +332,7 @@ Pull requests welcome! Some ideas:
 - 🧠 **New network architectures** — subclass `BaseModel` (Transformer? MobileNet?)
 - ⚖️ **Novel rule variants** — extend `VariantConfig`
 - 📊 **Reward shaping experiments** — use the `reward_shaper` hook
-- 📓 **Tutorial notebooks** — help others learn AlphaZero
+
 - 🌐 **Translations** of game rules and documentation
 
 ---
