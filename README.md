@@ -6,6 +6,10 @@ AlphaZero for asymmetric board games (International Chess vs Chinese Chess on a 
 [![PyTorch](https://img.shields.io/badge/PyTorch-2.0%2B-ee4c2c?logo=pytorch&logoColor=white)](https://pytorch.org)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
+<p align="center">
+  <img src="docs/images/hero.png" alt="Hybrid Chess" width="360">
+</p>
+
 ## Overview
 
 Hybrid Chess places International Chess pieces against Xiangqi (Chinese Chess) pieces on a 9×10 board. Each side follows its own movement rules, creating an asymmetric game with no existing datasets or opening theory. Agents must learn entirely through self-play.
