@@ -33,6 +33,7 @@ pyrightconfig.json
 
 # Paper drafts (unpublished)
 paper/
+proposal/
 
 # OS
 .DS_Store
