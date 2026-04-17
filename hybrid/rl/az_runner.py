@@ -411,13 +411,6 @@ def run_iterations(cfg: AZIterConfig, outdir: Path) -> None:
     print(f"[Runner] Config saved: {config_path}")
 
     csv_path = outdir / "metrics.csv"
-    if csv_path.exists():
-        # Back up stale CSV from a previous (possibly crashed) run
-        backup = outdir / "metrics_prev.csv"
-        import shutil
-        shutil.copy2(csv_path, backup)
-        print(f"[Runner] WARNING: found existing metrics.csv — backed up to {backup.name}")
-    _init_csv(str(csv_path))
 
     net = PolicyValueNet(
         num_res_blocks=cfg.res_blocks, channels=cfg.channels,
@@ -427,13 +420,61 @@ def run_iterations(cfg: AZIterConfig, outdir: Path) -> None:
     )
 
     best_model_path = outdir / "best_model.pt"
-    if best_model_path.exists():
+    buffer = ReplayBuffer(max_size=cfg.buffer_capacity_states)
+    global_step = 0
+    start_iteration = 0
+
+    # ── Resume from checkpoint ──
+    existing_ckpts = sorted(outdir.glob("ckpt_iter*.pt"),
+                            key=lambda p: int(p.stem.split("iter")[1]))
+    if existing_ckpts:
+        last_ckpt = existing_ckpts[-1]
+        last_iter = int(last_ckpt.stem.split("iter")[1])
+        print(f"[Runner] Found checkpoint: {last_ckpt.name} (iteration {last_iter})")
+
+        ckpt_data = torch.load(str(last_ckpt), map_location=device, weights_only=True)
+        net.load_state_dict(ckpt_data["model"])
+        if "optimizer" in ckpt_data:
+            optimizer.load_state_dict(ckpt_data["optimizer"])
+        global_step = ckpt_data.get("global_step", 0)
+        start_iteration = last_iter + 1
+
+        # Reload replay buffer from saved replay files
+        replay_files = sorted(outdir.glob("replay_iter*.npz"),
+                              key=lambda p: int(p.stem.split("iter")[1]))
+        if replay_files:
+            loaded_samples = 0
+            for rf in replay_files:
+                try:
+                    rb = ReplayBuffer.load_npz(str(rf))
+                    buffer.append(rb.examples)
+                    loaded_samples += len(rb.examples)
+                except Exception as e:
+                    print(f"[Runner] WARNING: failed to load {rf.name}: {e}")
+            print(f"[Runner] Loaded replay buffer: {loaded_samples} samples "
+                  f"from {len(replay_files)} files, buffer={len(buffer)}")
+
+        if start_iteration >= cfg.iterations:
+            print(f"[Runner] All {cfg.iterations} iterations already complete!")
+            return
+
+        print(f"[Runner] RESUMING from iteration {start_iteration}")
+    elif best_model_path.exists():
         _load_model_weights(net, str(best_model_path), device)
         print(f"[Runner] Loaded best_model: {best_model_path}")
 
-    buffer = ReplayBuffer(max_size=cfg.buffer_capacity_states)
+    # ── CSV: append if resuming, init if fresh ──
+    if start_iteration > 0 and csv_path.exists():
+        print(f"[Runner] Appending to existing metrics.csv "
+              f"({start_iteration} rows preserved)")
+    else:
+        if csv_path.exists():
+            import shutil
+            backup = outdir / "metrics_prev.csv"
+            shutil.copy2(csv_path, backup)
+            print(f"[Runner] Backed up stale metrics.csv -> {backup.name}")
+        _init_csv(str(csv_path))
 
-    global_step = 0
     print(f"[Runner] Parameters: {sum(p.numel() for p in net.parameters()):,}")
     print(f"[Runner] Resign: {'ON' if cfg.resign_enabled else 'OFF'}"
           f" (threshold={cfg.resign_threshold}, min_ply={cfg.resign_min_ply},"
@@ -449,9 +490,10 @@ def run_iterations(cfg: AZIterConfig, outdir: Path) -> None:
           f"eval={cfg.eval_simulations}, gating={cfg.gating_simulations}")
     if cfg.use_cpp:
         print(f"[Runner] C++ engine: ENABLED")
-    print(f"[Runner] Starting {cfg.iterations} iterations\n")
+    print(f"[Runner] Starting {cfg.iterations} iterations "
+          f"(from iter {start_iteration})\n")
 
-    for iteration in range(cfg.iterations):
+    for iteration in range(start_iteration, cfg.iterations):
         iter_start = time.time()
         print(f"{'='*60}")
         print(f"  Iteration {iteration}/{cfg.iterations - 1}")
@@ -561,7 +603,10 @@ def run_iterations(cfg: AZIterConfig, outdir: Path) -> None:
                   f"resign={'ON' if cfg.resign_enabled else 'OFF'} ...")
 
             tmp_ckpt_path = str(outdir / f"_tmp_selfplay_iter{iteration}.pt")
-            torch.save({"model": net.state_dict()}, tmp_ckpt_path)
+            torch.save({
+                "model": net.state_dict(),
+                "arch": {"res_blocks": cfg.res_blocks, "channels": cfg.channels},
+            }, tmp_ckpt_path)
 
             actual_workers = min(cfg.num_workers, cfg.selfplay_games_per_iter)
             games_per_worker = _split_games_evenly(
@@ -776,7 +821,10 @@ def run_iterations(cfg: AZIterConfig, outdir: Path) -> None:
             print(f"\n  [Gating] No best_model yet, auto-accept")
 
         if gate_accepted:
-            torch.save({"model": net.state_dict()}, str(best_model_path))
+            torch.save({
+                "model": net.state_dict(),
+                "arch": {"res_blocks": cfg.res_blocks, "channels": cfg.channels},
+            }, str(best_model_path))
             print(f"    Updated best_model: {best_model_path}")
         # 4. Evaluate
 
