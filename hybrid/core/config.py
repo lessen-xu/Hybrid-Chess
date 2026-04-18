@@ -46,6 +46,9 @@ class VariantConfig:
 
     # --- Rule flags ---
     flying_general: bool = True        # Enable flying-general capture
+    no_promotion: bool = False         # Completely disable pawn promotion (pawn stays pawn at y=9)
+    chess_palace: bool = False         # Confine Chess King to 3x3 palace (x=3-5, y=0-2)
+    knight_block: bool = False         # Chess Knight uses XQ Horse leg-blocking rules
     no_queen_promotion: bool = False   # Pawn can only promote to R/B/N
 
     def to_dict(self) -> dict:

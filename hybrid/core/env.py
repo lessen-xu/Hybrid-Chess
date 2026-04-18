@@ -164,6 +164,16 @@ class HybridChessEnv:
     def _set_active_variant(self) -> None:
         """Set the module-level active variant so rules functions use our config."""
         _rules_module._active_variant = self.variant
+        # Sync rule flags to C++ engine
+        if self.use_cpp:
+            _ensure_cpp_maps()
+            from hybrid.cpp_engine import RuleFlags as CppRuleFlags, set_rule_flags
+            flags = CppRuleFlags()
+            flags.no_queen_promotion = self.variant.no_queen_promotion
+            flags.no_promotion = self.variant.no_promotion
+            flags.chess_palace = self.variant.chess_palace
+            flags.knight_block = self.variant.knight_block
+            set_rule_flags(flags)
 
     def reset(self) -> GameState:
         self._set_active_variant()

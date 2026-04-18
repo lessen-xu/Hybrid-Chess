@@ -41,7 +41,7 @@ def _eval_worker(
     from hybrid.rl.az_eval import play_one_game, MatchStats
     from hybrid.core.types import Side
 
-    _apply_ablation(ablation)
+    variant_cfg = _apply_ablation(ablation)
 
     from hybrid.rl.az_runner import build_net_from_checkpoint
     net = build_net_from_checkpoint(model_ckpt_path, device="cpu")
@@ -74,7 +74,7 @@ def _eval_worker(
             agent_xiangqi = opponent
             az_is_chess = True
 
-        winner, plies, _ = play_one_game(agent_chess, agent_xiangqi, seed=seed + local_i, use_cpp=use_cpp)
+        winner, plies, _ = play_one_game(agent_chess, agent_xiangqi, seed=seed + local_i, use_cpp=use_cpp, variant=variant_cfg)
         stats.total_plies += plies
         stats.games += 1
 
@@ -113,7 +113,7 @@ def _gating_worker(
     from hybrid.rl.az_eval import play_one_game, MatchStats
     from hybrid.core.types import Side
 
-    _apply_ablation(ablation)
+    variant_cfg = _apply_ablation(ablation)
 
     from hybrid.rl.az_runner import build_net_from_checkpoint
 
@@ -148,7 +148,7 @@ def _gating_worker(
             agent_xiangqi = best_agent
             cand_is_chess = True
 
-        winner, plies, _ = play_one_game(agent_chess, agent_xiangqi, seed=seed + local_i, use_cpp=use_cpp)
+        winner, plies, _ = play_one_game(agent_chess, agent_xiangqi, seed=seed + local_i, use_cpp=use_cpp, variant=variant_cfg)
         stats.total_plies += plies
         stats.games += 1
 

@@ -118,6 +118,18 @@ PYBIND11_MODULE(hybrid_cpp_engine, m) {
     m.def("best_move", &best_move,
           py::arg("board"), py::arg("side_to_move"), py::arg("depth"),
           py::arg("repetition_table"), py::arg("ply"), py::arg("max_plies"));
+
+    // RuleFlags — variant config for rule modifications
+    py::class_<RuleFlags>(m, "RuleFlags")
+        .def(py::init<>())
+        .def_readwrite("no_queen_promotion", &RuleFlags::no_queen_promotion)
+        .def_readwrite("no_promotion", &RuleFlags::no_promotion)
+        .def_readwrite("chess_palace", &RuleFlags::chess_palace)
+        .def_readwrite("knight_block", &RuleFlags::knight_block);
+
+    m.def("set_rule_flags", &set_rule_flags, py::arg("flags"),
+          "Set global rule flags for the C++ engine (thread-local)");
+
     m.attr("BOARD_W") = BOARD_W;
     m.attr("BOARD_H") = BOARD_H;
     m.attr("MAX_PLIES") = MAX_PLIES;

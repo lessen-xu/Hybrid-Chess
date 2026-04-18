@@ -42,7 +42,7 @@ def selfplay_worker(
 ) -> None:
     """Worker entry point: run num_games self-play games, save to out_npz_path."""
     from hybrid.rl.az_runner import _apply_ablation
-    _apply_ablation(ablation)
+    variant_cfg = _apply_ablation(ablation)
 
     # Build model (Mode B with inference server, or Mode A with local CPU)
     client = None
@@ -60,7 +60,7 @@ def selfplay_worker(
         model = TorchPolicyValueModel(net, device="cpu")
 
     agent = AlphaZeroMiniAgent(model=model, cfg=mcts_cfg, seed=seed, use_cpp=use_cpp)
-    env = HybridChessEnv(use_cpp=use_cpp)
+    env = HybridChessEnv(use_cpp=use_cpp, variant=variant_cfg)
 
     all_examples = []
     all_records = []

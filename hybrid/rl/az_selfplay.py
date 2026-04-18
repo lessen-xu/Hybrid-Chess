@@ -103,6 +103,26 @@ class Example:
     z: float = 0.0          # terminal outcome, assigned after game ends
 
 
+def compute_piece_census(board) -> dict:
+    """Count surviving pieces by side and kind at game end.
+    Returns dict like {'chess_KNIGHT': 2, 'xiangqi_CHARIOT': 1, ...}"""
+    census = {}
+    for x, y, piece in board.iter_pieces():
+        key = f"{piece.side.name.lower()}_{piece.kind.name}"
+        census[key] = census.get(key, 0) + 1
+    return census
+
+
+# Standard initial piece counts for survival rate computation (excludes royals)
+INITIAL_PIECES = {
+    'chess_QUEEN': 1, 'chess_ROOK': 2, 'chess_BISHOP': 2,
+    'chess_KNIGHT': 2, 'chess_PAWN': 8,
+    'xiangqi_ADVISOR': 2, 'xiangqi_ELEPHANT': 2,
+    'xiangqi_HORSE': 2, 'xiangqi_CHARIOT': 2, 'xiangqi_CANNON': 2,
+    'xiangqi_SOLDIER': 5,
+}
+
+
 @dataclass
 class GameRecord:
     """Per-game metadata for diagnostics."""
@@ -119,6 +139,8 @@ class GameRecord:
     # --- Telemetry for evaluation protocol ---
     winner_side: Optional[str] = None       # "chess" / "xiangqi" / None (draw)
     legal_move_counts: List[int] = field(default_factory=list)  # per-ply |legal_moves|
+    # --- Per-piece diagnostics ---
+    piece_census: dict = field(default_factory=dict)  # surviving pieces at game end
 
 
 @dataclass
@@ -233,6 +255,7 @@ def self_play_game(
                     low_rootv_steps=low_rootv_steps, rootv_steps=rootv_steps,
                     winner_side=_winner_side,
                     legal_move_counts=legal_move_counts,
+                    piece_census=compute_piece_census(state.board),
                 )
                 return examples, record
 
@@ -259,6 +282,7 @@ def self_play_game(
                     low_rootv_steps=low_rootv_steps, rootv_steps=rootv_steps,
                     winner_side=None,
                     legal_move_counts=legal_move_counts,
+                    piece_census=compute_piece_census(state.board),
                 )
                 return examples, record
 
@@ -310,6 +334,7 @@ def self_play_game(
         low_rootv_steps=low_rootv_steps, rootv_steps=rootv_steps,
         winner_side=winner_side_str,
         legal_move_counts=legal_move_counts,
+        piece_census=compute_piece_census(state.board),
     )
 
     return examples, record

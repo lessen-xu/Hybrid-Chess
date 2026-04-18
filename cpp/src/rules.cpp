@@ -29,8 +29,12 @@ static std::optional<std::pair<int,int>> find_royal(const Board& board, Side sid
     return std::nullopt;
 }
 static bool palace_contains(Side side, int x, int y) {
-    if (side != Side::XIANGQI) return true;   // Chess has no palace
-    return (x >= 3 && x <= 5) && (y >= 7 && y <= 9);
+    if (side == Side::XIANGQI)
+        return (x >= 3 && x <= 5) && (y >= 7 && y <= 9);
+    // Chess palace: only when chess_palace flag is active
+    if (side == Side::CHESS && g_rule_flags.chess_palace)
+        return (x >= 3 && x <= 5) && (y >= 0 && y <= 2);
+    return true;  // no restriction
 }
 template<size_t N>
 static void slide_moves(const Board& board, int x, int y, Side side,
@@ -53,26 +57,29 @@ static void slide_moves(const Board& board, int x, int y, Side side,
     }
 }
 static void maybe_promotions(int fx, int fy, int tx, int ty,
-                             bool no_queen_promotion,
                              std::vector<Move>& out) {
     if (ty != 9) {
         out.push_back({fx, fy, tx, ty});
         return;
     }
-    // Promotion at y=9
-    if (!no_queen_promotion)
+    // no_promotion: pawn reaches y=9 but stays as pawn (no promotion moves)
+    if (g_rule_flags.no_promotion) {
+        out.push_back({fx, fy, tx, ty});  // plain move, no promotion
+        return;
+    }
+    // Normal promotion at y=9
+    if (!g_rule_flags.no_queen_promotion)
         out.push_back({fx, fy, tx, ty, PieceKind::QUEEN});
     out.push_back({fx, fy, tx, ty, PieceKind::ROOK});
     out.push_back({fx, fy, tx, ty, PieceKind::BISHOP});
     out.push_back({fx, fy, tx, ty, PieceKind::KNIGHT});
 }
 static void chess_pawn_moves(const Board& board, int x, int y, Side side,
-                             bool no_queen_promotion,
                              std::vector<Move>& out) {
     // Forward 1
     int nx = x, ny = y + 1;
     if (board.in_bounds(nx, ny) && !board.get(nx, ny).has_value()) {
-        maybe_promotions(x, y, nx, ny, no_queen_promotion, out);
+        maybe_promotions(x, y, nx, ny, out);
         // Double step from starting rank
         if (y == 1) {
             int nx2 = x, ny2 = y + 2;
@@ -87,7 +94,7 @@ static void chess_pawn_moves(const Board& board, int x, int y, Side side,
         if (!board.in_bounds(cx, cy)) continue;
         auto t = board.get(cx, cy);
         if (t.has_value() && t->side != side) {
-            maybe_promotions(x, y, cx, cy, no_queen_promotion, out);
+            maybe_promotions(x, y, cx, cy, out);
         }
     }
 }
@@ -217,7 +224,6 @@ static void xiangqi_soldier_moves(const Board& board, int x, int y, Side side,
     }
 }
 static void piece_moves(const Board& board, int x, int y, const Piece& p,
-                        bool no_queen_promotion,
                         std::vector<Move>& out) {
     auto k = p.kind;
     auto s = p.side;
@@ -231,20 +237,26 @@ static void piece_moves(const Board& board, int x, int y, const Piece& p,
         return;
     }
     if (k == PieceKind::KNIGHT) {
-        for (auto [dx, dy] : KNIGHT_DELTAS) {
-            int nx = x + dx, ny = y + dy;
-            if (!board.in_bounds(nx, ny)) continue;
-            auto t = board.get(nx, ny);
-            if (!t.has_value() || t->side != s)
-                out.push_back({x, y, nx, ny});
+        if (g_rule_flags.knight_block) {
+            // Use XQ Horse leg-blocking rules
+            xiangqi_horse_moves(board, x, y, s, out);
+        } else {
+            for (auto [dx, dy] : KNIGHT_DELTAS) {
+                int nx = x + dx, ny = y + dy;
+                if (!board.in_bounds(nx, ny)) continue;
+                auto t = board.get(nx, ny);
+                if (!t.has_value() || t->side != s)
+                    out.push_back({x, y, nx, ny});
+            }
         }
         return;
     }
     if (k == PieceKind::KING) {
-        // All 8 directions, 1 step
+        // All 8 directions, 1 step (palace-restricted if chess_palace)
         for (auto [dx, dy] : ORTH_DIRS) {
             int nx = x + dx, ny = y + dy;
             if (!board.in_bounds(nx, ny)) continue;
+            if (!palace_contains(s, nx, ny)) continue;
             auto t = board.get(nx, ny);
             if (!t.has_value() || t->side != s)
                 out.push_back({x, y, nx, ny});
@@ -252,6 +264,7 @@ static void piece_moves(const Board& board, int x, int y, const Piece& p,
         for (auto [dx, dy] : DIAG_DIRS) {
             int nx = x + dx, ny = y + dy;
             if (!board.in_bounds(nx, ny)) continue;
+            if (!palace_contains(s, nx, ny)) continue;
             auto t = board.get(nx, ny);
             if (!t.has_value() || t->side != s)
                 out.push_back({x, y, nx, ny});
@@ -259,7 +272,7 @@ static void piece_moves(const Board& board, int x, int y, const Piece& p,
         return;
     }
     if (k == PieceKind::PAWN) {
-        chess_pawn_moves(board, x, y, s, no_queen_promotion, out);
+        chess_pawn_moves(board, x, y, s, out);
         return;
     }
 
@@ -280,7 +293,7 @@ void generate_pseudo_legal_moves_inplace(const Board& board, Side side,
             auto& cell = board.grid[y][x];
             if (!cell.has_value()) continue;
             if (cell->side != side) continue;
-            piece_moves(board, x, y, *cell, false, out);
+            piece_moves(board, x, y, *cell, out);
         }
     }
 }
@@ -355,7 +368,7 @@ bool is_square_attacked_slow(const Board& board, int x, int y, Side by_side) {
 
             // Other pieces: any pseudo-legal move landing on (x,y) counts
             std::vector<Move> pmoves;
-            piece_moves(board, px, py, *cell, false, pmoves);
+            piece_moves(board, px, py, *cell, pmoves);
             for (auto& mv : pmoves) {
                 if (mv.tx == x && mv.ty == y)
                     return true;
@@ -395,23 +408,49 @@ bool is_square_attacked_fast(const Board& board, int x, int y, Side by_side) {
         if (target_friendly)
             return false;
 
-        // King: 8 neighbors
-        for (auto [dx, dy] : ORTH_DIRS) {
-            int nx = x + dx, ny = y + dy;
-            if (ib(nx, ny) && has_piece(board, nx, ny, Side::CHESS, PieceKind::KING))
-                return true;
-        }
-        for (auto [dx, dy] : DIAG_DIRS) {
-            int nx = x + dx, ny = y + dy;
-            if (ib(nx, ny) && has_piece(board, nx, ny, Side::CHESS, PieceKind::KING))
-                return true;
+        // King: 8 neighbors (palace-restricted if chess_palace)
+        {
+            bool king_can_reach = !g_rule_flags.chess_palace ||
+                                  palace_contains(Side::CHESS, x, y);
+            if (king_can_reach) {
+                for (auto [dx, dy] : ORTH_DIRS) {
+                    int nx = x + dx, ny = y + dy;
+                    if (ib(nx, ny) && has_piece(board, nx, ny, Side::CHESS, PieceKind::KING))
+                        return true;
+                }
+                for (auto [dx, dy] : DIAG_DIRS) {
+                    int nx = x + dx, ny = y + dy;
+                    if (ib(nx, ny) && has_piece(board, nx, ny, Side::CHESS, PieceKind::KING))
+                        return true;
+                }
+            }
         }
 
-        // Knight: 8 L-offsets (no leg block for chess knight)
-        for (auto [dx, dy] : KNIGHT_DELTAS) {
-            int nx = x + dx, ny = y + dy;
-            if (ib(nx, ny) && has_piece(board, nx, ny, Side::CHESS, PieceKind::KNIGHT))
+        // Knight: with or without leg blocking
+        if (g_rule_flags.knight_block) {
+            // Reverse-L with leg block (same logic as XQ Horse)
+            static constexpr int horse_cands[][4] = {
+                {1,0,2,1}, {1,0,2,-1},
+                {-1,0,-2,1}, {-1,0,-2,-1},
+                {0,1,1,2}, {0,1,-1,2},
+                {0,-1,1,-2}, {0,-1,-1,-2},
+            };
+            for (auto& c : horse_cands) {
+                int hx = x - c[2], hy = y - c[3];
+                if (!ib(hx, hy)) continue;
+                if (!has_piece(board, hx, hy, Side::CHESS, PieceKind::KNIGHT)) continue;
+                int lx = hx + c[0], ly = hy + c[1];
+                if (!ib(lx, ly)) continue;
+                if (board.grid[ly][lx].has_value()) continue; // leg blocked
                 return true;
+            }
+        } else {
+            // Standard chess knight: 8 L-offsets, no blocking
+            for (auto [dx, dy] : KNIGHT_DELTAS) {
+                int nx = x + dx, ny = y + dy;
+                if (ib(nx, ny) && has_piece(board, nx, ny, Side::CHESS, PieceKind::KNIGHT))
+                    return true;
+            }
         }
 
         // Rook / Queen: orthogonal rays

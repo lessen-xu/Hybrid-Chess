@@ -60,3 +60,19 @@ struct Move {
                promotion == o.promotion;
     }
 };
+
+// ---------------------------------------------------------------------------
+// RuleFlags — variant config passed from Python to C++ engine
+// ---------------------------------------------------------------------------
+struct RuleFlags {
+    bool no_queen_promotion = false;  // Pawn promotes to R/B/N only (no Queen)
+    bool no_promotion = false;        // Completely disable pawn promotion
+    bool chess_palace = false;        // Confine Chess King to 3x3 palace (x=3-5, y=0-2)
+    bool knight_block = false;        // Chess Knight uses XQ Horse leg-blocking rules
+};
+
+// Global rule flags — set once per game by Python wrapper.
+// Thread-local to avoid issues with multiprocessing.
+inline thread_local RuleFlags g_rule_flags;
+
+inline void set_rule_flags(const RuleFlags& f) { g_rule_flags = f; }

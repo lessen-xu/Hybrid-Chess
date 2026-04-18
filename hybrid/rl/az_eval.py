@@ -137,9 +137,10 @@ def play_one_game(
     seed: int = 0,
     record: bool = False,
     use_cpp: bool = False,
+    variant=None,
 ) -> Tuple[Optional[Side], int, Optional[dict]]:
     """Play one game. Returns (winner, plies, game_record_or_None)."""
-    env = HybridChessEnv(use_cpp=use_cpp)
+    env = HybridChessEnv(use_cpp=use_cpp, variant=variant)
     state = env.reset()
     agents = {Side.CHESS: agent_chess, Side.XIANGQI: agent_xiangqi}
 
@@ -196,6 +197,7 @@ def play_match(
     seed: int = 0,
     record_first_n: int = 0,
     use_cpp: bool = False,
+    variant=None,
 ) -> Tuple[MatchStats, List[dict]]:
     """Play a match (multiple games). swap_sides=True alternates side assignments."""
     stats = MatchStats()
@@ -218,6 +220,7 @@ def play_match(
             seed=seed + game_i,
             record=should_record,
             use_cpp=use_cpp,
+            variant=variant,
         )
 
         stats.total_plies += plies

@@ -153,6 +153,10 @@ def _apply_ablation(ablation: str) -> "VariantConfig":
         'no_flying_general': {'flying_general': False},
         'remove_pawn':       {'remove_extra_pawn': True},
         'no_queen_promo':    {'no_queen_promotion': True},
+        # Rule reforms
+        'no_promotion':      {'no_promotion': True},
+        'chess_palace':      {'chess_palace': True},
+        'knight_block':      {'knight_block': True},
     }
 
     variant_fields: dict = {}
@@ -251,7 +255,37 @@ def _aggregate_game_records(records: List[GameRecord]) -> Dict[str, Any]:
 
     adjudicated_plies = [r.ply_count for r in records if r.termination_reason == "Adjudicated draw"]
 
-    return {
+    # --- Per-piece survival diagnostics ---
+    from hybrid.rl.az_selfplay import INITIAL_PIECES
+    piece_keys = sorted(INITIAL_PIECES.keys())
+    piece_survived = {}
+    piece_lost = {}
+    for k in piece_keys:
+        init = INITIAL_PIECES[k]
+        survived_total = sum(r.piece_census.get(k, 0) for r in records if r.piece_census)
+        n_with_census = sum(1 for r in records if r.piece_census)
+        if n_with_census > 0:
+            avg_survived = survived_total / n_with_census
+            survival_rate = avg_survived / init if init > 0 else 0.0
+            piece_survived[f"surv_{k}"] = round(survival_rate, 3)
+            piece_lost[f"lost_{k}"] = round(init - avg_survived, 2)
+
+    # Chess vs XQ total material at game end
+    chess_mat_keys = [k for k in piece_keys if k.startswith('chess_')]
+    xq_mat_keys = [k for k in piece_keys if k.startswith('xiangqi_')]
+    MAT_VAL = {'KING':0,'QUEEN':9,'ROOK':5,'BISHOP':3,'KNIGHT':3,'PAWN':1,
+               'GENERAL':0,'ADVISOR':2,'ELEPHANT':2,'HORSE':3,'CHARIOT':5,'CANNON':4.5,'SOLDIER':1}
+    chess_end_mat = []
+    xq_end_mat = []
+    for r in records:
+        if not r.piece_census:
+            continue
+        cm = sum(r.piece_census.get(k, 0) * MAT_VAL.get(k.split('_',1)[1], 0) for k in chess_mat_keys)
+        xm = sum(r.piece_census.get(k, 0) * MAT_VAL.get(k.split('_',1)[1], 0) for k in xq_mat_keys)
+        chess_end_mat.append(cm)
+        xq_end_mat.append(xm)
+
+    result = {
         "sp_games": n,
         "sp_decisive": decisive,
         "sp_draw_move_limit": draw_move_limit,
@@ -278,7 +312,13 @@ def _aggregate_game_records(records: List[GameRecord]) -> Dict[str, Any]:
         "sp_draws": draws,
         "sp_avg_legal_chess": avg_legal_chess,
         "sp_avg_legal_xiangqi": avg_legal_xiangqi,
+        # --- Per-piece survival ---
+        "sp_chess_end_mat": round(sum(chess_end_mat) / max(len(chess_end_mat), 1), 2),
+        "sp_xq_end_mat": round(sum(xq_end_mat) / max(len(xq_end_mat), 1), 2),
     }
+    result.update(piece_survived)
+    result.update(piece_lost)
+    return result
 # CSV logging
 
 CSV_COLUMNS = [
@@ -307,6 +347,18 @@ CSV_COLUMNS = [
     # --- Faction / branching telemetry ---
     "sp_chess_wins", "sp_xiangqi_wins", "sp_draws",
     "sp_avg_legal_chess", "sp_avg_legal_xiangqi",
+    # --- Per-piece end material ---
+    "sp_chess_end_mat", "sp_xq_end_mat",
+    # --- Survival rates ---
+    "surv_chess_QUEEN", "surv_chess_ROOK", "surv_chess_BISHOP",
+    "surv_chess_KNIGHT", "surv_chess_PAWN",
+    "surv_xiangqi_CHARIOT", "surv_xiangqi_CANNON", "surv_xiangqi_HORSE",
+    "surv_xiangqi_ELEPHANT", "surv_xiangqi_ADVISOR", "surv_xiangqi_SOLDIER",
+    # --- Avg pieces lost ---
+    "lost_chess_QUEEN", "lost_chess_ROOK", "lost_chess_BISHOP",
+    "lost_chess_KNIGHT", "lost_chess_PAWN",
+    "lost_xiangqi_CHARIOT", "lost_xiangqi_CANNON", "lost_xiangqi_HORSE",
+    "lost_xiangqi_ELEPHANT", "lost_xiangqi_ADVISOR", "lost_xiangqi_SOLDIER",
 ]
 
 
@@ -400,7 +452,7 @@ def run_iterations(cfg: AZIterConfig, outdir: Path) -> None:
     print(f"[Runner] Device: {device}")
     print(f"[Runner] Output: {outdir}")
 
-    _apply_ablation(cfg.ablation)
+    variant_cfg = _apply_ablation(cfg.ablation)
 
     torch.manual_seed(cfg.seed)
     np.random.seed(cfg.seed)
@@ -550,7 +602,7 @@ def run_iterations(cfg: AZIterConfig, outdir: Path) -> None:
                 use_cpp=cfg.use_cpp,
             )
 
-            env = HybridChessEnv(max_plies=iter_max_ply, use_cpp=cfg.use_cpp)
+            env = HybridChessEnv(max_plies=iter_max_ply, use_cpp=cfg.use_cpp, variant=variant_cfg)
             iter_examples = []
             sp_start = time.time()
             endgame_rng = __import__('random').Random(cfg.seed + iteration * 7777)

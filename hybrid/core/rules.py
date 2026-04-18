@@ -55,10 +55,14 @@ def _find_royal(board: Board, side: Side) -> Optional[Tuple[int, int]]:
 
 
 def _palace_contains(side: Side, x: int, y: int) -> bool:
-    """Check if (x,y) is inside the side's palace. Chess has no palace restriction."""
-    if side != Side.XIANGQI:
-        return True
-    return (3 <= x <= 5) and (7 <= y <= 9)
+    """Check if (x,y) is inside the side's palace."""
+    if side == Side.XIANGQI:
+        return (3 <= x <= 5) and (7 <= y <= 9)
+    # Chess palace: only when chess_palace flag is active
+    if side == Side.CHESS:
+        if _active_variant is not None and _active_variant.chess_palace:
+            return (3 <= x <= 5) and (0 <= y <= 2)
+    return True  # no restriction
 
 
 def _xiangqi_elephant_can_go(x: int, y: int, nx: int, ny: int) -> bool:
@@ -88,6 +92,10 @@ def _piece_moves(board: Board, x: int, y: int, p: Piece) -> List[Move]:
     if k == PieceKind.QUEEN:
         return _slide_moves(board, x, y, s, ORTH_DIRS + DIAG_DIRS)
     if k == PieceKind.KNIGHT:
+        # Check if knight_block is active
+        use_block = (_active_variant is not None and _active_variant.knight_block)
+        if use_block:
+            return _xiangqi_horse_moves(board, x, y, s)
         out = []
         for dx, dy in KNIGHT_DELTAS:
             nx, ny = x + dx, y + dy
@@ -102,6 +110,8 @@ def _piece_moves(board: Board, x: int, y: int, p: Piece) -> List[Move]:
         for dx, dy in ORTH_DIRS + DIAG_DIRS:
             nx, ny = x + dx, y + dy
             if not board.in_bounds(nx, ny):
+                continue
+            if not _palace_contains(s, nx, ny):
                 continue
             t = board.get(nx, ny)
             if t is None or t.side != s:
@@ -159,10 +169,15 @@ def _chess_pawn_moves(board: Board, x: int, y: int, side: Side) -> List[Move]:
 
 
 def _maybe_promotions(fx: int, fy: int, tx: int, ty: int) -> List[Move]:
-    """If Pawn reaches y=9, generate promotion moves (Q/R/B/N)."""
+    """If Pawn reaches y=9, generate promotion moves (Q/R/B/N) or plain if no_promotion."""
     if ty != 9:
         return [Move(fx, fy, tx, ty)]
-    # Check variant config first, fallback to legacy global
+
+    # Check no_promotion first
+    if _active_variant is not None and _active_variant.no_promotion:
+        return [Move(fx, fy, tx, ty)]  # plain move, no promotion
+
+    # Check variant config for no_queen_promotion, fallback to legacy global
     if _active_variant is not None:
         no_queen_promo = _active_variant.no_queen_promotion
     else:
