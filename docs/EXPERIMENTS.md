@@ -57,7 +57,7 @@ hybrid chess/
 | RQ4 初步平衡 | 探索 no_queen/no_bishop 等棋子削弱 | ✅ 完成 | `runs/rq4_*` |
 | AB D2 规则改革扫描 | 测试 palace/knight_block/no_promotion 23个变体 | ✅ 完成 | `runs/rq4_rule_reform_ab/` |
 | AZ Baseline（默认规则） | 20轮自对弈建立默认规则参照 | ✅ 完成 | `runs/rq4_az_nq_allrules/` |
-| AZ 训练（新规则） | no_queen+ALL_RULES 正式训练 | 🔄 进行中 | `runs/rq4_az_nq_allrules_v2/` |
+| AZ 训练（新规则） | no_queen+ALL_RULES 正式训练 | ✅ 完成 | `runs/rq4_az_nq_allrules_v2/` |
 
 ---
 
@@ -143,13 +143,43 @@ hybrid chess/
   - `surv_chess_QUEEN` 等: 各棋子存活率
   - `lost_chess_PAWN` 等: 各棋子平均损失数量
 
-### Run：no_queen + ALL_RULES（20 轮）
+### Run：no_queen + ALL_RULES（20 轮）✅ 完成
 
-- **输出**: `runs/rq4_az_nq_allrules_v2/` ← **当前正在进行**
+- **输出**: `runs/rq4_az_nq_allrules_v2/`
 - **配置**: `--ablation no_queen,chess_palace,knight_block,no_promotion --iterations 20 --use-cpp --num-workers 4`
 - **规则**: `no_queen + no_promotion + chess_palace + knight_block`
-- **状态**: 🔄 训练中（启动于 2026-04-18 06:41）
-- **Dashboard**: `runs/rq4_az_nq_allrules_v2/dashboard.html`（每 15s 刷新）
+- **状态**: ✅ 完成（2026-04-18）
+
+#### 结果对比
+
+| 指标 | Baseline（默认规则）| **新规则 v2** | 变化 |
+|------|-------------------|--------------|------|
+| Chess 胜率 | 32.4% | **9.6%** | ⬇️ 大幅下降 |
+| XQ 胜率 | 2.6% | **9.7%** | ⬆️ 大幅上升 |
+| 和棋率 | 65.0% | **83.2%** | 更多和局 |
+| C:X 胜负比 | 12.4x | **≈1:1** | ✅ 趋近平衡 |
+| avg mat_diff | −6.8 | **−13.6** | XQ 子力明显占优 |
+| Chess 终局子力 | 22.6 | **17.5** | Chess 子力更少 |
+| XQ 终局子力 | 29.4 | **31.4** | XQ 子力更多 |
+| surv_chess_QUEEN | 0.48 | **0.00** | ✅ 无 Queen（规则生效） |
+
+#### 趋势分析（每5轮分段）
+
+| 轮次 | Chess | XQ | 和棋 | C:X 比 |
+|------|-------|----|------|--------|
+| 0–4  | 50    | 47 | 403  | 1.1x |
+| 5–9  | 44    | 46 | 410  | 0.96x |
+| 10–14| 39    | 48 | 413  | 0.81x |
+| **15–19** | **18** | **45** | **437** | **0.40x** |
+
+> XQ 在后期逐渐占据优势，说明去掉 Queen + 加入规则改革后，**原本被压制的 XQ 战术体系开始发挥作用**。
+
+#### 关键结论
+
+- `no_queen + ALL_RULES` 成功将 C:X 比从 12.4x 压到 ≈1:1，**基本实现平衡**
+- `surv_chess_QUEEN = 0.00` 确认规则正确生效（无升变出 Queen）
+- 后期 XQ 反超说明规则改革力度稍强，如需精调可考虑仅用 `palace + knight_block`（不删后）
+- 20轮训练模型仍弱（vs AB d1 全输），需更多轮次验证策略质量
 
 ## 启动训练的标准命令
 
@@ -182,7 +212,7 @@ python scripts/az_dashboard.py runs/MY_RUN_NAME "variant_name"
 
 ## 待办事项
 
-- [ ] 分析 `rq4_az_nq_allrules_v2` 结果，与默认规则 baseline 对比平衡性
-- [ ] 若 C:X 比仍 > 5x，考虑进一步测试 `palace+knight_block`（不删后）变体
-- [ ] 更多轮训练（≥50 轮）验证 AZ 收敛后的平衡性
+- [x] 分析 `rq4_az_nq_allrules_v2` 结果 → C:X ≈1:1，规则平衡验证成功
+- [ ] 若需精调：测试 `palace+knight_block`（不删后）变体，避免 XQ 后期反超
+- [ ] 更多轮训练（≥50 轮）验证 AZ 策略质量
 - [ ] 将实验结果写入课程报告 (`course_project/`)
