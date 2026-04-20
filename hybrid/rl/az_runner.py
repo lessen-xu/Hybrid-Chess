@@ -157,6 +157,8 @@ def _apply_ablation(ablation: str) -> "VariantConfig":
         'no_promotion':      {'no_promotion': True},
         'chess_palace':      {'chess_palace': True},
         'knight_block':      {'knight_block': True},
+        # Piece additions
+        'xq_queen':          {'xq_queen': True},
     }
 
     variant_fields: dict = {}

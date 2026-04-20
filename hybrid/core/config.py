@@ -43,6 +43,7 @@ class VariantConfig:
     remove_extra_pawn: bool = False    # Remove Chess 9th pawn (overrides extra_pawn_i_file)
     extra_cannon: bool = False         # Extra Cannon for Xiangqi at (4,7)
     extra_soldier: bool = False        # Extra Soldier for Xiangqi at (4,5)
+    xq_queen: bool = False             # Give Xiangqi a Queen (replaces left Advisor)
 
     # --- Rule flags ---
     flying_general: bool = True        # Enable flying-general capture

@@ -114,7 +114,7 @@ def initial_board(variant: "VariantConfig | None" = None) -> Board:
         PieceKind.CHARIOT,
         PieceKind.HORSE,
         PieceKind.ELEPHANT,
-        PieceKind.ADVISOR,
+        PieceKind.QUEEN if v.xq_queen else PieceKind.ADVISOR,
         PieceKind.GENERAL,
         PieceKind.ADVISOR,
         PieceKind.ELEPHANT,

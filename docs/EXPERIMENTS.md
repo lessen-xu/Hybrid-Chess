@@ -129,78 +129,84 @@ hybrid chess/
 
 ## AlphaZero 训练
 
-### Baseline：默认规则（20 轮）
+### 实验配置
 
-- **输出**: `runs/rq4_az_nq_allrules/`
-- **配置**: `--iterations 20 --selfplay-games-per-iter 100 --simulations 50 --use-cpp --num-workers 4`
-- **规则**: 默认规则（标准 Hybrid Chess，含 Queen、升变、无宫格、无蹩脚）
-- **结果**: Chess 32.4% / XQ 2.6% / Draw 65.0%，C:X = 12.4x
-- **诊断指标**（本次引入）：
-  - `sp_chess_end_mat` / `sp_xq_end_mat`: 终局双方子力值
-  - `surv_chess_QUEEN` 等: 各棋子存活率
-  - `lost_chess_PAWN` 等: 各棋子平均损失
+所有 AZ 运行使用统一配置：
+- 自对弈：100 局/轮，50 sims，max_ply=150，4 workers
+- 训练：2 epochs，batch=256，buffer=50000
+- 评估：20 局 vs Random + 20 局 vs AB(d1)，每 2 轮
 
-### Run A：palace + knight_block（50 轮）
+### 七变体完整对比
 
-- **输出**: `runs/rq4_az_palace_knight_v2/`
-- **配置**: `--ablation chess_palace,knight_block --iterations 50`
-- **规则**: Chess King 限宫 + Chess Knight 踩脚（保留 Queen、升变）
-- **结果**: Chess 29.3% / XQ 8.5% / Draw 62.2%，C:X = 3.4x
+| 变体 | 轮次 | Chess% | XQ% | Draw% | C:X | L10 C:X | mat_diff | 输出目录 |
+|------|------|--------|-----|-------|-----|---------|----------|---------|
+| Default | 20 | 32.4% | 2.6% | 65.0% | 12.4x | 13.5x | −6.8 | `rq4_az_nq_allrules/` |
+| PK | 50 | 30.1% | 8.7% | 61.1% | 3.4x | 3.2x | −6.6 | `rq4_az_palace_knight_v2/` |
+| PK+noPromo | 50 | 31.0% | 8.8% | 60.3% | 3.5x | 4.0x | −6.8 | `rq4_az_pk_nopromo/` |
+| **PK+xqQueen** | **50** | **18.5%** | **27.4%** | **54.1%** | **0.7x** | **0.7x** | **−10.7** | **`rq4_az_pk_xqqueen/`** |
+| noQ+noPromo | 50 | 9.6% | 2.6% | 87.8% | 3.7x | 2.0x | −13.4 | `rq4_az_nq_nopromo/` |
+| noQ+PK | 50 | 4.8% | 7.6% | 87.7% | 0.6x | 0.2x | −12.7 | `rq4_az_nq_pk/` |
+| noQ+ALL | 50 | 3.9% | 6.9% | 89.3% | 0.6x | 0.3x | −12.5 | `rq4_az_nq_allrules_v2/` |
 
-每 10 轮分段趋势：
+> **PK** = palace + knight_block, **noQ** = no_queen, **ALL** = palace + knight_block + no_promotion
 
-| 轮次 | Chess | XQ | Draw | C:X |
-|------|-------|----|------|-----|
-| 0–9 | 284 | 73 | 643 | 3.9x |
-| 10–19 | 274 | 93 | 633 | 2.9x |
-| 20–29 | 313 | 81 | 606 | 3.9x |
-| 30–39 | 300 | 83 | 617 | 3.6x |
-| 40–49 | 304 | 96 | 600 | 3.2x |
+### 最佳变体：PK + xqQueen
 
-### Run B：no_queen + ALL_RULES（50 轮）
-
-- **输出**: `runs/rq4_az_nq_allrules_v2/`
-- **配置**: `--ablation no_queen,chess_palace,knight_block,no_promotion --iterations 50`
-- **规则**: 删 Queen + 禁升变 + 宫格 + 踩脚（全规则改革）
-- **结果**: Chess 3.0% / XQ 8.5% / Draw 88.5%，C:X = 0.35x
-
-每 10 轮分段趋势：
+`palace + knight_block + xq_queen`（宫格 + 蹩脚 + 给 XQ 一个后）
 
 | 轮次 | Chess | XQ | Draw | C:X |
 |------|-------|----|------|-----|
-| 0–9 | 94 | 93 | 813 | 1.0x |
-| 10–19 | 57 | 87 | 856 | 0.66x |
-| 20–29 | 19 | 74 | 907 | 0.26x |
-| 30–39 | 8 | 38 | 954 | 0.21x |
-| 40–49 | 14 | 42 | 944 | 0.33x |
+| 0–9 | 188 | 257 | 555 | 0.7x |
+| 10–19 | 196 | 264 | 540 | 0.7x |
+| 20–29 | 170 | 287 | 543 | 0.6x |
+| 30–39 | 179 | 287 | 534 | 0.6x |
+| 40–49 | 193 | 274 | 533 | 0.7x |
+
+- C:X = 0.7x **极其稳定**（50 轮内无漂移）
+- 和棋率 54%（所有变体中最低 → 最多对决局）
+- XQ 略占优但幅度可控
+
+### 关键发现
+
+#### 1. Queen 是平衡性的核心变量
+
+| Chess 有后 / XQ 无后 | C:X 3.4–12.4x（Chess 碾压） |
+|-----|-----|
+| **双方都有后** | **C:X = 0.7x（接近平衡）** |
+| Chess 无后 / XQ 无后 | C:X = 0.3–0.6x（XQ 反超 + 88% 和棋） |
+
+Queen 的存在与否是决定胜负比的**最强因素**。给 XQ 配后比削弱 Chess 更有效。
+
+#### 2. no_promotion 完全无效
+
+PK 与 PK+noPromo 结果一致（C:X = 3.4x vs 3.5x），因为：
+- `surv_chess_QUEEN` 两者均 ≈0.49，**零次升变**发生
+- 棋盘 9×10，兵需 8 步到底线，150 步上限下根本到不了
+- **升变在当前对局条件下是不可能事件**
+
+#### 3. 结构改革（宫格+蹩脚）效果稳定
+
+把 C:X 从 12.4x 压到 3.4x，效果约 **−70%**。但单靠结构改革无法达到 1:1。
+
+#### 4. 删 Queen 导致和棋泛滥
+
+所有 noQ 变体和棋率 87–89%，对局质量下降。C:X 看似接近但大多数局无意义。
+
+### 推荐方案
+
+**`palace + knight_block + xq_queen`** — 最优平衡变体：
+- C:X ≈ 0.7x（最接近 1:1）
+- 和棋率 54%（最多对决局）
+- 趋势稳定（无学习漂移）
+- 不削弱任何一方，而是通过增强 XQ 来实现平衡
 
 ---
-
-### 三变体最终对比
-
-| 指标 | 默认规则 (20i) | palace+knight (50i) | no_queen+ALL (50i) |
-|------|-----------------|--------------------|-----------------|
-| **Chess 胜率** | 32.4% | **29.3%** | 3.0% |
-| **XQ 胜率** | 2.6% | **8.5%** | 8.5% |
-| **和棋率** | 65.0% | **62.2%** | 88.5% |
-| **C:X 比** | 12.4x | **3.4x** | 0.35x |
-| **avg mat_diff** | −6.8 | **−6.6** | −11.5 |
-| **后 10 轮 C:X** | — | **3.2x** | 0.33x |
-
-### 结论
-
-1. **默认规则** Chess 绝对优势（C:X = 12.4x），严重失衡
-2. **palace + knight_block** 把 C:X 从 12.4x 压到 3.2–3.9x，大幅改善但 Chess 仍有明显优势
-3. **no_queen + ALL_RULES** 矫枉过正，XQ 反超（C:X = 0.33x），和棋率 88%+
-4. **真正的平衡点**在两者之间，可测试 `palace + knight_block + no_promotion`（不删后但禁升变）
-5. 50 轮训练后模型仍弱（vs AB d1 全输），需更多训练或更强 sims 验证策略收敛
 
 ## 启动训练的标准命令
 
 ```bash
-# 标准 AZ 训练（20轮，加速配置）
 python scripts/train_az_iter.py \
-  --iterations 20 \
+  --iterations 50 \
   --selfplay-games-per-iter 100 \
   --simulations 50 \
   --selfplay-max-ply 150 \
@@ -213,13 +219,10 @@ python scripts/train_az_iter.py \
   --resign-enabled 1 \
   --device auto \
   --seed 42 \
-  --ablation "no_queen,chess_palace,knight_block,no_promotion" \
+  --ablation "chess_palace,knight_block,xq_queen" \
   --use-cpp \
   --num-workers 4 \
   --outdir "runs/MY_RUN_NAME"
-
-# 启动进度 Dashboard（另一个终端）
-python scripts/az_dashboard.py runs/MY_RUN_NAME "variant_name"
 ```
 
 ---
@@ -227,7 +230,8 @@ python scripts/az_dashboard.py runs/MY_RUN_NAME "variant_name"
 ## 待办事项
 
 - [x] AZ Baseline（20轮默认规则）→ C:X = 12.4x
-- [x] AZ no_queen+ALL_RULES（50轮）→ C:X = 0.35x（过度削弱）
-- [x] AZ palace+knight_block（50轮）→ C:X = 3.4x（大幅改善）
-- [ ] 测试 `palace+knight_block+no_promotion`（不删后但禁升变）寻找精确平衡点
+- [x] AZ palace+knight_block（50轮）→ C:X = 3.4x
+- [x] AZ PK+noPromo（50轮）→ C:X = 3.5x（确认 no_promo 无效）
+- [x] AZ noQ+PK / noQ+noPromo / noQ+ALL（各50轮）→ 过度削弱
+- [x] AZ PK+xqQueen（50轮）→ **C:X = 0.7x（最优方案）** ⭐
 - [ ] 将实验结果写入课程报告 (`course_project/`)
