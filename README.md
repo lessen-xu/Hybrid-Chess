@@ -46,11 +46,12 @@ pip install pybind11 && .\cpp\build.ps1     # Windows
 # Quick test (CPU)
 python -m hybrid train --iterations 5 --games 20 --simulations 50
 
-# Full training (GPU)
-python -m hybrid train \
-    --iterations 20 --games 50 --simulations 200 \
-    --device cuda --use-cpp \
-    --output runs/my_experiment
+# Full training with rule variants (GPU)
+python scripts/train_az_iter.py \
+    --iterations 50 --selfplay-games-per-iter 100 --simulations 50 \
+    --ablation "chess_palace,knight_block,xq_queen" \
+    --use-cpp --num-workers 4 \
+    --outdir runs/my_experiment
 ```
 
 ### Evaluate
@@ -70,15 +71,16 @@ from hybrid.core.env import HybridChessEnv
 # Default rules
 env = HybridChessEnv()
 
-# Remove Chess Queen (largest nerf)
-env = HybridChessEnv(variant=VariantConfig(no_queen=True))
+# Structural reform: palace + knight blocking
+env = HybridChessEnv(variant=VariantConfig(chess_palace=True, knight_block=True))
 
-# Add 3rd Xiangqi Cannon (buff)
-env = HybridChessEnv(variant=VariantConfig(extra_cannon=True))
-
-# Or via CLI:
-python -m hybrid train --ablation no_queen
+# Best balance: palace + knight block + give XQ a Queen
+env = HybridChessEnv(variant=VariantConfig(
+    chess_palace=True, knight_block=True, xq_queen=True
+))
 ```
+
+Available flags: `no_queen`, `chess_palace`, `knight_block`, `xq_queen`, `no_promotion`, `extra_cannon`, etc. See [RULES.md](RULES.md).
 
 ### Gymnasium Interface
 

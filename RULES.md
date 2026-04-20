@@ -52,18 +52,29 @@ If General and King share a column with no pieces between them, the General can 
 
 Controlled via `hybrid/core/config.py` or the `--ablation` CLI flag:
 
+### Piece Modifications
+
 | Flag | Effect |
 |------|--------|
-| `extra_cannon` | Add 3rd Cannon for Xiangqi at (4,7) |
 | `no_queen` | Remove Chess Queen |
 | `no_bishop` | Remove Chess Bishops |
-| `extra_soldier` | Add extra Soldier for Xiangqi |
 | `one_rook` | Remove one Chess Rook |
-| `no_flying_general` | Disable Flying General rule |
 | `remove_pawn` | Remove Chess 9th-file Pawn |
-| `no_queen_promo` | Pawn cannot promote to Queen |
+| `extra_cannon` | Add 3rd Cannon for Xiangqi at (4,7) |
+| `extra_soldier` | Add extra Soldier for Xiangqi |
+| `xq_queen` | Give Xiangqi a Queen (replaces left Advisor) |
 
-Multiple variants can be combined: `--ablation extra_cannon,no_bishop`
+### Rule Reforms
+
+| Flag | Effect |
+|------|--------|
+| `chess_palace` | Confine Chess King to 3×3 palace (x=3–5, y=0–2) |
+| `knight_block` | Chess Knight uses Xiangqi Horse leg-blocking rules |
+| `no_promotion` | Disable pawn promotion (pawn stays pawn at y=9) |
+| `no_queen_promo` | Pawn cannot promote to Queen (R/B/N only) |
+| `no_flying_general` | Disable Flying General rule |
+
+Multiple variants can be combined: `--ablation chess_palace,knight_block,xq_queen`
 
 ---
 
