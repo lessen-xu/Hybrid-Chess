@@ -28,23 +28,31 @@ hybrid chess/
 │       └── types.h        # RuleFlags struct 定义
 ├── hybrid/
 │   ├── core/
-│   │   ├── config.py      # VariantConfig (规则标志位)
+│   │   ├── config.py      # VariantConfig (规则标志位 + xq_queen)
+│   │   ├── board.py       # Board + initial_board (变体放子)
 │   │   ├── env.py         # 主环境，负责 C++ 规则同步
 │   │   └── rules.py       # Python 规则引擎 (与 C++ 对称)
 │   └── rl/
-│       ├── az_runner.py           # AZ 训练主循环 (run_iterations)
+│       ├── az_runner.py           # AZ 训练主循环 + ablation 映射
 │       ├── az_selfplay.py         # 自对弈，GameRecord + piece_census
 │       ├── az_selfplay_parallel.py # 多进程自对弈 worker
 │       ├── az_eval.py             # 评估 (play_match, play_one_game)
 │       └── az_eval_parallel.py    # 并行评估 worker
 ├── scripts/
 │   ├── train_az_iter.py           # AZ 训练 CLI 入口
-│   ├── az_dashboard.py            # 实时 HTML 进度面板（每 15s 刷新）
-│   ├── rq4_rule_reform_ab.py      # AB D2 规则改革扫描实验
-│   └── launch_az_palace_knight.py # 已废弃，用 train_az_iter.py
-├── runs/                  # 所有实验输出（已 .gitignore）
+│   ├── az_dashboard.py            # 实时 HTML 进度面板
+│   └── rq4_rule_reform_ab.py      # AB D2 规则改革扫描
+├── runs/                  # 实验输出（.gitignore）
+│   ├── rq4_rule_reform_ab/        # AB 扫描结果
+│   ├── rq4_az_palace_knight_v2/   # PK 50轮
+│   ├── rq4_az_pk_nopromo/         # PK+noPromo 50轮
+│   ├── rq4_az_pk_xqqueen/         # PK+xqQueen 50轮 ⭐
+│   ├── rq4_az_nq_allrules_v2/     # noQ+ALL 50轮
+│   ├── rq4_az_nq_pk/              # noQ+PK 50轮
+│   ├── rq4_az_nq_nopromo/         # noQ+noPromo 50轮
+│   └── (EGTA 旧实验: az_grand_run_v4/ 等)
 └── docs/
-    ├── ARCHITECTURE.md   # 系统架构说明
+    ├── ARCHITECTURE.md
     └── EXPERIMENTS.md    # 本文件
 ```
 
@@ -54,30 +62,20 @@ hybrid chess/
 
 | 阶段 | 目标 | 状态 | 主要产物 |
 |------|------|------|---------|
-| RQ4 初步平衡 | 探索 no_queen/no_bishop 等棋子削弱 | ✅ 完成 | `runs/rq4_*` |
-| AB D2 规则改革扫描 | 测试 palace/knight_block/no_promotion 23个变体 | ✅ 完成 | `runs/rq4_rule_reform_ab/` |
-| AZ Baseline（默认规则） | 20轮自对弈建立参照 | ✅ 完成 | `runs/rq4_az_nq_allrules/` |
-| AZ no_queen+ALL_RULES | 50轮全规则改革+删后 | ✅ 完成 | `runs/rq4_az_nq_allrules_v2/` |
-| AZ palace+knight_block | 50轮纯结构改革（保留Queen） | ✅ 完成 | `runs/rq4_az_palace_knight_v2/` |
+| AB D2 规则改革扫描 | 23 变体快速筛选 | ✅ 完成 | `runs/rq4_rule_reform_ab/` |
+| AZ Baseline（默认规则 20轮） | 建立参照 | ✅ 完成 | （已清理，数据在报告中） |
+| AZ 七变体对比（各 50 轮） | 寻找最优平衡 | ✅ 完成 | `runs/rq4_az_*` |
 
 ---
 
 ## RQ4 — 规则平衡探索
 
-### 默认规则基准
-- **路径**: `runs/rq4_default/`
-- **结果**: Chess 大幅优势（AB D2 下 mat_diff ≈ +19，即 Chess 多 19 点子力）
-- **结论**: 原始规则严重失衡，Chess 结构性优势明显
+### 早期探索（已清理）
 
-### 棋子削弱系列
-- **路径**: `runs/rq4_balance_search/`, `runs/rq4_balance_refine/`, `runs/rq4_no_queen/`
-- **方法**: 逐步删除 Chess 棋子（no_queen, no_bishop, extra_soldier 等）
-- **最佳发现**: `no_queen + no_bishop + extra_soldier` → mat_diff 接近 0，但和棋率极高（抽屉问题）
-- **问题**: AB D2 太浅，"平衡"实为无效对弈（双方无法突破）
-
-### AB D2 诊断
-- **路径**: `runs/rq4_draw_diagnosis/`, `runs/rq4_side_balance/`
-- **发现**: 引入 `mat_diff`（物质差）作为平局决胜指标，区分"真平衡"和"无效局"
+用 AB D2 试验了棋子削弱（no_queen, no_bishop, extra_soldier 等），发现：
+- 默认规则 mat_diff ≈ +19（Chess 碾压）
+- 棋子削弱可接近 0 但和棋率过高（AB D2 太浅，"平衡"实为无效对弈）
+- 引入 `mat_diff` 作为物质差指标区分"真平衡"和"无效局"
 
 ---
 
