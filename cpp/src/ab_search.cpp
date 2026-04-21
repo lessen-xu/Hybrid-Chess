@@ -1,9 +1,4 @@
 // ab_search.cpp — Full Alpha-Beta (Negamax) search in C++.
-// Step 7: PVS (Negascout) + Root Aspiration Windows.
-// Step 6: Per-ply buffer pre-allocation, leaf eval 1× movegen.
-// Step 5: Zobrist 128-bit hash replaces SHA1 in hot path.
-// Step 4: TT + Iterative Deepening + Killer/History heuristics.
-//
 // Performance: zero Board clones during search. Uses make_move/unmake_move.
 // Zobrist mode: each node O(1) ZKey XOR — zero SHA1 calls in hot path.
 // PVS: null-window scout for non-PV moves, re-search on fail-high.
