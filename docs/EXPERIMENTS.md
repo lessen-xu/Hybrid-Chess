@@ -129,74 +129,85 @@ hybrid chess/
 
 ### 实验配置
 
-所有 AZ 运行使用统一配置：
+所有 AZ 运行使用统一配置（50 轮 × 100 局/轮 = 5,000 局自对弈/变体）：
 - 自对弈：100 局/轮，50 sims，max_ply=150，4 workers
 - 训练：2 epochs，batch=256，buffer=50000
 - 评估：20 局 vs Random + 20 局 vs AB(d1)，每 2 轮
+- 总计：**9 变体 × 50 轮 = 45,000 局**自对弈数据
 
-### 七变体完整对比
+### 九变体完整对比
 
 | 变体 | 轮次 | Chess% | XQ% | Draw% | C:X | L10 C:X | mat_diff | 输出目录 |
 |------|------|--------|-----|-------|-----|---------|----------|---------|
-| Default | 20 | 32.4% | 2.6% | 65.0% | 12.4x | 13.5x | −6.8 | `rq4_az_nq_allrules/` |
+| Default | 50 | 29.6% | 3.3% | 67.1% | 9.0x | 6.6x | −6.0 | `rq4_az_default_v2/` |
+| Q only | 50 | 11.4% | 2.6% | 86.0% | 4.5x | 3.1x | −14.2 | `rq4_az_noq_only/` |
+| **X only** | **50** | **17.9%** | **24.2%** | **57.9%** | **0.7x** | **0.7x** | **−11.1** | **`rq4_az_xqqueen_only/`** |
 | PK | 50 | 30.1% | 8.7% | 61.1% | 3.4x | 3.2x | −6.6 | `rq4_az_palace_knight_v2/` |
 | PK+noPromo | 50 | 31.0% | 8.8% | 60.3% | 3.5x | 4.0x | −6.8 | `rq4_az_pk_nopromo/` |
-| **PK+xqQueen** | **50** | **18.5%** | **27.4%** | **54.1%** | **0.7x** | **0.7x** | **−10.7** | **`rq4_az_pk_xqqueen/`** |
+| PK+xqQueen | 50 | 18.5% | 27.4% | 54.1% | 0.7x | 0.7x | −10.7 | `rq4_az_pk_xqqueen/` |
 | noQ+noPromo | 50 | 9.6% | 2.6% | 87.8% | 3.7x | 2.0x | −13.4 | `rq4_az_nq_nopromo/` |
 | noQ+PK | 50 | 4.8% | 7.6% | 87.7% | 0.6x | 0.2x | −12.7 | `rq4_az_nq_pk/` |
 | noQ+ALL | 50 | 3.9% | 6.9% | 89.3% | 0.6x | 0.3x | −12.5 | `rq4_az_nq_allrules_v2/` |
 
-> **PK** = palace + knight_block, **noQ** = no_queen, **ALL** = palace + knight_block + no_promotion
+> **PK** = chess_palace + knight_block, **Q** = no_queen, **X** = xq_queen, **ALL** = PK + no_promotion
 
-### 最佳变体：PK + xqQueen
+### 因子分析：Queen 配置 × 结构改革
 
-`palace + knight_block + xq_queen`（宫格 + 蹩脚 + 给 XQ 一个后）
+#### Queen 因子（2×2）
 
-| 轮次 | Chess | XQ | Draw | C:X |
-|------|-------|----|------|-----|
-| 0–9 | 188 | 257 | 555 | 0.7x |
-| 10–19 | 196 | 264 | 540 | 0.7x |
-| 20–29 | 170 | 287 | 543 | 0.6x |
-| 30–39 | 179 | 287 | 534 | 0.6x |
-| 40–49 | 193 | 274 | 533 | 0.7x |
+| | Chess 有后 | Chess 无后 |
+|--|-----------|-----------|
+| **XQ 无后** | Default **9.0x** (67% draw) | Q only **4.5x** (86% draw) |
+| **XQ 有后** | X only **0.7x** (58% draw) | — |
 
-- C:X = 0.7x **极其稳定**（50 轮内无漂移）
-- 和棋率 54%（所有变体中最低 → 最多对决局）
-- XQ 略占优但幅度可控
+> **给 XQ 一个后 (X only)** 直接把 C:X 从 9.0x 压到 0.7x，和棋率反而最低。
+> **删 Chess 后 (Q only)** 只从 9.0x 降到 4.5x，且和棋飙到 86%。
+
+#### 结构改革因子（PK 的交互效应）
+
+| | 无 PK | 有 PK |
+|--|-------|-------|
+| **Chess 有后 / XQ 无后** | 9.0x | **3.4x** (PK 有效) |
+| **Chess 有后 / XQ 有后** | **0.7x** | **0.7x** (PK 多余) |
+| **Chess 无后 / XQ 无后** | **4.5x** | **0.6x** (PK 有效) |
+
+> PK 在 XQ 没有 Queen 时有效（-62% 到 -87%），但在 XQ 有 Queen 时**完全多余**。
 
 ### 关键发现
 
-#### 1. Queen 是平衡性的核心变量
+#### 1. xq_queen 是唯一必要的平衡手段
 
-| Chess 有后 / XQ 无后 | C:X 3.4–12.4x（Chess 碾压） |
-|-----|-----|
-| **双方都有后** | **C:X = 0.7x（接近平衡）** |
-| Chess 无后 / XQ 无后 | C:X = 0.3–0.6x（XQ 反超 + 88% 和棋） |
+- X only (0.7x) = PK+X (0.7x)，PK 对 xq_queen 变体无附加效果
+- xq_queen 单一 flag 的效果 > 所有结构改革的总和
+- **给 XQ 一个后比削弱 Chess 更有效且副作用更小**
 
-Queen 的存在与否是决定胜负比的**最强因素**。给 XQ 配后比削弱 Chess 更有效。
+#### 2. 删 Queen 导致和棋泛滥
 
-#### 2. no_promotion 完全无效
+所有含 `no_queen` 的变体和棋率 86–89%，对局质量严重下降。
 
-PK 与 PK+noPromo 结果一致（C:X = 3.4x vs 3.5x），因为：
-- `surv_chess_QUEEN` 两者均 ≈0.49，**零次升变**发生
-- 棋盘 9×10，兵需 8 步到底线，150 步上限下根本到不了
-- **升变在当前对局条件下是不可能事件**
+#### 3. no_promotion 完全无效
 
-#### 3. 结构改革（宫格+蹩脚）效果稳定
+PK 与 PK+noPromo 结果一致（3.4x vs 3.5x），因为 150 步上限下兵根本到不了底线。
 
-把 C:X 从 12.4x 压到 3.4x，效果约 **−70%**。但单靠结构改革无法达到 1:1。
+#### 4. xq_queen 变体趋势极其稳定
 
-#### 4. 删 Queen 导致和棋泛滥
+| 轮次 | X only C:X | PK+X C:X |
+|------|-----------|----------|
+| 0–9 | 0.7x | 0.7x |
+| 10–19 | 0.7x | 0.7x |
+| 20–29 | 0.7x | 0.6x |
+| 30–39 | 0.7x | 0.6x |
+| 40–49 | 0.7x | 0.7x |
 
-所有 noQ 变体和棋率 87–89%，对局质量下降。C:X 看似接近但大多数局无意义。
+50 轮内无漂移，说明 0.7x 是训练收敛后的稳态平衡点。
 
 ### 推荐方案
 
-**`palace + knight_block + xq_queen`** — 最优平衡变体：
+**`xq_queen`**（给 XQ 一个后）— 最简最优平衡变体：
 - C:X ≈ 0.7x（最接近 1:1）
-- 和棋率 54%（最多对决局）
-- 趋势稳定（无学习漂移）
-- 不削弱任何一方，而是通过增强 XQ 来实现平衡
+- 和棋率 58%（对局质量最高）
+- 只改一个 flag，规则最简洁
+- 结构改革（PK）可选但非必要
 
 ---
 
@@ -217,7 +228,7 @@ python scripts/train_az_iter.py \
   --resign-enabled 1 \
   --device auto \
   --seed 42 \
-  --ablation "chess_palace,knight_block,xq_queen" \
+  --ablation "xq_queen" \
   --use-cpp \
   --num-workers 4 \
   --outdir "runs/MY_RUN_NAME"
@@ -227,9 +238,13 @@ python scripts/train_az_iter.py \
 
 ## 待办事项
 
-- [x] AZ Baseline（20轮默认规则）→ C:X = 12.4x
-- [x] AZ palace+knight_block（50轮）→ C:X = 3.4x
-- [x] AZ PK+noPromo（50轮）→ C:X = 3.5x（确认 no_promo 无效）
+- [x] AZ Default（50轮）→ C:X = 9.0x
+- [x] AZ Q only（50轮）→ C:X = 4.5x + 86% draw
+- [x] AZ X only（50轮）→ **C:X = 0.7x** ⭐
+- [x] AZ PK / PK+noPromo（各50轮）→ 结构改革有效但不足
+- [x] AZ PK+xqQueen（50轮）→ C:X = 0.7x = X only
 - [x] AZ noQ+PK / noQ+noPromo / noQ+ALL（各50轮）→ 过度削弱
-- [x] AZ PK+xqQueen（50轮）→ **C:X = 0.7x（最优方案）** ⭐
-- [ ] 将实验结果写入课程报告 (`course_project/`)
+- [x] 因子分析确认：xq_queen 是唯一必要因素
+- [ ] 跨变体锦标赛（RQ3）
+- [ ] 课程报告
+
