@@ -126,11 +126,12 @@ def build_parser():
                          help="Use C++ engine for faster move gen")
     p_train.add_argument("--workers", type=int, default=1,
                          help="Parallel self-play workers")
-    p_train.add_argument("--ablation", default="extra_cannon",
+    p_train.add_argument("--ablation", default="none",
                          help="Rule variant(s), comma-separated: "
-                              "none, extra_cannon, no_queen, no_bishop, "
-                              "extra_soldier, one_rook, no_flying_general, "
-                              "remove_pawn, no_queen_promo")
+                              "none, no_queen, xq_queen, chess_palace, "
+                              "knight_block, no_promotion, extra_cannon, "
+                              "no_bishop, extra_soldier, one_rook, "
+                              "no_flying_general, remove_pawn, no_queen_promo")
     p_train.add_argument("--lr", type=float, default=1e-3)
     p_train.add_argument("--batch-size", type=int, default=256)
     p_train.add_argument("--output", default="runs/az_run",

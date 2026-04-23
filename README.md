@@ -101,7 +101,7 @@ hybrid-chess/
 ├── hybrid/                     # Python package
 │   ├── core/                   # Game engine
 │   │   ├── types.py            #   Side, PieceKind, Move, Piece
-│   │   ├── board.py            #   Board representation (9x10)
+│   │   ├── board.py            #   Board representation (9×10)
 │   │   ├── rules.py            #   Move generation, terminal detection
 │   │   ├── config.py           #   VariantConfig, game constants
 │   │   ├── env.py              #   HybridChessEnv
@@ -109,7 +109,8 @@ hybrid-chess/
 │   ├── agents/                 # AI agents
 │   │   ├── random_agent.py     #   Uniform random baseline
 │   │   ├── greedy_agent.py     #   1-ply capture maximiser
-│   │   └── alphabeta_agent.py  #   Negamax with alpha-beta pruning
+│   │   ├── alphabeta_agent.py  #   Negamax with alpha-beta pruning
+│   │   └── alphazero_stub.py   #   MCTS + neural network agent
 │   └── rl/                     # AlphaZero training pipeline
 │       ├── az_network.py       #   Dual-head residual CNN
 │       ├── az_encoding.py      #   14-plane state / 92-plane action encoding
@@ -117,9 +118,17 @@ hybrid-chess/
 │       ├── az_train.py         #   Training loop
 │       ├── az_eval.py          #   Evaluation, gating, Wilson CI
 │       └── az_runner.py        #   Iterative AlphaZero runner
-├── cpp/                        # C++ move generation engine (pybind11)
+├── cpp/                        # C++ engine (pybind11, ~50× speedup)
+├── scripts/                    # Experiment & evaluation scripts
+│   ├── train_az_iter.py        #   Standalone AZ training CLI
+│   ├── cross_variant_tournament.py  # Cross-variant round-robin
+│   └── eval_arena.py           #   Side-switching evaluation
+├── ui/                         # Browser-based game UI
 ├── tests/                      # Test suite
-└── runs/                       # Experiment outputs (gitignored)
+├── docs/                       # Documentation
+│   ├── ARCHITECTURE.md         #   System architecture
+│   └── EXPERIMENTS.md          #   Experiment log & results
+└── runs/                       # Training outputs (gitignored)
 ```
 
 ## License

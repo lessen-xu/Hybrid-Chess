@@ -308,8 +308,7 @@ def main():
     parser.add_argument("--simulations", type=int, default=200,
                         help="MCTS simulations for AZ agents. Default: 200")
     parser.add_argument("--ablation", type=str, default="none",
-                        choices=["none", "extra_cannon", "no_queen"],
-                        help="Rule variant. Default: none")
+                        help="Rule variant(s), comma-separated. Default: none")
     parser.add_argument("--use-cpp", action="store_true", default=False,
                         help="Use C++ game engine")
     parser.add_argument("--seed", type=int, default=42)

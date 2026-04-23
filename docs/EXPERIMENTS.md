@@ -1,7 +1,7 @@
 # Hybrid Chess — Experiment Log
 
 > 记录所有实验的目的、配置、结果和产物路径。
-> 最后更新：2026-04-18
+> 最后更新：2026-04-23
 
 ---
 
@@ -12,7 +12,8 @@
 3. [RQ4 — 规则平衡探索](#rq4--规则平衡探索)
 4. [规则改革 (Rule Reform)](#规则改革-rule-reform)
 5. [AlphaZero 训练](#alphazero-训练)
-6. [待办事项](#待办事项)
+6. [跨变体锦标赛（RQ3）](#跨变体锦标赛rq3)
+7. [待办事项](#待办事项)
 
 ---
 
@@ -20,37 +21,31 @@
 
 ```
 hybrid chess/
-├── cpp/                   # C++ 引擎 (walk-generation, AB search, pybind11)
+├── cpp/                   # C++ 引擎 (move gen, AB search, pybind11)
 │   └── src/
-│       ├── rules.cpp      # 走法生成，含 RuleFlags
-│       ├── ab_search.cpp  # Alpha-Beta 搜索
-│       ├── bindings.cpp   # Pybind11 接口
-│       └── types.h        # RuleFlags struct 定义
 ├── hybrid/
-│   ├── core/
-│   │   ├── config.py      # VariantConfig (规则标志位 + xq_queen)
-│   │   ├── board.py       # Board + initial_board (变体放子)
-│   │   ├── env.py         # 主环境，负责 C++ 规则同步
-│   │   └── rules.py       # Python 规则引擎 (与 C++ 对称)
-│   └── rl/
-│       ├── az_runner.py           # AZ 训练主循环 + ablation 映射
-│       ├── az_selfplay.py         # 自对弈，GameRecord + piece_census
-│       ├── az_selfplay_parallel.py # 多进程自对弈 worker
-│       ├── az_eval.py             # 评估 (play_match, play_one_game)
-│       └── az_eval_parallel.py    # 并行评估 worker
+│   ├── core/              # 游戏引擎 (types, board, rules, config, env, fen)
+│   ├── agents/            # AI agent (Random, Greedy, AlphaBeta, AlphaZero)
+│   └── rl/                # AlphaZero pipeline (network, encoding, selfplay, train, eval, runner)
 ├── scripts/
 │   ├── train_az_iter.py           # AZ 训练 CLI 入口
-│   ├── az_dashboard.py            # 实时 HTML 进度面板
+│   ├── cross_variant_tournament.py # 跨变体锦标赛
+│   ├── eval_arena.py              # 换边评估
 │   └── rq4_rule_reform_ab.py      # AB D2 规则改革扫描
-├── runs/                  # 实验输出（.gitignore）
+├── tests/                 # 测试套件
+├── ui/                    # 浏览器对局 UI
+├── runs/                  # 实验输出（gitignored）
 │   ├── rq4_rule_reform_ab/        # AB 扫描结果
+│   ├── rq4_az_default_v2/         # Default 50轮
+│   ├── rq4_az_noq_only/           # Q only 50轮
+│   ├── rq4_az_xqqueen_only/       # X only 50轮 ⭐
 │   ├── rq4_az_palace_knight_v2/   # PK 50轮
 │   ├── rq4_az_pk_nopromo/         # PK+noPromo 50轮
-│   ├── rq4_az_pk_xqqueen/         # PK+xqQueen 50轮 ⭐
-│   ├── rq4_az_nq_allrules_v2/     # noQ+ALL 50轮
-│   ├── rq4_az_nq_pk/              # noQ+PK 50轮
+│   ├── rq4_az_pk_xqqueen/         # PK+xqQueen 50轮
 │   ├── rq4_az_nq_nopromo/         # noQ+noPromo 50轮
-│   └── (EGTA 旧实验: az_grand_run_v4/ 等)
+│   ├── rq4_az_nq_pk/              # noQ+PK 50轮
+│   ├── rq4_az_nq_allrules_v2/     # noQ+ALL 50轮
+│   └── cross_variant_tournament/  # 1800 局锦标赛
 └── docs/
     ├── ARCHITECTURE.md
     └── EXPERIMENTS.md    # 本文件
@@ -63,8 +58,8 @@ hybrid chess/
 | 阶段 | 目标 | 状态 | 主要产物 |
 |------|------|------|---------|
 | AB D2 规则改革扫描 | 23 变体快速筛选 | ✅ 完成 | `runs/rq4_rule_reform_ab/` |
-| AZ Baseline（默认规则 20轮） | 建立参照 | ✅ 完成 | （已清理，数据在报告中） |
-| AZ 七变体对比（各 50 轮） | 寻找最优平衡 | ✅ 完成 | `runs/rq4_az_*` |
+| AZ 九变体对比（各 50 轮） | 寻找最优平衡 | ✅ 完成 | `runs/rq4_az_*` |
+| 跨变体锦标赛 | 元策略分析 | ✅ 完成 | `runs/cross_variant_tournament/` |
 
 ---
 
