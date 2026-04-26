@@ -135,18 +135,7 @@ Uniform config: 50 sims, max_ply=150, 4 workers, batch=256, 2 epochs. Total: **4
 
 ---
 
-## 6. Key Findings
-
-1. **xq_queen is the only necessary balancing mechanism**: X only (0.7x) = PK+xqQueen (0.7x); structural reforms (PK) add nothing when XQ has a Queen.
-2. **no_promotion has zero effect**: pawns never reach the back rank within the 150-ply limit.
-3. **Removing Queen causes draw flooding**: all noQ variants reach 86–89% draws.
-4. **xq_queen trend is extremely stable**: C:X stays ~0.7x across all 50 iterations with no drift.
-5. **"Adversity breeds strength"**: agents trained under restricted rules (Q_only, PK) perform best under Default rules (0.625).
-6. **Non-transitivity exists**: PK_xQ → Default → noQ_ALL → PK_xQ forms a rock-paper-scissors cycle.
-
----
-
-## 7. Training Command
+## 6. Training Command
 
 ```bash
 python scripts/train_az_iter.py \

@@ -135,18 +135,7 @@ Alpha-Beta 深度=2，纯 C++ 加速。三项结构改革：`no_promotion`（禁
 
 ---
 
-## 六、关键发现
-
-1. **xq_queen 是唯一必要的平衡手段**：X only (0.7x) = PK+xqQueen (0.7x)，结构改革（PK）对 xq_queen 变体无附加效果。
-2. **no_promotion 完全无效**：150 步限制内兵到不了底线，零次升变发生。
-3. **删 Queen 导致和棋泛滥**：所有 noQ 变体和棋率 86–89%，对局质量严重下降。
-4. **xq_queen 趋势极其稳定**：50 轮内 C:X 始终 ~0.7x，无漂移。
-5. **"逆境出强者"**：受限规则训练的 agent（Q_only, PK）在 Default 规则下最强（0.625）。
-6. **Non-transitivity 存在**：PK_xQ → Default → noQ_ALL → PK_xQ 形成循环克制。
-
----
-
-## 七、训练标准命令
+## 六、训练标准命令
 
 ```bash
 python scripts/train_az_iter.py \
