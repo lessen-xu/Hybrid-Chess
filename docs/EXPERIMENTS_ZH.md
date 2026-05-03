@@ -1,10 +1,69 @@
 # Hybrid Chess — 实验结果报告
 
-> 自动生成于 2026-04-26，数据来自 `runs/` 目录。
+> 最后更新：2026-05-03
 
 ---
 
-## 一、实验概览
+## 目录
+
+1. [项目结构](#项目结构)
+2. [实验概览](#实验概览)
+3. [RQ4 — 早期探索](#rq4--早期探索)
+4. [AB D2 规则改革扫描](#ab-d2-规则改革扫描)
+5. [规则改革工程实现](#规则改革工程实现)
+6. [AlphaZero 九变体训练](#alphazero-九变体训练)
+7. [因子分析](#因子分析)
+8. [跨变体锦标赛（RQ3）](#跨变体锦标赛rq3)
+9. [推荐方案](#推荐方案)
+10. [训练标准命令](#训练标准命令)
+11. [待办事项](#待办事项)
+
+---
+
+## 项目结构
+
+```
+hybrid chess/
+├── cpp/                   # C++ 引擎 (move gen, AB search, pybind11)
+│   └── src/
+├── hybrid/
+│   ├── core/              # 游戏引擎 (types, board, rules, config, env, fen)
+│   ├── agents/            # AI agent (Random, Greedy, AlphaBeta, AlphaZero)
+│   └── rl/                # AlphaZero pipeline (network, encoding, selfplay, train, eval, runner)
+├── scripts/
+│   ├── train_az_iter.py           # AZ 训练 CLI 入口
+│   ├── cross_variant_tournament.py # 跨变体锦标赛
+│   ├── eval_arena.py              # 换边评估
+│   └── rq4_rule_reform_ab.py      # AB D2 规则改革扫描
+├── tests/                 # 测试套件
+├── ui/                    # 浏览器对局 UI
+├── runs/                  # 实验输出（gitignored，~1.7GB）
+│   ├── rq4_rule_reform_ab/        # AB 扫描结果
+│   ├── rq4_az_default_v2/         # Default 50轮
+│   ├── rq4_az_noq_only/           # Q only 50轮
+│   ├── rq4_az_xqqueen_only/       # X only 50轮 ⭐
+│   ├── rq4_az_palace_knight_v2/   # PK 50轮
+│   ├── rq4_az_pk_nopromo/         # PK+noPromo 50轮
+│   ├── rq4_az_pk_xqqueen/         # PK+xqQueen 50轮
+│   ├── rq4_az_nq_nopromo/         # noQ+noPromo 50轮
+│   ├── rq4_az_nq_pk/              # noQ+PK 50轮
+│   ├── rq4_az_nq_allrules_v2/     # noQ+ALL 50轮
+│   └── cross_variant_tournament/  # 1800 局锦标赛
+└── docs/
+    ├── ARCHITECTURE.md
+    ├── EXPERIMENTS_ZH.md  # 本文件（中文）
+    └── EXPERIMENTS_EN.md  # 英文版
+```
+
+---
+
+## 实验概览
+
+| 阶段 | 目标 | 状态 | 主要产物 |
+|------|------|------|----------|
+| AB D2 规则改革扫描 | 23 变体快速筛选 | ✅ 完成 | `runs/rq4_rule_reform_ab/` |
+| AZ 九变体对比（各 50 轮） | 寻找最优平衡 | ✅ 完成 | `runs/rq4_az_*` |
+| 跨变体锦标赛 | 元策略分析 | ✅ 完成 | `runs/cross_variant_tournament/` |
 
 - **AZ 训练**：9 个变体 × 50 轮 = 450 轮，共 45,000 局自对弈
 - **AB 扫描**：23 个变体 × 40 局 = 920 局
@@ -12,9 +71,26 @@
 
 ---
 
-## 二、AB D2 规则改革扫描（23 变体 × 40 局）
+## RQ4 — 早期探索
 
-Alpha-Beta 深度=2，纯 C++ 加速。三项结构改革：`no_promotion`（禁升变）、`chess_palace`（King 限宫）、`knight_block`（马蹩脚）。
+用 AB D2 试验了棋子削弱（no_queen, no_bishop, extra_soldier 等），发现：
+- 默认规则 mat_diff ≈ +19（Chess 碾压）
+- 棋子削弱可接近 0 但和棋率过高（AB D2 太浅，"平衡"实为无效对弈）
+- 引入 `mat_diff` 作为物质差指标区分"真平衡"和"无效局"
+
+**结论**：单纯削减棋子无法消除 Chess 的结构性优势，需要从规则层面改革。
+
+---
+
+## AB D2 规则改革扫描
+
+- **脚本**: `scripts/rq4_rule_reform_ab.py`
+- **输出**: `runs/rq4_rule_reform_ab/results.json` + `progress.log`
+- **规模**: 23 个变体 × 40 局，Alpha-Beta 深度=2，纯 C++ 加速
+- **三项改革规则**:
+  - `no_promotion`: 兵到底线不升变，保持兵身份
+  - `chess_palace`: Chess King 限制在 3×3 宫内 (x=3–5, y=0–2)
+  - `knight_block`: Chess Knight 遵循象棋马的蹩脚规则
 
 | 变体 | 局数 | C胜 | X胜 | 和棋 | 子力判C | 子力判X | 子力判平 | avg_matdiff |
 |------|------|-----|-----|------|---------|---------|----------|-------------|
@@ -42,11 +118,45 @@ Alpha-Beta 深度=2，纯 C++ 加速。三项结构改革：`no_promotion`（禁
 | palace | 40 | 0 | 0 | 40 | 40 | 0 | 0 | +19.0 |
 | no_promo+palace | 40 | 0 | 0 | 40 | 40 | 0 | 0 | +19.0 |
 
+**结论**: `palace + knight_block` 在 AB D2 下达到完美物质平衡（matdiff = 0.0），是最优结构性改革方案。
+
 ---
 
-## 三、AlphaZero 九变体训练（各 50 轮 × 100 局/轮）
+## 规则改革工程实现
 
-统一配置：50 sims, max_ply=150, 4 workers, batch=256, 2 epochs。总计 **45,000 局**自对弈。
+**C++ 端** (`cpp/src/`):
+- `types.h`: 新增 `RuleFlags` struct + `thread_local g_rule_flags`
+- `rules.cpp`: 集成三项规则的走法生成和攻击检测
+- `bindings.cpp`: 暴露 `RuleFlags`, `set_rule_flags` 给 Python
+
+**Python 端** (`hybrid/core/`):
+- `config.py`: `VariantConfig` 新增 `no_promotion`, `chess_palace`, `knight_block`, `xq_queen` 字段
+- `rules.py`: 同步三项规则逻辑分支
+- `env.py` `_set_active_variant()`: 环境重置时自动同步 C++ 规则标志
+
+**Ablation 映射** (`hybrid/rl/az_runner.py`):
+```python
+'no_promotion': {'no_promotion': True},
+'chess_palace':  {'chess_palace': True},
+'knight_block':  {'knight_block': True},
+'xq_queen':      {'xq_queen': True},
+```
+
+---
+
+## AlphaZero 九变体训练
+
+### 实验配置
+
+所有 AZ 运行使用统一配置（50 轮 × 100 局/轮 = 5,000 局自对弈/变体）：
+- 自对弈：100 局/轮，50 sims，max_ply=150，4 workers
+- 训练：2 epochs，batch=256，buffer=50000
+- 评估：20 局 vs Random + 20 局 vs AB(d1)，每 2 轮
+- 总计：**9 变体 × 50 轮 = 45,000 局**自对弈数据
+
+> **PK** = chess_palace + knight_block, **Q** = no_queen, **X** = xq_queen, **ALL** = PK + no_promotion
+
+### 九变体完整对比
 
 | 变体 | 轮次 | Chess% | XQ% | 和棋% | C:X | 后10轮C:X | 子力差 |
 |------|------|--------|-----|-------|-----|-----------|--------|
@@ -60,16 +170,29 @@ Alpha-Beta 深度=2，纯 C++ 加速。三项结构改革：`no_promotion`（禁
 | noQ+PK ⭐ | 50 | 4.8% | 7.6% | 87.7% | 0.6x | 0.2x | -12.7 |
 | noQ+ALL ⭐ | 50 | 3.9% | 6.9% | 89.3% | 0.6x | 0.3x | -12.5 |
 
+---
 
-## 四、因子分析
+## 因子分析
 
 ### Queen 配置 2×2
 
 | | Chess 有后 | Chess 无后 |
 |--|-----------|-----------|
-| **XQ 无后** | Default 9.0x (67% draw) | Q only 4.5x (86% draw) |
-| **XQ 有后** | X only 0.7x (58% draw) | — |
+| **XQ 无后** | Default **9.0x** (67% draw) | Q only **4.5x** (86% draw) |
+| **XQ 有后** | X only **0.7x** (58% draw) | — |
 
+> **给 XQ 一个后 (X only)** 直接把 C:X 从 9.0x 压到 0.7x，和棋率反而最低。
+> **删 Chess 后 (Q only)** 只从 9.0x 降到 4.5x，且和棋飙到 86%。
+
+### 结构改革因子（PK 的交互效应）
+
+| | 无 PK | 有 PK |
+|--|-------|-------|
+| **Chess 有后 / XQ 无后** | 9.0x | **3.4x** (PK 有效) |
+| **Chess 有后 / XQ 有后** | **0.7x** | **0.7x** (PK 多余) |
+| **Chess 无后 / XQ 无后** | **4.5x** | **0.6x** (PK 有效) |
+
+> PK 在 XQ 没有 Queen 时有效（-62% 到 -87%），但在 XQ 有 Queen 时**完全多余**。
 
 ### xq_queen 稳定性（X only 每 10 轮趋势）
 
@@ -81,6 +204,7 @@ Alpha-Beta 深度=2，纯 C++ 加速。三项结构改革：`no_promotion`（禁
 | 30–39 | 193 | 249 | 558 | 0.8x |
 | 40–49 | 177 | 259 | 564 | 0.7x |
 
+50 轮内无漂移，说明 0.7x 是训练收敛后的稳态平衡点。
 
 ### 棋子存活率（X only 变体，后 10 轮平均）
 
@@ -100,9 +224,20 @@ Alpha-Beta 深度=2，纯 C++ 加速。三项结构改革：`no_promotion`（禁
 
 ---
 
-## 五、跨变体锦标赛（RQ3）
+## 跨变体锦标赛（RQ3）
 
-9 个变体的 best_model 在 Default 规则下对打，36 对 × 50 局 = **1800 局**。
+### 实验目的
+
+不同规则下训练出的 AZ agent，在**同一规则**（Default）下互相对打，揭示训练规则如何塑造策略。
+
+### 配置
+
+- **Agent 池**：9 个变体的 `best_model.pt`（全部 50 轮训练）
+- **对战规则**：Default（标准 Hybrid Chess，无任何改革）
+- **对局数**：36 对 × 50 局（25 局/半，换边） = **1,800 局**
+- **搜索**：50 sims MCTS，C++ 引擎，4 workers 并行
+- **耗时**：45.7 分钟
+- **输出**：`runs/cross_variant_tournament/`
 
 ### Payoff Matrix
 
@@ -118,24 +253,61 @@ Alpha-Beta 深度=2，纯 C++ 加速。三项结构改革：`no_promotion`（禁
 | **noQ_PK** | 0.250 | 0.250 | 0.250 | 0.500 | 0.500 | 0.500 | 0.500 | 0.500 | 0.500 |
 | **noQ_ALL** | 0.750 | 0.500 | 0.500 | 0.250 | 0.500 | 0.750 | 0.750 | 0.500 | 0.500 |
 
-
 ### Agent 排名
 
-| 排名 | Agent | 平均得分 |
-|------|-------|----------|
-| 1 | Q_only | 0.6250 |
-| 2 | PK | 0.6250 |
-| 3 | noQ_ALL | 0.5625 |
-| 4 | X_only | 0.5312 |
-| 5 | Default | 0.5000 |
-| 6 | PK_noPromo | 0.4688 |
-| 7 | noQ_noPromo | 0.4062 |
-| 8 | noQ_PK | 0.4062 |
-| 9 | PK_xqQueen | 0.3750 |
+| 排名 | Agent | 平均得分 | 训练规则 |
+|------|-------|----------|----------|
+| 1 | **Q_only** | **0.625** | 删 Chess 后 |
+| 1 | **PK** | **0.625** | 宫格+蹩脚 |
+| 3 | noQ_ALL | 0.562 | 全削弱 |
+| 4 | X_only | 0.531 | 给 XQ 后 |
+| 5 | Default | 0.500 | 默认规则 |
+| 6 | PK_noPromo | 0.469 | PK+禁升变 |
+| 7 | noQ_noPromo | 0.406 | 删后+禁升变 |
+| 8 | noQ_PK | 0.406 | 删后+PK |
+| 9 | PK_xqQueen | 0.375 | PK+XQ后 |
+
+### 关键发现
+
+#### 1. "逆境出强者"（Adversity Breeds Strength）
+
+在**受限规则**下训练的 agent（Q_only, PK）到了 Default 规则下反而最强（0.625）。
+它们在更困难的环境中学会了更精细的防守和进攻策略。
+
+#### 2. Default agent 只排中游
+
+在自己的"主场规则"下训练的 agent 只有 0.500，因为 Default 规则的 Chess 碾压（9.0x）
+让它只学会了粗暴进攻，缺乏精细策略。
+
+#### 3. 平衡规则训练 → 迁移最差
+
+PK_xqQueen 垫底（0.375）。在最平衡规则下训练的 agent 习惯了 XQ 有后的"舒适区"，
+到了 Default 规则（XQ 无后）时无法适应。
+
+#### 4. Non-transitivity 存在
+
+| A | B | A 得分 | 说明 |
+|---|---|--------|------|
+| PK_xqQueen | Default | 0.250 | PK_xQ 输 |
+| Default | noQ_ALL | 0.250 | Default 输 |
+| noQ_ALL | PK_xqQueen | 0.750 | noQ_ALL 赢 |
+
+形成循环克制，验证了 proposal 中 RQ3 的假设：不同训练条件产生**质的不同策略**，
+而非简单的强弱排序。
 
 ---
 
-## 六、训练标准命令
+## 推荐方案
+
+**`xq_queen`**（给 XQ 一个后）— 最简最优平衡变体：
+- C:X ≈ 0.7x（最接近 1:1）
+- 和棋率 58%（对局质量最高）
+- 只改一个 flag，规则最简洁
+- 结构改革（PK）可选但非必要
+
+---
+
+## 训练标准命令
 
 ```bash
 python scripts/train_az_iter.py \
@@ -146,3 +318,17 @@ python scripts/train_az_iter.py \
   --ablation "xq_queen" --use-cpp --num-workers 4 \
   --outdir "runs/MY_RUN_NAME"
 ```
+
+---
+
+## 待办事项
+
+- [x] AZ Default（50轮）→ C:X = 9.0x
+- [x] AZ Q only（50轮）→ C:X = 4.5x + 86% draw
+- [x] AZ X only（50轮）→ **C:X = 0.7x** ⭐
+- [x] AZ PK / PK+noPromo（各50轮）→ 结构改革有效但不足
+- [x] AZ PK+xqQueen（50轮）→ C:X = 0.7x = X only
+- [x] AZ noQ+PK / noQ+noPromo / noQ+ALL（各50轮）→ 过度削弱
+- [x] 因子分析确认：xq_queen 是唯一必要因素
+- [x] 跨变体锦标赛（1,800 局）→ "逆境出强者" + non-transitivity ⭐
+- [ ] 课程报告
