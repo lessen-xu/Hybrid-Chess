@@ -16,7 +16,7 @@ suppressPackageStartupMessages({
 
 # ---------- paths -----------------------------------------------------------
 runs_dir   <- "runs"
-out_dir    <- "course_project/figures"
+out_dir    <- "course_project/figure"
 dir.create(out_dir, recursive = TRUE, showWarnings = FALSE)
 
 # ---------- variant definitions ---------------------------------------------
@@ -53,7 +53,7 @@ variant_colours <- c(
   "PK"           = "#3498DB",   # blue
   "PK+noPromo"   = "#85C1E9",   # light blue
   "PK+xqQueen"   = "#1ABC9C",   # teal   ⭐
-  "noQ+noPromo"  = "#F39C12",   # orange
+  "noQ+noPromo"  = "#A0522D",   # sienna brown (distinct from noQ+PK)
   "noQ+PK"       = "#E67E22",   # dark orange
   "noQ+ALL"      = "#9B59B6"    # purple
 )
@@ -88,18 +88,23 @@ cx_smooth <- cx_data %>%
   mutate(cx_smooth = zoo::rollmean(cx_ratio, k = 5, fill = NA, align = "center")) %>%
   ungroup()
 
+# Use log2 y-axis so both high (Default ~10-18x) and low (X only ~0.7x) are readable
 p1 <- ggplot(cx_smooth, aes(x = iter, y = cx_smooth, colour = variant)) +
   geom_line(linewidth = 0.9, alpha = 0.85) +
-  geom_hline(yintercept = 1, linetype = "dashed", colour = "grey50", linewidth = 0.5) +
-  annotate("text", x = 48, y = 1.15, label = "Perfect Balance (1:1)",
-           size = 3, colour = "grey50", hjust = 1) +
+  geom_hline(yintercept = 1, linetype = "dashed", colour = "grey40", linewidth = 0.6) +
+  annotate("text", x = 1, y = 1.15, label = "Perfect Balance (1:1)",
+           size = 3.2, colour = "grey30", hjust = 0, fontface = "italic") +
   scale_colour_manual(values = variant_colours, name = "Variant") +
-  scale_y_continuous(limits = c(0, NA), breaks = seq(0, 20, 2)) +
+  scale_y_log10(
+    breaks = c(0.2, 0.5, 1, 2, 5, 10, 20),
+    labels = c("0.2x", "0.5x", "1x", "2x", "5x", "10x", "20x"),
+    limits = c(0.15, 25)
+  ) +
   labs(
     title = "Chess:Xiangqi Win Ratio Across Training",
-    subtitle = "Per-iteration C:X ratio (5-iter rolling avg) · 9 rule variants · 50 iters × 100 games",
+    subtitle = "Per-iteration C:X ratio (5-iter rolling avg, log scale) · 9 variants · 50 iters × 100 games",
     x = "Training Iteration",
-    y = "C:X Win Ratio"
+    y = "C:X Win Ratio (log scale)"
   ) +
   theme_report
 
@@ -183,8 +188,13 @@ eval_data <- train_data %>%
   )
 
 pb <- ggplot(eval_data, aes(x = iter)) +
-  geom_line(aes(y = wr_random, colour = "vs Random"), linewidth = 0.8) +
-  geom_line(aes(y = wr_ab, colour = "vs AB(d1)"), linewidth = 0.8) +
+  # Faint raw lines + bold LOESS trend
+  geom_line(aes(y = wr_random), colour = "#27AE60", linewidth = 0.3, alpha = 0.35) +
+  geom_line(aes(y = wr_ab), colour = "#8E44AD", linewidth = 0.3, alpha = 0.35) +
+  geom_smooth(aes(y = wr_random, colour = "vs Random"), method = "loess",
+              span = 0.4, se = FALSE, linewidth = 1) +
+  geom_smooth(aes(y = wr_ab, colour = "vs AB(d1)"), method = "loess",
+              span = 0.4, se = FALSE, linewidth = 1) +
   scale_colour_manual(
     values = c("vs Random" = "#27AE60", "vs AB(d1)" = "#8E44AD"),
     name = NULL
@@ -316,14 +326,19 @@ ranking_data <- tibble::tribble(
   "noQ+PK",      0.406,   "noQ + PK",
   "PK+xqQueen",  0.375,   "PK + XQ Queen"
 ) %>%
-  mutate(agent = factor(agent, levels = rev(agent)))
+  mutate(
+    agent = factor(agent, levels = rev(agent)),
+    # White text on dark bars (extreme scores), dark text on the light midpoint bar
+    label_colour = ifelse(abs(score - 0.5) < 0.04, "grey20", "white")
+  )
 
 p6 <- ggplot(ranking_data, aes(x = agent, y = score, fill = score)) +
   geom_col(width = 0.65) +
   geom_text(aes(label = sprintf("%.3f", score)),
             hjust = -0.15, size = 3.8, fontface = "bold") +
-  geom_text(aes(label = training_rule, y = 0.01),
-            hjust = 0, size = 3, colour = "white", fontface = "italic") +
+  geom_text(aes(label = training_rule, y = 0.01, colour = label_colour),
+            hjust = 0, size = 3, fontface = "italic") +
+  scale_colour_identity() +
   geom_hline(yintercept = 0.5, linetype = "dashed", colour = "grey50") +
   coord_flip(ylim = c(0, 0.72)) +
   scale_fill_gradient2(

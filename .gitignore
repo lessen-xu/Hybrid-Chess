@@ -25,12 +25,6 @@ venv/
 /runs/
 /results/
 
-# Course project (ignore LaTeX build artifacts, keep figures + scripts)
-/course_project/report/*.aux
-/course_project/report/*.log
-/course_project/report/*.out
-/course_project/report/*.pdf
-/course_project/figures/*.pdf
 
 # Paper drafts
 /paper/
