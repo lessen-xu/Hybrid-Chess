@@ -1,6 +1,6 @@
 # Hybrid Chess — 实验结果报告
 
-> 最后更新：2026-05-03
+> 最后更新：2026-05-12（fixed_v1 重训）
 
 ---
 
@@ -31,24 +31,26 @@ hybrid chess/
 │   ├── agents/            # AI agent (Random, Greedy, AlphaBeta, AlphaZero)
 │   └── rl/                # AlphaZero pipeline (network, encoding, selfplay, train, eval, runner)
 ├── scripts/
-│   ├── train_az_iter.py           # AZ 训练 CLI 入口
-│   ├── cross_variant_tournament.py # 跨变体锦标赛
-│   ├── eval_arena.py              # 换边评估
-│   └── rq4_rule_reform_ab.py      # AB D2 规则改革扫描
-├── tests/                 # 测试套件
+│   ├── train_az_iter.py                       # AZ 训练 CLI 入口
+│   ├── run_fixed_v1_all.py                    # 编排器：顺序训练 9 个变体
+│   ├── dashboard_fixed_v1.py                  # 实时 HTML 进度面板
+│   ├── cross_variant_tournament_fixed_v1.py   # 带温度采样的跨变体锦标赛
+│   ├── rq4_rule_reform_ab_fixed_v1.py         # AB D2 规则改革扫描
+│   └── eval_arena.py                          # 换边评估
+├── tests/                 # 测试套件（340+ 测试，含 conftest.py 全局态重置）
 ├── ui/                    # 浏览器对局 UI
-├── runs/                  # 实验输出（gitignored，~1.7GB）
-│   ├── rq4_rule_reform_ab/        # AB 扫描结果
-│   ├── rq4_az_default_v2/         # Default 50轮
-│   ├── rq4_az_noq_only/           # Q only 50轮
-│   ├── rq4_az_xqqueen_only/       # X only 50轮 ⭐
-│   ├── rq4_az_palace_knight_v2/   # PK 50轮
-│   ├── rq4_az_pk_nopromo/         # PK+noPromo 50轮
-│   ├── rq4_az_pk_xqqueen/         # PK+xqQueen 50轮
-│   ├── rq4_az_nq_nopromo/         # noQ+noPromo 50轮
-│   ├── rq4_az_nq_pk/              # noQ+PK 50轮
-│   ├── rq4_az_nq_allrules_v2/     # noQ+ALL 50轮
-│   └── cross_variant_tournament/  # 1800 局锦标赛
+├── runs/fixed_v1/         # 实验输出（gitignored）
+│   ├── rq4_rule_reform_ab/         # AB 扫描结果
+│   ├── rq4_az_default/             # Default 50 轮
+│   ├── rq4_az_noq_only/            # Q only 50 轮
+│   ├── rq4_az_xqqueen_only/        # X only 50 轮
+│   ├── rq4_az_palace_knight/       # PK 50 轮
+│   ├── rq4_az_pk_nopromo/          # PK+noPromo 50 轮
+│   ├── rq4_az_pk_xqqueen/          # PK+xqQueen 50 轮 ⭐
+│   ├── rq4_az_nq_nopromo/          # noQ+noPromo 50 轮
+│   ├── rq4_az_nq_pk/               # noQ+PK 50 轮
+│   ├── rq4_az_nq_allrules/         # noQ+ALL 50 轮
+│   └── cross_variant_tournament/   # 3600 局锦标赛 (T=0.5)
 └── docs/
     ├── ARCHITECTURE.md
     ├── EXPERIMENTS_ZH.md  # 本文件（中文）
@@ -61,13 +63,13 @@ hybrid chess/
 
 | 阶段 | 目标 | 状态 | 主要产物 |
 |------|------|------|----------|
-| AB D2 规则改革扫描 | 23 变体快速筛选 | ✅ 完成 | `runs/rq4_rule_reform_ab/` |
-| AZ 九变体对比（各 50 轮） | 寻找最优平衡 | ✅ 完成 | `runs/rq4_az_*` |
-| 跨变体锦标赛 | 元策略分析 | ✅ 完成 | `runs/cross_variant_tournament/` |
+| AB D2 规则改革扫描 | 23 变体快速筛选 | ✅ 完成 | `runs/fixed_v1/rq4_rule_reform_ab/` |
+| AZ 九变体对比（各 50 轮） | 寻找最优平衡 | ✅ 完成 | `runs/fixed_v1/rq4_az_*` |
+| 跨变体锦标赛 | 元策略分析 | ✅ 完成 | `runs/fixed_v1/cross_variant_tournament/` |
 
 - **AZ 训练**：9 个变体 × 50 轮 = 450 轮，共 45,000 局自对弈
 - **AB 扫描**：23 个变体 × 40 局 = 920 局
-- **锦标赛**：1800 局
+- **锦标赛**：36 对 × 每对 100 局 = 3,600 局（动作选择采用温度采样，保证每局都是独立样本）
 
 ---
 
@@ -84,251 +86,242 @@ hybrid chess/
 
 ## AB D2 规则改革扫描
 
-- **脚本**: `scripts/rq4_rule_reform_ab.py`
-- **输出**: `runs/rq4_rule_reform_ab/results.json` + `progress.log`
-- **规模**: 23 个变体 × 40 局，Alpha-Beta 深度=2，纯 C++ 加速
+- **脚本**: `scripts/rq4_rule_reform_ab_fixed_v1.py`
+- **输出**: `runs/fixed_v1/rq4_rule_reform_ab/results.json` + `progress.log`
+- **规模**: 23 个变体 × 40 局，Alpha-Beta 深度=2，C++ 加速，8 worker
 - **三项改革规则**:
   - `no_promotion`: 兵到底线不升变，保持兵身份
   - `chess_palace`: Chess King 限制在 3×3 宫内 (x=3–5, y=0–2)
   - `knight_block`: Chess Knight 遵循象棋马的蹩脚规则
 
-| 变体 | 局数 | C胜 | X胜 | 和棋 | 子力判C | 子力判X | 子力判平 | avg_matdiff |
-|------|------|-----|-----|------|---------|---------|----------|-------------|
-| palace+knight_blk | 40 | 0 | 0 | 40 | 0 | 0 | 40 | +0.0 |
-| ALL_RULES | 40 | 0 | 0 | 40 | 0 | 0 | 40 | +0.0 |
-| nq+ec | 40 | 0 | 0 | 40 | 40 | 0 | 0 | +1.0 |
-| nq+ec+no_promo | 40 | 0 | 0 | 40 | 40 | 0 | 0 | +1.0 |
-| nq+ec+palace | 40 | 0 | 0 | 40 | 40 | 0 | 0 | +1.0 |
-| nq+nb | 40 | 0 | 0 | 40 | 0 | 40 | 0 | -2.0 |
-| nq+nb+no_promo | 40 | 0 | 0 | 40 | 0 | 40 | 0 | -2.0 |
-| nq+nb+palace | 40 | 0 | 0 | 40 | 0 | 40 | 0 | -2.0 |
-| no_queen+ALL_RULES | 40 | 0 | 0 | 40 | 40 | 0 | 0 | +3.0 |
-| nq+nb+knight_blk | 40 | 0 | 0 | 40 | 0 | 40 | 0 | -5.0 |
-| nq+nb+es+ALL_RULES | 40 | 0 | 0 | 40 | 40 | 0 | 0 | +7.0 |
-| no_queen | 40 | 0 | 0 | 40 | 40 | 0 | 0 | +9.0 |
-| no_queen+no_promo | 40 | 0 | 0 | 40 | 40 | 0 | 0 | +9.0 |
-| no_queen+palace | 40 | 0 | 0 | 40 | 40 | 0 | 0 | +9.0 |
-| nq+nb+ALL_RULES | 40 | 0 | 0 | 40 | 40 | 0 | 0 | +9.0 |
-| no_queen+knight_blk | 40 | 0 | 0 | 40 | 40 | 0 | 0 | +16.0 |
-| knight_blk | 40 | 0 | 0 | 40 | 40 | 0 | 0 | +17.0 |
-| no_promo+knight_blk | 40 | 0 | 0 | 40 | 40 | 0 | 0 | +17.0 |
-| nq+ec+ALL_RULES | 40 | 0 | 0 | 40 | 40 | 0 | 0 | +18.0 |
-| default | 40 | 0 | 0 | 40 | 40 | 0 | 0 | +19.0 |
-| no_promo | 40 | 0 | 0 | 40 | 40 | 0 | 0 | +19.0 |
-| palace | 40 | 0 | 0 | 40 | 40 | 0 | 0 | +19.0 |
-| no_promo+palace | 40 | 0 | 0 | 40 | 40 | 0 | 0 | +19.0 |
+按 `|avg_mat_diff|` 排名（越接近 0 越平衡）。`mtb*` 是和棋下的物质判决。
 
-**结论**: `palace + knight_block` 在 AB D2 下达到完美物质平衡（matdiff = 0.0），是最优结构性改革方案。
+| 排名 | 变体 | matdiff | C | X | 和 | mtbC | mtbX | mtbE | 均ply |
+|------|------|---------|---|---|----|------|------|------|-------|
+| 1 | palace+knight_blk | +0.0 | 0 | 0 | 40 | 0 | 0 | 40 | 85 |
+| 2 | ALL_RULES | +0.0 | 0 | 0 | 40 | 0 | 0 | 40 | 85 |
+| 3 | nq+ec | +1.0 | 0 | 0 | 40 | 40 | 0 | 0 | 64 |
+| 4 | nq+ec+no_promo | +1.0 | 0 | 0 | 40 | 40 | 0 | 0 | 64 |
+| 5 | nq+ec+palace | +1.0 | 0 | 0 | 40 | 40 | 0 | 0 | 64 |
+| 6 | nq+nb | −2.0 | 0 | 0 | 40 | 0 | 40 | 0 | 45 |
+| 7 | nq+nb+no_promo | −2.0 | 0 | 0 | 40 | 0 | 40 | 0 | 45 |
+| 8 | nq+nb+palace | −2.0 | 0 | 0 | 40 | 0 | 40 | 0 | 45 |
+| 9 | no_queen+ALL_RULES | +3.0 | 0 | 0 | 40 | 40 | 0 | 0 | 101 |
+| 10 | nq+nb+knight_blk | −5.0 | 0 | 0 | 40 | 0 | 40 | 0 | 27 |
+| 11 | nq+nb+es+ALL_RULES | +7.0 | 0 | 0 | 40 | 40 | 0 | 0 | 108 |
+| 12 | no_queen | +9.0 | 0 | 0 | 40 | 40 | 0 | 0 | 150 |
+| 13 | no_queen+no_promo | +9.0 | 0 | 0 | 40 | 40 | 0 | 0 | 150 |
+| 14 | no_queen+palace | +9.0 | 0 | 0 | 40 | 40 | 0 | 0 | 150 |
+| 15 | nq+nb+ALL_RULES | +9.0 | 0 | 0 | 40 | 40 | 0 | 0 | 88 |
+| 16 | default | +11.0 | 0 | 0 | 40 | 40 | 0 | 0 | 150 |
+| 17 | no_promo | +11.0 | 0 | 0 | 40 | 40 | 0 | 0 | 150 |
+| 18 | palace | +11.0 | 0 | 0 | 40 | 40 | 0 | 0 | 150 |
+| 19 | no_promo+palace | +11.0 | 0 | 0 | 40 | 40 | 0 | 0 | 150 |
+| 20 | no_queen+knight_blk | +16.0 | 0 | 0 | 40 | 40 | 0 | 0 | 146 |
+| 21 | knight_blk | +17.0 | 0 | 0 | 40 | 40 | 0 | 0 | 150 |
+| 22 | no_promo+knight_blk | +17.0 | 0 | 0 | 40 | 40 | 0 | 0 | 150 |
+| 23 | nq+ec+ALL_RULES | +23.0 | 0 | 0 | 40 | 40 | 0 | 0 | 149 |
+
+**结论**：`palace + knight_block`（以及包含它的 ALL_RULES 组合）在浅层 AB 下达成完美物质平衡（matdiff = 0.0），是这个筛选阶段的最优结构性干预。默认规则下 Chess 物质优势明显（matdiff ≈ +11）。只有 knight_block 单独使用时严格弱于 knight_block + palace 组合，因为 palace 在深度 2 单独起不到决定性作用。
 
 ---
 
 ## 规则改革工程实现
 
-**C++ 端** (`cpp/src/`):
-- `types.h`: 新增 `RuleFlags` struct + `thread_local g_rule_flags`
-- `rules.cpp`: 集成三项规则的走法生成和攻击检测
-- `bindings.cpp`: 暴露 `RuleFlags`, `set_rule_flags` 给 Python
+**C++ 端**（`cpp/src/`）：
+- `types.h`：`RuleFlags` 结构 + `thread_local g_rule_flags`；新增 `PieceKind::XQ_QUEEN` 枚举用于 xiangqi 侧 queen-like 棋子。
+- `rules.cpp`：三项规则在着法生成、攻击检测、快速 `is_square_attacked_fast` 路径全部接入；XQ_QUEEN 在 xiangqi 侧的正交+对角线攻击都识别。
+- `bindings.cpp`：把 `RuleFlags`、`set_rule_flags` 和 `XQ_QUEEN` 暴露给 Python。
+- `zobrist.h`：Zobrist 表扩到 14 个棋种；`board.cpp` 重复局面 hash 用完整枚举名作为 token（不是首字母），KING/KNIGHT 和 CHARIOT/CANNON 不会再发生碰撞。
 
-**Python 端** (`hybrid/core/`):
-- `config.py`: `VariantConfig` 新增 `no_promotion`, `chess_palace`, `knight_block`, `xq_queen` 字段
-- `rules.py`: 同步三项规则逻辑分支
-- `env.py` `_set_active_variant()`: 环境重置时自动同步 C++ 规则标志
+**Python 端**（`hybrid/core/`）：
+- `types.py`：`PieceKind` 加 `XQ_QUEEN`。
+- `board.py` / `rules.py`：`xq_queen=True` 时左侧 Advisor 位置放 `PieceKind.XQ_QUEEN`；着法生成里 `QUEEN` 和 `XQ_QUEEN` 都按 queen-like slider 处理。
+- `config.py`：`VariantConfig` 加 `no_promotion`, `chess_palace`, `knight_block`, `xq_queen` 字段。
+- `env.py` `_set_active_variant()`：环境 reset 时自动同步 C++ 规则 flag。
 
-**Ablation 映射** (`hybrid/rl/az_runner.py`):
+**Ablation 映射**（`hybrid/rl/az_runner.py`）：
 ```python
-'no_promotion': {'no_promotion': True},
+'no_promotion':  {'no_promotion': True},
 'chess_palace':  {'chess_palace': True},
 'knight_block':  {'knight_block': True},
 'xq_queen':      {'xq_queen': True},
 ```
 
+**状态编码**：15 通道二值平面（每个棋种一个通道，`XQ_QUEEN` 独占一个通道，所以 xiangqi 侧 queen-like 棋子和 Chess Queen 在同一格出现时归属不会含糊）+ 1 个 side-to-move 平面。
+
 ---
 
 ## AlphaZero 九变体训练
 
-### 实验配置
+### 配置
 
-所有 AZ 运行使用统一配置（50 轮 × 100 局/轮 = 5,000 局自对弈/变体）：
-- 自对弈：100 局/轮，50 sims，max_ply=150，4 workers
-- 训练：2 epochs，batch=256，buffer=50000
-- 评估：20 局 vs Random + 20 局 vs AB(d1)，每 2 轮
-- 总计：**9 变体 × 50 轮 = 45,000 局**自对弈数据
+所有 AZ 运行使用统一配置（50 轮 × 100 局/轮 = 每变体 5000 局自对弈）：
+- 自对弈：100 局/轮、50 sims、max_ply=150、4 worker
+- 训练：2 epoch、batch=256、replay buffer=50000
+- 评测：每 2 轮一次，20 局对 Random + 20 局对 AB(d1)
+- 总计：**9 变体 × 50 轮 = 45,000 局自对弈**
 
-> **PK** = chess_palace + knight_block, **Q** = no_queen, **X** = xq_queen, **ALL** = PK + no_promotion
+> **PK** = chess_palace + knight_block，**Q** = no_queen，**X** = xq_queen，**ALL** = PK + no_promotion
 
-### 九变体完整对比
+### 九变体对比（最后 10 轮平均）
 
-| 变体 | 轮次 | Chess% | XQ% | 和棋% | C:X | 后10轮C:X | 子力差 |
-|------|------|--------|-----|-------|-----|-----------|--------|
-| Default | 50 | 29.6% | 3.3% | 67.1% | 9.0x | 6.6x | -6.0 |
-| Q only | 50 | 11.4% | 2.6% | 86.0% | 4.5x | 3.1x | -14.2 |
-| X only ⭐ | 50 | 17.9% | 24.2% | 57.9% | 0.7x | 0.7x | -11.1 |
-| PK | 50 | 30.1% | 8.7% | 61.1% | 3.4x | 3.2x | -6.6 |
-| PK+noPromo | 50 | 31.0% | 8.8% | 60.3% | 3.5x | 4.0x | -6.8 |
-| PK+xqQueen ⭐ | 50 | 18.5% | 27.4% | 54.1% | 0.7x | 0.7x | -10.7 |
-| noQ+noPromo | 50 | 9.6% | 2.6% | 87.8% | 3.7x | 2.0x | -13.4 |
-| noQ+PK ⭐ | 50 | 4.8% | 7.6% | 87.7% | 0.6x | 0.2x | -12.7 |
-| noQ+ALL ⭐ | 50 | 3.9% | 6.9% | 89.3% | 0.6x | 0.3x | -12.5 |
+| 变体 | 轮数 | Chess% | XQ% | 和% | C:X | MatDiff |
+|------|------|--------|-----|-----|-----|---------|
+| Default | 50 | 35.6 | 4.0 | 60.4 | 8.9× | −6.40 |
+| Q only | 50 | 0.9 | 1.6 | 97.5 | 0.6× | −11.72 |
+| X only | 50 | 22.8 | 7.8 | 69.4 | 2.9× | −11.27 |
+| PK | 50 | 30.9 | 9.3 | 59.8 | 3.3× | −6.77 |
+| PK+noPromo | 50 | 31.1 | 9.1 | 59.8 | 3.4× | −6.25 |
+| **PK+xqQueen** ⭐ | 50 | **21.2** | **18.0** | **60.8** | **1.2×** | **−10.68** |
+| noQ+noPromo | 50 | 2.2 | 1.4 | 96.4 | 1.6× | −11.32 |
+| noQ+PK | 50 | 1.2 | 3.6 | 95.2 | 0.3× | −11.57 |
+| noQ+ALL | 50 | 1.5 | 4.6 | 93.9 | 0.3× | −11.58 |
+
+只看决定性比赛率合理（和棋率不超过 ~70%）的方案，**PK+xqQueen 是最接近 1:1 平衡的，C:X = 1.2×**。
+去掉 Chess Queen 的变体（Q only、noQ+*）虽然 C:X 比也接近 1，但靠的是把和棋率推到 95% 以上 — 这不是策略平衡，而是和棋退化。
 
 ---
 
 ## 因子分析
 
-### Queen 配置 2×2
+### Queen 配置 × 结构改革（最后 10 轮平均）
 
-| | Chess 有后 | Chess 无后 |
-|--|-----------|-----------|
-| **XQ 无后** | Default **9.0x** (67% draw) | Q only **4.5x** (86% draw) |
-| **XQ 有后** | X only **0.7x** (58% draw) | — |
+| | 无 PK | 加 PK |
+|--|------|------|
+| **Chess 有 Q / XQ 无 Q** | Default 8.9× (60% 和) | PK 3.3× (60% 和) |
+| **Chess 有 Q / XQ 有 Q** | X only 2.9× (69% 和) | **PK+xqQueen 1.2× (61% 和)** ⭐ |
+| **Chess 无 Q / XQ 无 Q** | Q only 0.6× (98% 和) | noQ+PK 0.3× (95% 和) |
 
-> **给 XQ 一个后 (X only)** 直接把 C:X 从 9.0x 压到 0.7x，和棋率反而最低。
-> **删 Chess 后 (Q only)** 只从 9.0x 降到 4.5x，且和棋飙到 86%。
+> 单一维度的干预不够。只加 `xq_queen`（X only）后 Chess 仍有 ~3× 的优势；只加 `PK` 后仍有 ~3.3×。
+> **必须把 `PK` 和 `xq_queen` 组合起来才能把 ratio 拉到 1.x 区间，且和棋率与 Default 同档。**
+> 去掉 Chess Queen 能把 ratio 压到 1 以下，但代价是 >95% 的和棋率 — 一个决断匮乏的退化博弈，不是策略平衡。
 
-### 结构改革因子（PK 的交互效应）
+### xq_queen 稳定性（PK+xqQueen 每 10 轮趋势）
 
-| | 无 PK | 有 PK |
-|--|-------|-------|
-| **Chess 有后 / XQ 无后** | 9.0x | **3.4x** (PK 有效) |
-| **Chess 有后 / XQ 有后** | **0.7x** | **0.7x** (PK 多余) |
-| **Chess 无后 / XQ 无后** | **4.5x** | **0.6x** (PK 有效) |
+PK+xqQueen 在 ~20 轮时达到 1.2× 稳态，之后稳定在 1.0–1.5× 区间（见 `runs/fixed_v1/rq4_az_pk_xqqueen/metrics.csv`）。
 
-> PK 在 XQ 没有 Queen 时有效（-62% 到 -87%），但在 XQ 有 Queen 时**完全多余**。
+### 棋子存活率（PK+xqQueen 变体，最后 10 轮平均）
 
-### xq_queen 稳定性（X only 每 10 轮趋势）
-
-| 阶段 | Chess | XQ | 和棋 | C:X |
-|------|-------|----|------|-----|
-| 0–9 | 193 | 230 | 577 | 0.8x |
-| 10–19 | 176 | 235 | 589 | 0.7x |
-| 20–29 | 157 | 236 | 607 | 0.7x |
-| 30–39 | 193 | 249 | 558 | 0.8x |
-| 40–49 | 177 | 259 | 564 | 0.7x |
-
-50 轮内无漂移，说明 0.7x 是训练收敛后的稳态平衡点。
-
-### 棋子存活率（X only 变体，后 10 轮平均）
-
-| 棋子 | 存活率(%) | 说明 |
-|------|-----------|------|
-| chess_QUEEN | 53.5 |  |
-| chess_ROOK | 67.3 |  |
-| chess_BISHOP | 63.0 |  |
-| chess_KNIGHT | 59.2 |  |
-| chess_PAWN | 67.7 |  |
-| xiangqi_CHARIOT | 91.5 | 保护完好 |
-| xiangqi_CANNON | 61.9 |  |
-| xiangqi_HORSE | 93.2 | 保护完好 |
-| xiangqi_ELEPHANT | 94.4 | 保护完好 |
-| xiangqi_ADVISOR | 46.8 |  |
-| xiangqi_SOLDIER | 69.5 |  |
+存活率分母按变体感知（xq_queen 变体起始有 1 个 XQ_QUEEN + 1 个右侧 Advisor）。详见 `metrics.csv` 中 `surv_*` 列。
 
 ---
 
 ## 跨变体锦标赛（RQ3）
 
-### 实验目的
+### 目的
 
-不同规则下训练出的 AZ agent，在**同一规则**（Default）下互相对打，揭示训练规则如何塑造策略。
+让用不同规则变体训练出的 AZ agent，在**默认规则**下相互对战，看训练条件如何塑造策略。
 
 ### 配置
 
-- **Agent 池**：9 个变体的 `best_model.pt`（全部 50 轮训练）
-- **对战规则**：Default（标准 Hybrid Chess，无任何改革）
-- **对局数**：36 对 × 50 局（25 局/半，换边） = **1,800 局**
-- **搜索**：50 sims MCTS，C++ 引擎，4 workers 并行
-- **耗时**：45.7 分钟
-- **输出**：`runs/cross_variant_tournament/`
+- **Agent 池**：9 个变体的 `best_model.pt`（都训练满 50 轮）
+- **对局规则**：Default（标准 Hybrid Chess，无改革）
+- **局数**：36 对 × 每对 100 局（每个颜色分配 50 局）= **3,600 局**
+- **搜索**：50 sims MCTS，C++ 引擎，4 并行 worker
+- **动作选择**：访问数温度采样（`temperature=0.5`），保证同一对 agent + 同一颜色 + 不同种子的对局真正分散 — 3,600 局中每局都是独立样本。
+- **种子**：用 `hashlib.sha256((name_a, name_b, half, gi))` 生成（跨进程/跨 session 完全可复现）。
+- **耗时**：≈ 264 分钟
+- **输出**：`runs/fixed_v1/cross_variant_tournament/` — `game_records.json`、`payoff_matrix.csv`、`wdl_matrix.csv`、`pairwise_ci.csv`、`summary.json`。
 
-### Payoff Matrix
+### Payoff 矩阵
 
 | | Default | Q_only | X_only | PK | PK_noPromo | PK_xqQueen | noQ_noPromo | noQ_PK | noQ_ALL |
 |--|------|------|------|------|------|------|------|------|------|
-| **Default** | 0.500 | 0.500 | 0.500 | 0.250 | 0.500 | 0.750 | 0.500 | 0.750 | 0.250 |
-| **Q_only** | 0.500 | 0.500 | 0.750 | 0.500 | 0.750 | 0.500 | 0.750 | 0.750 | 0.500 |
-| **X_only** | 0.500 | 0.250 | 0.500 | 0.500 | 0.750 | 0.500 | 0.500 | 0.750 | 0.500 |
-| **PK** | 0.750 | 0.500 | 0.500 | 0.500 | 0.500 | 0.750 | 0.750 | 0.500 | 0.750 |
-| **PK_noPromo** | 0.500 | 0.250 | 0.250 | 0.500 | 0.500 | 0.750 | 0.500 | 0.500 | 0.500 |
-| **PK_xqQueen** | 0.250 | 0.500 | 0.500 | 0.250 | 0.250 | 0.500 | 0.500 | 0.500 | 0.250 |
-| **noQ_noPromo** | 0.500 | 0.250 | 0.500 | 0.250 | 0.500 | 0.500 | 0.500 | 0.500 | 0.250 |
-| **noQ_PK** | 0.250 | 0.250 | 0.250 | 0.500 | 0.500 | 0.500 | 0.500 | 0.500 | 0.500 |
-| **noQ_ALL** | 0.750 | 0.500 | 0.500 | 0.250 | 0.500 | 0.750 | 0.750 | 0.500 | 0.500 |
+| **Default** | 0.500 | 0.480 | 0.510 | 0.485 | 0.500 | 0.555 | 0.470 | 0.535 | 0.525 |
+| **Q_only** | 0.520 | 0.500 | 0.510 | 0.515 | 0.545 | 0.505 | 0.500 | 0.595 | 0.560 |
+| **X_only** | 0.490 | 0.490 | 0.500 | 0.425 | 0.505 | 0.520 | 0.465 | 0.550 | 0.520 |
+| **PK** | 0.515 | 0.485 | 0.575 | 0.500 | 0.525 | 0.485 | 0.460 | 0.575 | 0.490 |
+| **PK_noPromo** | 0.500 | 0.455 | 0.495 | 0.475 | 0.500 | 0.525 | 0.470 | 0.590 | 0.485 |
+| **PK_xqQueen** | 0.445 | 0.495 | 0.480 | 0.515 | 0.475 | 0.500 | 0.455 | 0.505 | 0.540 |
+| **noQ_noPromo** | 0.530 | 0.500 | 0.535 | 0.540 | 0.530 | 0.545 | 0.500 | 0.540 | 0.505 |
+| **noQ_PK** | 0.465 | 0.405 | 0.450 | 0.425 | 0.410 | 0.495 | 0.460 | 0.500 | 0.480 |
+| **noQ_ALL** | 0.475 | 0.440 | 0.480 | 0.510 | 0.515 | 0.460 | 0.495 | 0.520 | 0.500 |
 
 ### Agent 排名
 
-| 排名 | Agent | 平均得分 | 训练规则 |
-|------|-------|----------|----------|
-| 1 | **Q_only** | **0.625** | 删 Chess 后 |
-| 1 | **PK** | **0.625** | 宫格+蹩脚 |
-| 3 | noQ_ALL | 0.562 | 全削弱 |
-| 4 | X_only | 0.531 | 给 XQ 后 |
-| 5 | Default | 0.500 | 默认规则 |
-| 6 | PK_noPromo | 0.469 | PK+禁升变 |
-| 7 | noQ_noPromo | 0.406 | 删后+禁升变 |
-| 8 | noQ_PK | 0.406 | 删后+PK |
-| 9 | PK_xqQueen | 0.375 | PK+XQ后 |
+| 排名 | Agent | 平均分 | 训练规则 |
+|------|-------|--------|---------|
+| 1 | **Q_only** | 0.531 | 去 Chess Queen |
+| 2 | **noQ_noPromo** | 0.528 | noQ + 禁升变 |
+| 3 | **PK** | 0.514 | 宫 + 蹩脚 |
+| 4 | Default | 0.508 | 标准规则 |
+| 5 | PK_noPromo | 0.499 | PK + 禁升变 |
+| 6 | X_only | 0.496 | 给 XQ Queen |
+| 7 | PK_xqQueen | 0.489 | PK + XQ Queen |
+| 8 | noQ_ALL | 0.487 | 所有限制 |
+| 9 | noQ_PK | 0.449 | noQ + PK |
+
+> 9 个 agent 的平均分都落在 0.449–0.531 这窄窄的 0.08 区间 — 在 default 规则下**没有任何 agent 显著占优**。
 
 ### 关键发现
 
-#### 1. "逆境出强者"（Adversity Breeds Strength）
+#### 1. 训练时平衡 ≠ default 下迁移强
 
-在**受限规则**下训练的 agent（Q_only, PK）到了 Default 规则下反而最强（0.625）。
-它们在更困难的环境中学会了更精细的防守和进攻策略。
+训练时最平衡的变体（PK+xqQueen，in-variant C:X = 1.2×）在 default 规则下的迁移性**不是**最强的（排第 7）。反过来，
+在限制最严的 Chess 变体（Q_only、noQ_noPromo）— 它们的自对弈高度退化、和棋率很高 — 训练出来的 agent 在 default 下表现**最好**。可能的解释：受限训练条件迫使网络学到更强的位置感，部分弥补了评估时 Chess Queen 的存在带来的不熟悉。
 
-#### 2. Default agent 只排中游
+#### 2. 严格的非传递循环
 
-在自己的"主场规则"下训练的 agent 只有 0.500，因为 Default 规则的 Chess 碾压（9.0x）
-让它只学会了粗暴进攻，缺乏精细策略。
+锦标赛在 `PK`、`X_only`、`PK_xqQueen` 之间形成了严格的"石头剪刀布"循环：
 
-#### 3. 平衡规则训练 → 迁移最差
+| Edge | 分数 | 方向 |
+|------|------|------|
+| PK vs X_only | 0.575 | PK > X_only |
+| X_only vs PK_xqQueen | 0.520 | X_only > PK_xqQueen |
+| PK_xqQueen vs PK | 0.515 | PK_xqQueen > PK |
 
-PK_xqQueen 垫底（0.375）。在最平衡规则下训练的 agent 习惯了 XQ 有后的"舒适区"，
-到了 Default 规则（XQ 无后）时无法适应。
+三条边都 > 0.50，构成闭合 3-cycle。这支持了 RQ3 的假设：非对称规则设计不会给出单一的线性强度排名，而是产生多极的策略生态。
 
-#### 4. Non-transitivity 存在
+#### 3. 局级多样性
 
-| A | B | A 得分 | 说明 |
-|---|---|--------|------|
-| PK_xqQueen | Default | 0.250 | PK_xQ 输 |
-| Default | noQ_ALL | 0.250 | Default 输 |
-| noQ_ALL | PK_xqQueen | 0.750 | noQ_ALL 赢 |
-
-形成循环克制，验证了 proposal 中 RQ3 的假设：不同训练条件产生**质的不同策略**，
-而非简单的强弱排序。
+`temperature=0.5` 的动作采样让锦标赛产生 19.4% 和棋 + 80.6% 决定性比赛（78.6% checkmate、1.3% threefold、18.1% max-plies）。每个 (pair, color) 桶内平均有 38/50 个独立的 (outcome, ply-count) 组合 — 说明 100 局每对的样本确实是策略分布的独立抽样，不是确定性复制。
 
 ---
 
 ## 推荐方案
 
-**`xq_queen`**（给 XQ 一个后）— 最简最优平衡变体：
-- C:X ≈ 0.7x（最接近 1:1）
-- 和棋率 58%（对局质量最高）
-- 只改一个 flag，规则最简洁
-- 结构改革（PK）可选但非必要
+**`chess_palace + knight_block + xq_queen` (PK+xqQueen)** — 最干净的 in-variant 平衡：
+- In-variant C:X ≈ **1.2×**（在非退化的方案里最接近 1:1）
+- 和棋率 ~61%（与 Default 相当，远低于去 Queen 类的 95%+）
+- 把结构性约束（Chess 的宫 + 蹩脚）和战术资源（xiangqi 侧的 queen-like 棋子）组合起来，不依赖单一维度干预。
+
+任何单一改动（只 `xq_queen`、只 `PK`、或只 `no_queen`）都会留下明显的 Chess 残余优势，或者把和棋率推到 ~100%。
 
 ---
 
 ## 训练标准命令
 
 ```bash
+# 单个变体
 python scripts/train_az_iter.py \
   --iterations 50 --selfplay-games-per-iter 100 --simulations 50 \
   --selfplay-max-ply 150 --batch-size 256 --train-epochs 2 \
   --eval-games 20 --eval-interval 2 --eval-simulations 100 \
   --disable-gating 1 --resign-enabled 1 --device auto --seed 42 \
-  --ablation "xq_queen" --use-cpp --num-workers 4 \
-  --outdir "runs/MY_RUN_NAME"
+  --ablation "chess_palace,knight_block,xq_queen" --use-cpp --num-workers 4 \
+  --outdir runs/fixed_v1/rq4_az_pk_xqqueen
+
+# 9 个变体顺序训（自动 resume + retry）
+python -m scripts.run_fixed_v1_all
+
+# 实时 HTML 进度面板（另一个终端）
+python -m scripts.dashboard_fixed_v1
+# 然后浏览器打开 runs/fixed_v1/progress.html（每 30 秒自动刷新）
+
+# 9 个 best_model.pt 的跨变体锦标赛
+python -m scripts.cross_variant_tournament_fixed_v1 \
+  --games 50 --sims 50 --workers 4 --temperature 0.5 --seed 42
 ```
 
 ---
 
 ## 待办事项
 
-- [x] AZ Default（50轮）→ C:X = 9.0x
-- [x] AZ Q only（50轮）→ C:X = 4.5x + 86% draw
-- [x] AZ X only（50轮）→ **C:X = 0.7x** ⭐
-- [x] AZ PK / PK+noPromo（各50轮）→ 结构改革有效但不足
-- [x] AZ PK+xqQueen（50轮）→ C:X = 0.7x = X only
-- [x] AZ noQ+PK / noQ+noPromo / noQ+ALL（各50轮）→ 过度削弱
-- [x] 因子分析确认：xq_queen 是唯一必要因素
-- [x] 跨变体锦标赛（1,800 局）→ "逆境出强者" + non-transitivity ⭐
-- [ ] 课程报告
+- [x] AB D2 规则改革扫描（23 变体）
+- [x] AZ 9 变体训练（每个 50 轮 × 100 局 × 50 sims × 150 ply）
+- [x] 跨变体锦标赛（3600 局，温度采样，确定性种子）
+- [x] 因子分析（Queen × PK）
+- [x] 非传递循环检测（PK > X_only > PK_xqQueen > PK）
+- [x] 全部图表从数据重新生成（`course_project/plot_figures_fixed_v1.R`）
+- [ ] 课程最终报告改写

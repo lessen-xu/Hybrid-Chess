@@ -31,7 +31,7 @@ graph TB
 
     subgraph RL["🧠 RL Pipeline (hybrid/rl/)"]
         Network["az_network.py<br/>BaseModel ABC + PolicyValueNet"]
-        Encoding["az_encoding.py<br/>State (14ch) + Action (92 planes)"]
+        Encoding["az_encoding.py<br/>State (15ch) + Action (92 planes)"]
         SelfPlay["az_selfplay.py<br/>Self-Play + Reward Shaping"]
         Train["az_train.py<br/>Policy CE + Value MSE"]
         Eval["az_eval.py<br/>Match Evaluation"]
@@ -107,7 +107,7 @@ The game engine is the foundation. It implements the rules and state management 
 
 | Module | Responsibility |
 |--------|---------------|
-| **types.py** | Frozen dataclasses: `Side` (Chess/Xiangqi), `PieceKind` (13 kinds), `Piece`, `Move` |
+| **types.py** | Frozen dataclasses: `Side` (Chess/Xiangqi), `PieceKind` (14 kinds: 6 Chess + 7 Xiangqi + `XQ_QUEEN`), `Piece`, `Move` |
 | **board.py** | `Board` class (9×10 grid stored as `grid[y][x]`), `initial_board(variant)` setup |
 | **rules.py** | `generate_legal_moves()`, `apply_move()`, `terminal_info()`, check detection |
 | **config.py** | `VariantConfig` (frozen dataclass), board constants, legacy global flags |
@@ -144,8 +144,8 @@ flowchart LR
 
 | Module | Responsibility |
 |--------|---------------|
-| **az_network.py** | `BaseModel` ABC + `PolicyValueNet` (dual-head ResNet: 14→64ch, 3 res blocks) |
-| **az_encoding.py** | State → (14, 10, 9) tensor; Move → 92-plane action index |
+| **az_network.py** | `BaseModel` ABC + `PolicyValueNet` (dual-head ResNet: 15→64ch, 3 res blocks) |
+| **az_encoding.py** | State → (15, 10, 9) tensor; Move → 92-plane action index |
 | **az_selfplay.py** | Full self-play game loop with resign, draw adjudication, reward shaping hook |
 | **az_train.py** | Training loop: policy cross-entropy + value MSE loss |
 | **az_eval.py** | Match evaluation with win/draw/loss statistics, Wilson & score CI |
@@ -160,7 +160,7 @@ flowchart LR
 #### State & Action Encoding
 
 ```
-State Encoding — 14 binary planes (10 × 9 each):
+State Encoding — 15 binary planes (10 × 9 each):
 ┌───────────────────────────────────────┐
 │ Ch 0:  King positions                 │
 │ Ch 1:  Queen positions                │
@@ -175,7 +175,8 @@ State Encoding — 14 binary planes (10 × 9 each):
 │ Ch 10: Chariot positions              │
 │ Ch 11: Cannon positions               │
 │ Ch 12: Soldier positions              │
-│ Ch 13: Side-to-move (1 = Chess)       │
+│ Ch 13: XQ_QUEEN positions             │
+│ Ch 14: Side-to-move (1 = Chess)       │
 └───────────────────────────────────────┘
 
 Action Space — 92 planes × 10 × 9 = 8,280 actions:
@@ -188,9 +189,9 @@ Action Space — 92 planes × 10 × 9 = 8,280 actions:
 
 ```
 PolicyValueNet (default):
-  Input: (B, 14, 10, 9)
+  Input: (B, 15, 10, 9)
     ↓
-  Conv2d 3×3 (14 → 64) + BN + ReLU
+  Conv2d 3×3 (15 → 64) + BN + ReLU
     ↓
   3 × ResidualBlock (64ch: Conv → BN → ReLU → Conv → BN → Skip → ReLU)
     ↓
@@ -281,7 +282,7 @@ The browser-based UI is served by a zero-dependency HTTP server (`server.py`):
 Standard Gymnasium wrapper registered as `HybridChess-v0`:
 
 ```
-Observation: Box(14, 10, 9)  — binary piece planes + side-to-move
+Observation: Box(15, 10, 9)  — binary piece planes + side-to-move
 Action:      Discrete(8280)  — 92 × 10 × 9 flat action space
 Reward:      +1 / 0 / -1    — win / draw / loss from mover's perspective
 Info:        {"legal_actions": [...], "side_to_move": "chess", "ply": 0}

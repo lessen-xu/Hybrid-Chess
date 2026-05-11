@@ -30,6 +30,12 @@ Chess starts at the bottom (y=0–1), Xiangqi at the top (y=6–9).
 | **Cannon** (×2) | Orthogonal slide; capture requires jumping over exactly 1 piece. |
 | **Soldier** (×5) | Forward only before river; forward + sideways after crossing y≤4. |
 
+#### Optional Xiangqi piece (`xq_queen` variant only)
+
+| Piece | Movement |
+|-------|----------|
+| **XQ Queen** | Orthogonal + diagonal slide, unlimited range (identical to Chess Queen geometry). Belongs to the Xiangqi side and replaces the **left Advisor** when `xq_queen=True`. Has its own `PieceKind.XQ_QUEEN` enum value and its own neural-network input channel, so ownership is unambiguous. |
+
 ### Special: Flying General
 
 If General and King share a column with no pieces between them, the General can capture the King directly.

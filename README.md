@@ -113,7 +113,7 @@ hybrid-chess/
 │   │   └── alphazero_stub.py   #   MCTS + neural network agent
 │   └── rl/                     # AlphaZero training pipeline
 │       ├── az_network.py       #   Dual-head residual CNN
-│       ├── az_encoding.py      #   14-plane state / 92-plane action encoding
+│       ├── az_encoding.py      #   15-plane state / 92-plane action encoding
 │       ├── az_selfplay.py      #   Self-play data generation
 │       ├── az_train.py         #   Training loop
 │       ├── az_eval.py          #   Evaluation, gating, Wilson CI
@@ -127,7 +127,8 @@ hybrid-chess/
 ├── tests/                      # Test suite
 ├── docs/                       # Documentation
 │   ├── ARCHITECTURE.md         #   System architecture
-│   └── EXPERIMENTS.md          #   Experiment log & results
+│   ├── EXPERIMENTS_EN.md       #   Experiment log & results (English)
+│   └── EXPERIMENTS_ZH.md       #   Experiment log & results (Chinese)
 └── runs/                       # Training outputs (gitignored)
 ```
 
