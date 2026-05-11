@@ -28,6 +28,10 @@ class MCTSConfig:
     dirichlet_eps: float = 0.25
     discount_factor: float = 0.99   # γ: value decay per tree depth to prefer shorter wins
     leaf_batch_size: int = 8        # K: virtual-loss leaf gathering batch size
+    # Max-ply used inside MCTS terminal checks. Should match the calling
+    # environment's truncation horizon (e.g. self-play uses --selfplay-max-ply,
+    # eval uses MAX_PLIES). Default keeps the rule-engine cap.
+    max_plies: int = MAX_PLIES
 
 
 @dataclass
@@ -118,7 +122,7 @@ class AlphaZeroMiniAgent(Agent):
 
             # Evaluation
             info = terminal_info(node.state.board, node.state.side_to_move,
-                                 node.state.repetition, node.state.ply, MAX_PLIES)
+                                 node.state.repetition, node.state.ply, self.cfg.max_plies)
             if info.status != TerminalStatus.ONGOING:
                 if info.status == TerminalStatus.DRAW:
                     value = 0.0
@@ -180,7 +184,7 @@ class AlphaZeroMiniAgent(Agent):
                 # Terminal check via C++
                 cpp_info = module.terminal_info(
                     node.cpp_board, node.cpp_side,
-                    node.state.repetition, node.state.ply, MAX_PLIES,
+                    node.state.repetition, node.state.ply, self.cfg.max_plies,
                 )
 
                 if cpp_info.status != TerminalStatus.ONGOING:

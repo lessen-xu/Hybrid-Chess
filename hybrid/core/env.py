@@ -67,6 +67,7 @@ def _ensure_cpp_maps():
         PieceKind.ELEPHANT: CppPieceKind.ELEPHANT, PieceKind.HORSE: CppPieceKind.HORSE,
         PieceKind.CHARIOT: CppPieceKind.CHARIOT, PieceKind.CANNON: CppPieceKind.CANNON,
         PieceKind.SOLDIER: CppPieceKind.SOLDIER,
+        PieceKind.XQ_QUEEN: CppPieceKind.XQ_QUEEN,
     }
 
     _CPP_TO_PY_KIND = {v: k for k, v in _PY_TO_CPP_KIND.items()}

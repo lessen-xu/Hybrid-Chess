@@ -772,7 +772,8 @@ class TestTerminal:
         assert "Checkmate" in info.reason
 
     def test_stalemate(self):
-        """Stalemate: not in check but no legal moves → draw."""
+        """Stalemate: not in check but no legal moves → loss for stalemated side
+        (Xiangqi convention used in Hybrid Chess; see report 2.1)."""
         # Chess King at (0,0), surrounded by attacked squares, not in check.
         # Xiangqi Chariot at (2,2) controls row 2 and col 2.
         # Another Chariot at (1,5) controls col 1.
@@ -795,7 +796,7 @@ class TestTerminal:
         legal = generate_legal_moves(board, Side.CHESS)
         if len(legal) == 0 and not is_in_check(board, Side.CHESS):
             info = terminal_info(board, Side.CHESS, {}, 0, MAX_PLIES)
-            assert info.status == TerminalStatus.DRAW
+            assert info.status == TerminalStatus.XIANGQI_WIN
             assert "Stalemate" in info.reason
         else:
             # Fallback: simpler stalemate setup
@@ -817,7 +818,7 @@ class TestTerminal:
             legal2 = generate_legal_moves(board2, Side.CHESS)
             assert len(legal2) == 0
             info2 = terminal_info(board2, Side.CHESS, {}, 0, MAX_PLIES)
-            assert info2.status == TerminalStatus.DRAW
+            assert info2.status == TerminalStatus.XIANGQI_WIN
             assert "Stalemate" in info2.reason
 
     def test_threefold_repetition(self):

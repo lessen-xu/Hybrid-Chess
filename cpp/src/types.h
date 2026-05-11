@@ -27,6 +27,8 @@ enum class PieceKind {
     KING, QUEEN, ROOK, BISHOP, KNIGHT, PAWN,
     // Xiangqi side
     GENERAL, ADVISOR, ELEPHANT, HORSE, CHARIOT, CANNON, SOLDIER,
+    // Xiangqi-side queen-like piece (xq_queen variant)
+    XQ_QUEEN,
     // Sentinel for "no promotion"
     NONE
 };

@@ -231,7 +231,7 @@ static void piece_moves(const Board& board, int x, int y, const Piece& p,
     // Chess pieces
     if (k == PieceKind::ROOK)   { slide_moves(board, x, y, s, ORTH_DIRS, out); return; }
     if (k == PieceKind::BISHOP) { slide_moves(board, x, y, s, DIAG_DIRS, out); return; }
-    if (k == PieceKind::QUEEN) {
+    if (k == PieceKind::QUEEN || k == PieceKind::XQ_QUEEN) {
         slide_moves(board, x, y, s, ORTH_DIRS, out);
         slide_moves(board, x, y, s, DIAG_DIRS, out);
         return;
@@ -577,8 +577,9 @@ bool is_square_attacked_fast(const Board& board, int x, int y, Side by_side) {
         }
     }
 
-    // Chariot + Cannon slides: orthogonal rays
+    // Chariot + Cannon + XQ Queen slides: orthogonal rays
     // Chariot: first piece on ray = attack (same as Rook)
+    // XQ Queen (xq_queen variant): same orthogonal-ray attack as Chariot/Rook
     // Cannon non-capture: can slide to empty (x,y) if no piece blocks the path
     //   (the target_cell check at top already returned false for friendly pieces,
     //    so if we reach here, target is either empty or has enemy)
@@ -590,8 +591,23 @@ bool is_square_attacked_fast(const Board& board, int x, int y, Side by_side) {
             if (c.has_value()) {
                 if (c->side == Side::XIANGQI) {
                     if (c->kind == PieceKind::CHARIOT) return true;
+                    if (c->kind == PieceKind::XQ_QUEEN) return true;
                     if (c->kind == PieceKind::CANNON && target_empty) return true;
                 }
+                break;
+            }
+            cx += dx; cy += dy;
+        }
+    }
+
+    // XQ Queen diagonal rays (xq_queen variant only)
+    for (auto [dx, dy] : DIAG_DIRS) {
+        int cx = x + dx, cy = y + dy;
+        while (ib(cx, cy)) {
+            auto& c = board.grid[cy][cx];
+            if (c.has_value()) {
+                if (c->side == Side::XIANGQI && c->kind == PieceKind::XQ_QUEEN)
+                    return true;
                 break;
             }
             cx += dx; cy += dy;

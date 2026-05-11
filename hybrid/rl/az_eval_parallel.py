@@ -189,8 +189,9 @@ def play_match_parallel(
         from hybrid.agents.alphazero_stub import TorchPolicyValueModel
         from hybrid.agents.random_agent import RandomAgent
         from hybrid.agents.alphabeta_agent import AlphaBetaAgent, SearchConfig
+        from hybrid.rl.az_runner import _apply_ablation, build_net_from_checkpoint
 
-        from hybrid.rl.az_runner import build_net_from_checkpoint
+        variant_cfg = _apply_ablation(ablation)
 
         net = build_net_from_checkpoint(model_ckpt_path, device="cpu")
         model = TorchPolicyValueModel(net, device="cpu")
@@ -200,7 +201,10 @@ def play_match_parallel(
             opp = RandomAgent(seed=seed + 999)
         else:
             opp = AlphaBetaAgent(SearchConfig(depth=1))
-        stats, _ = play_match(az, opp, games=games, swap_sides=swap_sides, seed=seed, use_cpp=use_cpp)
+        stats, _ = play_match(
+            az, opp, games=games, swap_sides=swap_sides, seed=seed,
+            use_cpp=use_cpp, variant=variant_cfg,
+        )
         return stats
 
     result_queue = mp.Queue()

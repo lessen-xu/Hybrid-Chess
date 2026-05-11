@@ -24,6 +24,7 @@ _XIANGQI_MAP = {
     PieceKind.CHARIOT: "c",
     PieceKind.CANNON: "n",   # 'n' because 'c' is taken by chariot
     PieceKind.SOLDIER: "s",
+    PieceKind.XQ_QUEEN: "q",  # Xiangqi Queen-like piece (xq_queen variant)
 }
 
 

@@ -31,6 +31,7 @@ PIECE_VALUES: Dict[PieceKind, float] = {
     PieceKind.CHARIOT: 9.0,
     PieceKind.CANNON: 5.0,
     PieceKind.SOLDIER: 1.0,
+    PieceKind.XQ_QUEEN: 9.0,
 }
 
 

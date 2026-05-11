@@ -140,7 +140,9 @@ def play_one_game(
     variant=None,
 ) -> Tuple[Optional[Side], int, Optional[dict]]:
     """Play one game. Returns (winner, plies, game_record_or_None)."""
-    env = HybridChessEnv(use_cpp=use_cpp, variant=variant)
+    from hybrid.core.config import DEFAULT_VARIANT
+    env_variant = variant if variant is not None else DEFAULT_VARIANT
+    env = HybridChessEnv(use_cpp=use_cpp, variant=env_variant)
     state = env.reset()
     agents = {Side.CHESS: agent_chess, Side.XIANGQI: agent_xiangqi}
 

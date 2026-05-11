@@ -60,9 +60,9 @@ _PIECE_CHANNELS = {
     PieceKind.BISHOP: 3, PieceKind.KNIGHT: 4, PieceKind.PAWN: 5,
     PieceKind.GENERAL: 6, PieceKind.ADVISOR: 7, PieceKind.ELEPHANT: 8,
     PieceKind.HORSE: 9, PieceKind.CHARIOT: 10, PieceKind.CANNON: 11,
-    PieceKind.SOLDIER: 12,
+    PieceKind.SOLDIER: 12, PieceKind.XQ_QUEEN: 13,
 }
-NUM_STATE_CHANNELS = 14
+NUM_STATE_CHANNELS = 15
 
 
 def _move_to_action(mv: Move) -> int:
@@ -119,13 +119,13 @@ def _action_to_move(action: int) -> Move:
 
 
 def _encode_obs(state: GameState) -> np.ndarray:
-    """Encode GameState as (14, 10, 9) float32 numpy array."""
+    """Encode GameState as (NUM_STATE_CHANNELS, 10, 9) float32 numpy array."""
     obs = np.zeros((NUM_STATE_CHANNELS, BOARD_H, BOARD_W), dtype=np.float32)
     for x, y, piece in state.board.iter_pieces():
         ch = _PIECE_CHANNELS[piece.kind]
         obs[ch, y, x] = 1.0
     if state.side_to_move == Side.CHESS:
-        obs[13, :, :] = 1.0
+        obs[NUM_STATE_CHANNELS - 1, :, :] = 1.0
     return obs
 
 

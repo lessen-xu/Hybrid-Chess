@@ -215,8 +215,13 @@ def build_net_from_checkpoint(
     return net
 # Self-play diagnostics
 
-def _aggregate_game_records(records: List[GameRecord]) -> Dict[str, Any]:
-    """Aggregate GameRecords from one iteration into summary statistics."""
+def _aggregate_game_records(records: List[GameRecord], variant=None) -> Dict[str, Any]:
+    """Aggregate GameRecords from one iteration into summary statistics.
+
+    ``variant``: if provided, survival-rate denominators are computed from the
+    actual starting board for that variant (e.g. xq_queen has 1 advisor + 1
+    XQ_QUEEN, not 2 advisors). Falls back to ``INITIAL_PIECES`` otherwise.
+    """
     if not records:
         return {}
 
@@ -226,7 +231,10 @@ def _aggregate_game_records(records: List[GameRecord]) -> Dict[str, Any]:
 
     draw_move_limit = sum(1 for r in records if r.termination_reason == "Max plies reached")
     draw_threefold = sum(1 for r in records if r.termination_reason == "Threefold repetition")
-    draw_stalemate = sum(1 for r in records if r.termination_reason == "Stalemate (draw by rule)")
+    # Stalemate is a decisive loss for the stalemated side (Xiangqi convention),
+    # not a draw. The counter is kept under the legacy `draw_stalemate` name for
+    # CSV compatibility but tracks stalemate-loss events from rules.terminal_info.
+    draw_stalemate = sum(1 for r in records if r.termination_reason == "Stalemate (loss for stalemated side)")
     draw_adjudicated = sum(1 for r in records if r.termination_reason == "Adjudicated draw")
     decisive = sum(1 for r in records if r.result != "draw")
     resign_count = sum(1 for r in records if r.resigned)
@@ -258,12 +266,16 @@ def _aggregate_game_records(records: List[GameRecord]) -> Dict[str, Any]:
     adjudicated_plies = [r.ply_count for r in records if r.termination_reason == "Adjudicated draw"]
 
     # --- Per-piece survival diagnostics ---
-    from hybrid.rl.az_selfplay import INITIAL_PIECES
-    piece_keys = sorted(INITIAL_PIECES.keys())
+    from hybrid.rl.az_selfplay import INITIAL_PIECES, initial_piece_counts
+    if variant is not None:
+        initial_counts = initial_piece_counts(variant)
+    else:
+        initial_counts = dict(INITIAL_PIECES)
+    piece_keys = sorted(INITIAL_PIECES.keys())  # CSV columns stay stable across variants
     piece_survived = {}
     piece_lost = {}
     for k in piece_keys:
-        init = INITIAL_PIECES[k]
+        init = initial_counts.get(k, INITIAL_PIECES.get(k, 0))
         survived_total = sum(r.piece_census.get(k, 0) for r in records if r.piece_census)
         n_with_census = sum(1 for r in records if r.piece_census)
         if n_with_census > 0:
@@ -356,11 +368,13 @@ CSV_COLUMNS = [
     "surv_chess_KNIGHT", "surv_chess_PAWN",
     "surv_xiangqi_CHARIOT", "surv_xiangqi_CANNON", "surv_xiangqi_HORSE",
     "surv_xiangqi_ELEPHANT", "surv_xiangqi_ADVISOR", "surv_xiangqi_SOLDIER",
+    "surv_xiangqi_XQ_QUEEN",
     # --- Avg pieces lost ---
     "lost_chess_QUEEN", "lost_chess_ROOK", "lost_chess_BISHOP",
     "lost_chess_KNIGHT", "lost_chess_PAWN",
     "lost_xiangqi_CHARIOT", "lost_xiangqi_CANNON", "lost_xiangqi_HORSE",
     "lost_xiangqi_ELEPHANT", "lost_xiangqi_ADVISOR", "lost_xiangqi_SOLDIER",
+    "lost_xiangqi_XQ_QUEEN",
 ]
 
 
@@ -599,6 +613,7 @@ def run_iterations(cfg: AZIterConfig, outdir: Path) -> None:
                     simulations=cfg.simulations,
                     dirichlet_alpha=cfg.dirichlet_alpha,
                     dirichlet_eps=cfg.dirichlet_eps,
+                    max_plies=iter_max_ply,
                 ),
                 seed=cfg.seed + iteration * 1000,
                 use_cpp=cfg.use_cpp,
@@ -680,6 +695,7 @@ def run_iterations(cfg: AZIterConfig, outdir: Path) -> None:
                     simulations=cfg.simulations,
                     dirichlet_alpha=cfg.dirichlet_alpha,
                     dirichlet_eps=cfg.dirichlet_eps,
+                    max_plies=iter_max_ply,
                 ),
                 model_ckpt_path=tmp_ckpt_path,
                 out_dir=sp_out_dir,
@@ -725,7 +741,7 @@ def run_iterations(cfg: AZIterConfig, outdir: Path) -> None:
                   f"{samples_per_sec:.1f} samples/s")
 
         # Self-play diagnostics
-        sp_diag = _aggregate_game_records(game_records)
+        sp_diag = _aggregate_game_records(game_records, variant=variant_cfg)
         if sp_diag:
             print(f"    [Diagnostics] decisive={sp_diag['sp_decisive']}/"
                   f"{sp_diag['sp_games']}  "

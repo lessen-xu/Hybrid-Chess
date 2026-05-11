@@ -36,6 +36,11 @@ class PieceKind(Enum):
     CANNON = auto()
     SOLDIER = auto()
 
+    # Xiangqi-side queen-like piece (used by xq_queen variant).
+    # Moves like a Chess Queen but is owned by the Xiangqi side, and is encoded
+    # in its own neural-network channel so ownership is unambiguous.
+    XQ_QUEEN = auto()
+
 
 @dataclass(frozen=True)
 class Piece:

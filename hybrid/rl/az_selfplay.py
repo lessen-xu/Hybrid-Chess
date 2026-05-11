@@ -32,6 +32,7 @@ PIECE_VALUES = {
     PieceKind.SOLDIER: 1.0, PieceKind.HORSE: 3.0, PieceKind.ELEPHANT: 2.0,
     PieceKind.ADVISOR: 2.0, PieceKind.CHARIOT: 5.0, PieceKind.CANNON: 4.5,
     PieceKind.GENERAL: 0.0,
+    PieceKind.XQ_QUEEN: 9.0,
 }
 
 
@@ -113,14 +114,39 @@ def compute_piece_census(board) -> dict:
     return census
 
 
-# Standard initial piece counts for survival rate computation (excludes royals)
+# Standard initial piece counts for survival rate computation (excludes royals).
+# Used as a fallback for the default variant. Variant-aware counts come from
+# ``initial_piece_counts(variant)`` below — call that when computing survival
+# rates so the denominator matches the variant's actual starting board.
 INITIAL_PIECES = {
     'chess_QUEEN': 1, 'chess_ROOK': 2, 'chess_BISHOP': 2,
     'chess_KNIGHT': 2, 'chess_PAWN': 8,
     'xiangqi_ADVISOR': 2, 'xiangqi_ELEPHANT': 2,
     'xiangqi_HORSE': 2, 'xiangqi_CHARIOT': 2, 'xiangqi_CANNON': 2,
     'xiangqi_SOLDIER': 5,
+    'xiangqi_XQ_QUEEN': 0,  # Only present when xq_queen=True (see initial_piece_counts).
 }
+
+
+def initial_piece_counts(variant) -> dict:
+    """Variant-aware initial piece counts (used as survival-rate denominators).
+
+    Builds the count from the same logic as ``initial_board()`` so that the
+    denominator always matches the actual starting position. Royals are
+    excluded since they cannot be captured without ending the game.
+    """
+    from hybrid.core.board import initial_board
+    board = initial_board(variant=variant)
+    counts: dict = {}
+    for _, _, piece in board.iter_pieces():
+        if piece.kind.name in ("KING", "GENERAL"):
+            continue
+        key = f"{piece.side.name.lower()}_{piece.kind.name}"
+        counts[key] = counts.get(key, 0) + 1
+    # Ensure all CSV-tracked keys exist with value 0 if absent.
+    for k in INITIAL_PIECES:
+        counts.setdefault(k, 0)
+    return counts
 
 
 @dataclass
@@ -305,10 +331,18 @@ def self_play_game(
             material_diff, mode=cfg.move_limit_value_mode, scale=cfg.move_limit_value_scale,
         )
 
+    # In "penalty" mode, the value is intended as a side-independent stalling
+    # penalty: both sides should see the same negative z. In "hard"/"soft"/"zero"
+    # modes, the returned value is from the Chess perspective and must be
+    # sign-flipped for Xiangqi-to-move examples.
+    penalty_mode = cfg.move_limit_value_mode == "penalty"
+
     for ex in examples:
         if winner is None:
             if move_limit_value is None:
                 ex.z = 0.0
+            elif penalty_mode:
+                ex.z = move_limit_value
             elif ex.side_to_move == Side.CHESS:
                 ex.z = move_limit_value
             else:

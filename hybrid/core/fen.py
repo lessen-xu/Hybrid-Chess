@@ -37,6 +37,7 @@ _PIECE_TO_CHAR = {
     (PieceKind.CHARIOT, Side.XIANGQI): 'c',
     (PieceKind.CANNON, Side.XIANGQI): 'n',
     (PieceKind.SOLDIER, Side.XIANGQI): 's',
+    (PieceKind.XQ_QUEEN, Side.XIANGQI): 'q',
 }
 _CHAR_TO_PIECE = {v: k for k, v in _PIECE_TO_CHAR.items()}
 

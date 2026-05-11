@@ -33,6 +33,7 @@ PYBIND11_MODULE(hybrid_cpp_engine, m) {
         .value("CHARIOT", PieceKind::CHARIOT)
         .value("CANNON", PieceKind::CANNON)
         .value("SOLDIER", PieceKind::SOLDIER)
+        .value("XQ_QUEEN", PieceKind::XQ_QUEEN)
         .value("NONE", PieceKind::NONE)
         .export_values();
     py::class_<Piece>(m, "Piece")
@@ -49,7 +50,8 @@ PYBIND11_MODULE(hybrid_cpp_engine, m) {
                     case PieceKind::GENERAL: return "GENERAL"; case PieceKind::ADVISOR: return "ADVISOR";
                     case PieceKind::ELEPHANT: return "ELEPHANT"; case PieceKind::HORSE: return "HORSE";
                     case PieceKind::CHARIOT: return "CHARIOT"; case PieceKind::CANNON: return "CANNON";
-                    case PieceKind::SOLDIER: return "SOLDIER"; default: return "?";
+                    case PieceKind::SOLDIER: return "SOLDIER"; case PieceKind::XQ_QUEEN: return "XQ_QUEEN";
+                    default: return "?";
                 }
             };
             auto ss = p.side == Side::CHESS ? "CHESS" : "XIANGQI";

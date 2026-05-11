@@ -89,7 +89,7 @@ def _piece_moves(board: Board, x: int, y: int, p: Piece) -> List[Move]:
         return _slide_moves(board, x, y, s, ORTH_DIRS)
     if k == PieceKind.BISHOP:
         return _slide_moves(board, x, y, s, DIAG_DIRS)
-    if k == PieceKind.QUEEN:
+    if k == PieceKind.QUEEN or k == PieceKind.XQ_QUEEN:
         return _slide_moves(board, x, y, s, ORTH_DIRS + DIAG_DIRS)
     if k == PieceKind.KNIGHT:
         # Check if knight_block is active
@@ -408,7 +408,13 @@ class TerminalStatus:
 
 
 def board_hash(board: Board, side_to_move: Side) -> str:
-    """Stable hash of the position for threefold repetition detection."""
+    """Stable hash of the position for threefold repetition detection.
+
+    Uses the full piece-kind name (not just first letter) so that pieces with
+    the same first letter — KING vs KNIGHT, CHARIOT vs CANNON — and the new
+    XQ_QUEEN kind get distinct tokens. The Python and C++ implementations
+    must produce byte-identical strings; see cpp/src/board.cpp ::board_hash.
+    """
     rows = []
     for y in range(BOARD_H):
         for x in range(BOARD_W):
@@ -416,7 +422,7 @@ def board_hash(board: Board, side_to_move: Side) -> str:
             if p is None:
                 rows.append(".")
             else:
-                rows.append(f"{p.side.name[0]}{p.kind.name[0]}")
+                rows.append(f"{p.side.name[0]}{p.kind.name}")
     rows.append(f"T{side_to_move.name[0]}")
     s = "|".join(rows).encode("utf-8")
     return hashlib.sha1(s).hexdigest()
@@ -430,11 +436,16 @@ class GameInfo:
 
 
 def terminal_info(board: Board, side_to_move: Side, repetition_table: Dict[str, int], ply: int, max_plies: int) -> GameInfo:
-    """Determine if the game is over. Check order:
-    1) Royal captured => loss
-    2) Max plies => draw
-    3) Threefold repetition => draw
-    4) No legal moves => checkmate (loss) or stalemate (draw)
+    """Determine if the game is over.
+
+    Check order (must stay in lockstep with cpp/src/rules.cpp::terminal_info):
+      1) Royal captured        => decisive loss
+      2) No legal moves        => checkmate (loss) or stalemate-loss (Xiangqi convention)
+      3) Max plies reached     => draw (compute / rule truncation)
+      4) Threefold repetition  => draw
+
+    Rationale: checkmate / stalemate are direct game-state facts; max-ply and
+    repetition are draw adjudications and are checked afterwards.
     """
     # 1) Royal existence
     chess_royal = _find_royal(board, Side.CHESS)
@@ -444,27 +455,23 @@ def terminal_info(board: Board, side_to_move: Side, repetition_table: Dict[str, 
     if xiangqi_royal is None:
         return GameInfo(TerminalStatus.CHESS_WIN, winner=Side.CHESS, reason="Xiangqi general captured")
 
-    # 2) Move limit
+    # 2) No legal moves => decisive (checkmate or stalemate-loss).
+    legal = generate_legal_moves(board, side_to_move)
+    if len(legal) == 0:
+        winner = side_to_move.opponent()
+        status = TerminalStatus.CHESS_WIN if winner == Side.CHESS else TerminalStatus.XIANGQI_WIN
+        if is_in_check(board, side_to_move):
+            return GameInfo(status, winner=winner, reason="Checkmate")
+        # Stalemate = loss for the side with no moves (Xiangqi convention)
+        return GameInfo(status, winner=winner, reason="Stalemate (loss for stalemated side)")
+
+    # 3) Move limit
     if ply >= max_plies:
         return GameInfo(TerminalStatus.DRAW, winner=None, reason="Max plies reached")
 
-    # 3) Threefold repetition
+    # 4) Threefold repetition
     key = board_hash(board, side_to_move)
     if repetition_table.get(key, 0) >= 3:
         return GameInfo(TerminalStatus.DRAW, winner=None, reason="Threefold repetition")
 
-    # 4) Legal moves
-    legal = generate_legal_moves(board, side_to_move)
-    if len(legal) > 0:
-        return GameInfo(TerminalStatus.ONGOING, winner=None, reason="")
-
-    # No legal moves
-    if is_in_check(board, side_to_move):
-        winner = side_to_move.opponent()
-        status = TerminalStatus.CHESS_WIN if winner == Side.CHESS else TerminalStatus.XIANGQI_WIN
-        return GameInfo(status, winner=winner, reason="Checkmate")
-    else:
-        # Stalemate = loss for the side with no moves (Xiangqi convention)
-        winner = side_to_move.opponent()
-        status = TerminalStatus.CHESS_WIN if winner == Side.CHESS else TerminalStatus.XIANGQI_WIN
-        return GameInfo(status, winner=winner, reason="Stalemate (loss for stalemated side)")
+    return GameInfo(TerminalStatus.ONGOING, winner=None, reason="")

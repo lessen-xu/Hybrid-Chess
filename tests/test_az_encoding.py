@@ -17,14 +17,16 @@ from hybrid.rl.az_encoding import (
     encode_state,
     move_to_plane,
     extract_policy_logits,
+    NUM_PIECE_CHANNELS,
     NUM_STATE_CHANNELS,
+    SIDE_TO_MOVE_CHANNEL,
     TOTAL_POLICY_PLANES,
 )
 from hybrid.core.config import BOARD_H, BOARD_W
 
 
 def test_encode_state_shape():
-    """encode_state output shape should be (14, 10, 9)."""
+    """encode_state output shape should be (NUM_STATE_CHANNELS, 10, 9)."""
     env = HybridChessEnv()
     state = env.reset()
     tensor = encode_state(state)
@@ -33,16 +35,16 @@ def test_encode_state_shape():
 
 
 def test_encode_state_nonzero_count():
-    """Piece channels (0-12) nonzero count should equal total pieces on board.
+    """Piece channels (0..NUM_PIECE_CHANNELS-1) nonzero count should equal total pieces on board.
 
-    Channel 13 is the side-to-move indicator and is excluded from piece counting.
+    The side-to-move channel is excluded from piece counting.
     """
     board = initial_board()
     state = GameState(board=board, side_to_move=Side.CHESS)
     tensor = encode_state(state)
 
     piece_count = sum(1 for _ in board.iter_pieces())
-    nonzero = (tensor[:13] != 0).sum().item()
+    nonzero = (tensor[:NUM_PIECE_CHANNELS] != 0).sum().item()
 
     assert nonzero == piece_count, \
         f"Expected {piece_count} nonzero positions, got {nonzero}"
@@ -54,12 +56,12 @@ def test_encode_state_side_to_move_channel():
 
     state_chess = GameState(board=board, side_to_move=Side.CHESS)
     t_chess = encode_state(state_chess)
-    assert t_chess[13].sum().item() == BOARD_H * BOARD_W, \
+    assert t_chess[SIDE_TO_MOVE_CHANNEL].sum().item() == BOARD_H * BOARD_W, \
         "Side-to-move channel should be all 1s when Chess moves"
 
     state_xq = GameState(board=board, side_to_move=Side.XIANGQI)
     t_xq = encode_state(state_xq)
-    assert t_xq[13].sum().item() == 0, \
+    assert t_xq[SIDE_TO_MOVE_CHANNEL].sum().item() == 0, \
         "Side-to-move channel should be all 0s when Xiangqi moves"
 
 
@@ -153,7 +155,7 @@ def test_encode_batch_gpu_vs_cpu_legacy():
 
     # CPU legacy: encode each state individually, stack
     cpu_tensors = [encode_state_cpu_legacy(s) for s in states]
-    cpu_batch = torch.stack(cpu_tensors)  # (100, 14, 10, 9)
+    cpu_batch = torch.stack(cpu_tensors)  # (100, NUM_STATE_CHANNELS, 10, 9)
 
     # GPU batch: convert to IDs and encode
     ids_list = [board_to_piece_ids(s.board) for s in states]
@@ -195,14 +197,14 @@ def test_board_to_piece_ids_consistency():
 def test_communication_size_reduction():
     """🚩 Checkpoint 2: Queue payload with shared memory must be minimal.
 
-    Old: InferenceRequest with state_u8 (14, 10, 9) uint8 = 1260 bytes payload
+    Old: InferenceRequest with state_u8 (NUM_STATE_CHANNELS, 10, 9) uint8 ≈ 1.3 KB payload
     SHM: Queue only carries (worker_id, K) tuple ≈ 10-20 bytes
     """
     # SHM signal is just a tuple of two ints
     signal = (0, 8)  # (worker_id, leaf_batch_size)
     signal_size = len(pickle.dumps(signal))
 
-    old_payload_bytes = 14 * 10 * 9  # 1260 bytes for old uint8 tensor
+    old_payload_bytes = NUM_STATE_CHANNELS * 10 * 9  # uint8 tensor size
     print(f"\nQueue payload: old={old_payload_bytes}B, shm_signal={signal_size}B")
     print(f"Reduction ratio: {old_payload_bytes / signal_size:.0f}×")
 
@@ -269,7 +271,7 @@ def test_encode_batch_gpu_inplace():
     alloc_result = encode_batch_gpu(piece_ids, sides, dev)
 
     # In-place mode with pre-allocated buffer
-    out_buf = torch.zeros(32, 14, 10, 9, dtype=torch.float32, device=dev)
+    out_buf = torch.zeros(32, NUM_STATE_CHANNELS, 10, 9, dtype=torch.float32, device=dev)
     inplace_result = encode_batch_gpu(piece_ids, sides, dev, out=out_buf)
 
     assert inplace_result is out_buf, "In-place should return the same buffer"
@@ -290,7 +292,7 @@ def test_encode_batch_gpu_cache_pollution():
     B_max = 32
 
     # Pre-allocate shared buffer (like the server does)
-    shared_buf = torch.zeros(B_max, 14, 10, 9, dtype=torch.float32, device=dev)
+    shared_buf = torch.zeros(B_max, NUM_STATE_CHANNELS, 10, 9, dtype=torch.float32, device=dev)
 
     # Process large batch A into shared buffer
     ids_a = torch.from_numpy(np.stack([board_to_piece_ids(s.board) for s in full_states]))

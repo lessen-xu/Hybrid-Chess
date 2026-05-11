@@ -614,7 +614,9 @@ class TestTerminal:
         legal = generate_legal_moves(board, Side.CHESS)
         assert len(legal) == 0
         info = terminal_info(board, Side.CHESS, {}, 0, MAX_PLIES)
-        assert info.status == "draw"
+        # Hybrid Chess uses the Xiangqi convention: stalemate = loss for the
+        # stalemated side (here Chess), so Xiangqi wins.
+        assert info.status == "xiangqi_win"
         assert "Stalemate" in info.reason
 
     def test_threefold_repetition(self):

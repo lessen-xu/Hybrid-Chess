@@ -1,9 +1,11 @@
 """AlphaZero state and action encoding.
 
-State encoding (14 channels):
-  - Channels 0-12: one binary plane per PieceKind (piece presence at (y,x)).
-    PieceKind implicitly encodes side (Chess kinds != Xiangqi kinds).
-  - Channel 13: side-to-move (all 1s = Chess, all 0s = Xiangqi).
+State encoding (15 channels):
+  - Channels 0-13: one binary plane per PieceKind (piece presence at (y,x)).
+    PieceKind implicitly encodes side. XQ_QUEEN (xq_queen variant) gets its own
+    channel so a Xiangqi-side queen-like piece is unambiguously distinguished
+    from a Chess Queen at the same square.
+  - Channel 14: side-to-move (all 1s = Chess, all 0s = Xiangqi).
 
 Action encoding (92 move-planes):
   - Planes 0-71: sliding moves (8 directions × 9 distances).
@@ -36,15 +38,16 @@ PIECE_CHANNELS: Dict[PieceKind, int] = {
     PieceKind.CHARIOT:  10,
     PieceKind.CANNON:   11,
     PieceKind.SOLDIER:  12,
+    PieceKind.XQ_QUEEN: 13,
 }
 
-NUM_PIECE_CHANNELS = 13
-SIDE_TO_MOVE_CHANNEL = 13
-NUM_STATE_CHANNELS = 14
+NUM_PIECE_CHANNELS = 14
+SIDE_TO_MOVE_CHANNEL = 14
+NUM_STATE_CHANNELS = 15
 
 
 def encode_state_cpu_legacy(state: GameState) -> torch.Tensor:
-    """Encode GameState as (C, H, W) = (14, 10, 9) float32 tensor.
+    """Encode GameState as (C, H, W) = (NUM_STATE_CHANNELS, 10, 9) float32 tensor.
 
     Original CPU implementation kept as reference/baseline.
     """
@@ -61,7 +64,7 @@ def encode_state_cpu_legacy(state: GameState) -> torch.Tensor:
 
 
 def encode_state(state: GameState) -> torch.Tensor:
-    """Encode GameState as (C, H, W) = (14, 10, 9) float32 tensor.
+    """Encode GameState as (C, H, W) = (NUM_STATE_CHANNELS, 10, 9) float32 tensor.
 
     Thin wrapper over encode_state_cpu_legacy for backward compatibility.
     """
@@ -72,7 +75,7 @@ def board_to_piece_ids(board) -> np.ndarray:
     """Convert a Board to a compact (10, 9) int8 grid of piece channel IDs.
 
     Returns:
-        (BOARD_H, BOARD_W) int8 array.  Values 0–12 map to PIECE_CHANNELS;
+        (BOARD_H, BOARD_W) int8 array.  Values 0..NUM_PIECE_CHANNELS-1 map to PIECE_CHANNELS;
         -1 = empty square.
     """
     ids = np.full((BOARD_H, BOARD_W), -1, dtype=np.int8)
@@ -90,15 +93,15 @@ def encode_batch_gpu(
     """GPU batch one-hot encoding of board states.
 
     Args:
-        piece_ids: (B, 10, 9) int8/long — channel IDs 0–12, -1 = empty.
+        piece_ids: (B, 10, 9) int8/long — channel IDs 0..NUM_PIECE_CHANNELS-1, -1 = empty.
         sides:     (B,) int8/long — 0 = Xiangqi's turn, 1 = Chess's turn.
         device:    target device (cuda / cpu).
-        out:       optional pre-allocated (B, 14, 10, 9) float32 tensor.
+        out:       optional pre-allocated (B, NUM_STATE_CHANNELS, 10, 9) float32 tensor.
                    When provided, writes in-place (zero-allocation hot path).
                    When None, allocates a fresh tensor.
 
     Returns:
-        (B, 14, 10, 9) float32 tensor equivalent to stacking
+        (B, NUM_STATE_CHANNELS, 10, 9) float32 tensor equivalent to stacking
         encode_state_cpu_legacy for each board.
     """
     B, H, W = piece_ids.shape

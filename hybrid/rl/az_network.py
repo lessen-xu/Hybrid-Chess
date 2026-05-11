@@ -1,7 +1,7 @@
 """AlphaZero-Mini policy/value network (dual-head ResNet).
 
 Architecture:
-  - Backbone: Conv3x3 (14→64 ch) + 3 residual blocks (64 ch each).
+  - Backbone: Conv3x3 (NUM_STATE_CHANNELS→64 ch) + 3 residual blocks (64 ch each).
   - Policy head: 1x1 conv → (B, 92, 10, 9) raw logits.
   - Value head: 1x1 conv → BN → ReLU → flatten(90) → FC(64) → ReLU → FC(1) → tanh.
 
@@ -69,7 +69,7 @@ class ResidualBlock(nn.Module):
 class PolicyValueNet(BaseModel):
     """Dual-head network: shared backbone → policy logits + value scalar.
 
-    Input:  (B, 14, 10, 9)
+    Input:  (B, NUM_STATE_CHANNELS, 10, 9)
     Output: policy_logits (B, 92, 10, 9), value (B, 1) in [-1, 1].
     """
 

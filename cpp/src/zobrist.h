@@ -40,7 +40,7 @@ namespace std {
 }
 // PieceKind → index mapping (explicit, future-proof)
 
-static constexpr int ZOBRIST_NUM_KINDS = 13;  // KING..SOLDIER (excl. NONE)
+static constexpr int ZOBRIST_NUM_KINDS = 14;  // KING..SOLDIER + XQ_QUEEN (excl. NONE)
 
 inline int piece_kind_index(PieceKind k) {
     switch (k) {
@@ -57,6 +57,7 @@ inline int piece_kind_index(PieceKind k) {
         case PieceKind::CHARIOT:  return 10;
         case PieceKind::CANNON:   return 11;
         case PieceKind::SOLDIER:  return 12;
+        case PieceKind::XQ_QUEEN: return 13;
         default:                  return -1;  // NONE — should never happen
     }
 }

@@ -101,23 +101,26 @@ char side_char(Side s) {
     return s == Side::CHESS ? 'C' : 'X';
 }
 
-// PieceKind name first char (matching Python's PieceKind.name[0])
-char kind_char(PieceKind k) {
+// PieceKind full name (matching Python's PieceKind.name).
+// Use full names so that pieces sharing a first letter — KING vs KNIGHT,
+// CHARIOT vs CANNON — get unique tokens, eliminating false repetition collisions.
+const char* kind_token(PieceKind k) {
     switch (k) {
-        case PieceKind::KING:     return 'K';
-        case PieceKind::QUEEN:    return 'Q';
-        case PieceKind::ROOK:     return 'R';
-        case PieceKind::BISHOP:   return 'B';
-        case PieceKind::KNIGHT:   return 'K';  // KNIGHT.name[0] = 'K'
-        case PieceKind::PAWN:     return 'P';
-        case PieceKind::GENERAL:  return 'G';
-        case PieceKind::ADVISOR:  return 'A';
-        case PieceKind::ELEPHANT: return 'E';
-        case PieceKind::HORSE:    return 'H';
-        case PieceKind::CHARIOT:  return 'C';
-        case PieceKind::CANNON:   return 'C';  // CANNON.name[0] = 'C'
-        case PieceKind::SOLDIER:  return 'S';
-        default:                  return '?';
+        case PieceKind::KING:     return "KING";
+        case PieceKind::QUEEN:    return "QUEEN";
+        case PieceKind::ROOK:     return "ROOK";
+        case PieceKind::BISHOP:   return "BISHOP";
+        case PieceKind::KNIGHT:   return "KNIGHT";
+        case PieceKind::PAWN:     return "PAWN";
+        case PieceKind::GENERAL:  return "GENERAL";
+        case PieceKind::ADVISOR:  return "ADVISOR";
+        case PieceKind::ELEPHANT: return "ELEPHANT";
+        case PieceKind::HORSE:    return "HORSE";
+        case PieceKind::CHARIOT:  return "CHARIOT";
+        case PieceKind::CANNON:   return "CANNON";
+        case PieceKind::SOLDIER:  return "SOLDIER";
+        case PieceKind::XQ_QUEEN: return "XQ_QUEEN";
+        default:                  return "?";
     }
 }
 
@@ -227,7 +230,7 @@ std::string Board::board_hash(Side side_to_move) const {
                 joined += '.';
             } else {
                 joined += side_char(p->side);
-                joined += kind_char(p->kind);
+                joined += kind_token(p->kind);
             }
         }
     }
