@@ -1,4 +1,4 @@
-# Hybrid Chess — Experiment Results
+# Hybrid Chess: Experiment Results
 
 > Last updated: 2026-05-12 (fixed_v1 retrain)
 
@@ -8,7 +8,7 @@
 
 1. [Project Structure](#project-structure)
 2. [Overview](#overview)
-3. [RQ4 — Early Exploration](#rq4--early-exploration)
+3. [RQ4: Early Exploration](#rq4-early-exploration)
 4. [AB D2 Rule Reform Scan](#ab-d2-rule-reform-scan)
 5. [Rule Reform Implementation](#rule-reform-implementation)
 6. [AlphaZero Nine-Variant Training](#alphazero-nine-variant-training)
@@ -73,7 +73,7 @@ hybrid chess/
 
 ---
 
-## RQ4 — Early Exploration
+## RQ4: Early Exploration
 
 Tested piece-reduction variants (no_queen, no_bishop, extra_soldier, etc.) using AB D2:
 - Default rules: mat_diff ≈ +19 (Chess dominates)
@@ -122,7 +122,7 @@ Ranked by `|avg_mat_diff|` (closest to 0 = best). `mtb*` = material tiebreak amo
 | 22 | no_promo+knight_blk | +17.0 | 0 | 0 | 40 | 40 | 0 | 0 | 150 |
 | 23 | nq+ec+ALL_RULES | +23.0 | 0 | 0 | 40 | 40 | 0 | 0 | 149 |
 
-**Conclusion**: `palace + knight_block` (and the all-rules combination) achieves perfect material balance (matdiff = 0.0) under shallow AB search — the optimal structural intervention identified at the screening stage. Default rules show a strong Chess material advantage (matdiff ≈ +11). Knight-block alone is strictly worse than knight-block + palace, because palace by itself does nothing decisive at depth 2.
+**Conclusion**: `palace + knight_block` (and the all-rules combination) achieves perfect material balance (matdiff = 0.0) under shallow AB search. This is the optimal structural intervention identified at the screening stage. Default rules show a strong Chess material advantage (matdiff ≈ +11). Knight-block alone is strictly worse than knight-block + palace, because palace by itself does nothing decisive at depth 2.
 
 ---
 
@@ -193,7 +193,7 @@ Among interventions that keep a meaningful decisive rate (draw % below ~70%), **
 | **No Chess Q / XQ no Q** | Q only 0.6× (98% draw) | noQ+PK 0.3× (95% draw) |
 
 > A single-axis intervention is not enough. Adding `xq_queen` alone (X only) leaves a residual ~3× Chess advantage; adding `PK` alone leaves ~3.3×. **Combining `PK` and `xq_queen` is what moves the ratio into the 1.x band while keeping the draw rate comparable to Default.**
-> Removing the Chess Queen pushes the ratio below 1 but at the cost of >95% draws — symptomatic of a degenerate, decision-poor game, not of strategic balance.
+> Removing the Chess Queen pushes the ratio below 1 but at the cost of >95% draws, which is symptomatic of a degenerate, decision-poor game rather than strategic balance.
 
 ### xq_queen Stability (PK+xqQueen per-10-iter trend)
 
@@ -217,10 +217,10 @@ AZ agents trained under different rule variants compete against each other under
 - **Play rules**: Default (standard Hybrid Chess, no reforms)
 - **Games**: 36 pairs × 100 games per pair (50 games per color assignment) = **3,600 games**
 - **Search**: 50 sims MCTS, C++ engine, 4 parallel workers
-- **Action selection**: temperature-sampled visit counts (`temperature=0.5`) so games with the same (pair, color) but different seeds genuinely diverge — each of the 3,600 games is an independent sample.
+- **Action selection**: temperature-sampled visit counts (`temperature=0.5`) so games with the same (pair, color) but different seeds genuinely diverge. Each of the 3,600 games is an independent sample.
 - **Seeds**: deterministic `hashlib.sha256` per `(name_a, name_b, half, gi)` (reproducible across processes and sessions).
 - **Duration**: ≈ 264 min
-- **Output**: `runs/fixed_v1/cross_variant_tournament/` — `game_records.json`, `payoff_matrix.csv`, `wdl_matrix.csv`, `pairwise_ci.csv`, `summary.json`.
+- **Output**: `runs/fixed_v1/cross_variant_tournament/` contains `game_records.json`, `payoff_matrix.csv`, `wdl_matrix.csv`, `pairwise_ci.csv`, `summary.json`.
 
 ### Payoff Matrix
 
@@ -250,35 +250,45 @@ AZ agents trained under different rule variants compete against each other under
 | 8 | noQ_ALL | 0.487 | All Restrictions |
 | 9 | noQ_PK | 0.449 | noQ + PK |
 
-> All 9 agents fall in a tight 0.449–0.531 band — under Default rules, **no agent strictly dominates**.
+> All 9 agents fall in a tight 0.449–0.531 band. Under Default rules, **no agent strictly dominates**.
 
 ### Key Findings
 
 #### 1. In-variant balance ≠ out-of-variant transfer
 
-The variant with the best in-training balance (PK+xqQueen, in-variant C:X = 1.2×) is **not** the strongest agent under Default rules (rank 7). Conversely, agents trained under restrictive Chess variants (Q_only, noQ_noPromo) — which produce degenerate, draw-heavy self-play — transfer **best** to Default rules, presumably because those constrained training conditions force the network to learn stronger positional play that compensates for the missing Chess Queen at evaluation time.
+The variant with the best in-training balance (PK+xqQueen, in-variant C:X = 1.2×) is **not** the strongest agent under Default rules (rank 7). Conversely, agents trained under restrictive Chess variants (Q_only, noQ_noPromo), which produce degenerate, draw-heavy self-play, transfer **best** to Default rules. A plausible explanation is that constrained training conditions force the network to learn stronger positional play that compensates for the missing Chess Queen at evaluation time.
 
-#### 2. Strict non-transitive cycle
+#### 2. Apparent 3-cycle at n=100, refuted at n=500
 
-The tournament exhibits a strict rock-paper-scissors cycle among `PK`, `X_only`, and `PK_xqQueen`:
+The 100-game tournament shows three pairings whose scores nominally form a closed rock-paper-scissors cycle:
 
-| Edge | Score | Direction |
-|------|-------|-----------|
-| PK vs X_only | 0.575 | PK > X_only |
-| X_only vs PK_xqQueen | 0.520 | X_only > PK_xqQueen |
-| PK_xqQueen vs PK | 0.515 | PK_xqQueen > PK |
+| Edge | Score (n=100) | 95% CI (n=100) |
+|------|---------------|----------------|
+| PK vs X_only | 0.575 | [0.477, 0.667] |
+| X_only vs PK_xqQueen | 0.520 | [0.423, 0.615] |
+| PK_xqQueen vs PK | 0.515 | [0.418, 0.611] |
 
-All three pairwise scores exceed 0.50, forming a closed 3-cycle. This supports the RQ3 hypothesis that asymmetric rule design induces a multi-niche strategic landscape rather than a single linear strength ranking.
+To check whether this cycle was a real property of the rule space or a 100-game sampling artifact, we replayed the three pairings with 500 games each (same seed, side-swapped, T=0.5):
+
+| Edge | Score (n=500) | 95% CI (n=500) | Direction |
+|------|---------------|----------------|-----------|
+| PK vs X_only | 0.508 | [0.464, 0.552] | kept, but inside CI of 0.5 |
+| X_only vs PK_xqQueen | 0.497 | [0.453, 0.541] | flipped, inside CI of 0.5 |
+| PK_xqQueen vs PK | 0.497 | [0.453, 0.541] | flipped, inside CI of 0.5 |
+
+At 500 games per pair, all three Wilson 95% intervals contain 0.5, and two of the three point estimates fall below 0.5. The headline 3-cycle is a small-sample artifact. Replay output is at `runs/fixed_v1/cycle_3pair_ci/`.
+
+Reproduce with: `python -m scripts.cycle_3pair_ci --games 250 --workers 12`.
 
 #### 3. Game-level diversity
 
-With `temperature=0.5` action selection the tournament produces 19.4% draws and 80.6% decisive games (78.6% checkmate, 1.3% threefold repetition, 18.1% max-plies). The per-(pair, color) bucket shows on average 38 distinct (outcome, ply-count) combinations out of 50 games — confirming that the 100-game pair sample is composed of independent draws from the policy, not deterministic replicas.
+With `temperature=0.5` action selection the tournament produces 19.4% draws and 80.6% decisive games (78.6% checkmate, 1.3% threefold repetition, 18.1% max-plies). The per-(pair, color) bucket shows on average 38 distinct (outcome, ply-count) combinations out of 50 games. This confirms that the 100-game pair sample is composed of independent draws from the policy, not deterministic replicas.
 
 ---
 
 ## Recommended Variant
 
-**`chess_palace + knight_block + xq_queen` (PK+xqQueen)** — the cleanest in-variant balance:
+**`chess_palace + knight_block + xq_queen` (PK+xqQueen)** gives the cleanest in-variant balance:
 - In-variant C:X ≈ **1.2×** (closest to 1:1 among non-degenerate variants)
 - Draw rate ~61% (comparable to Default, much lower than queen-removal variants at 95%+)
 - Combines a structural restriction on Chess (palace + knight leg block) with a tactical Xiangqi resource (queen-like piece), instead of relying on a single-axis intervention.
@@ -319,6 +329,7 @@ python -m scripts.cross_variant_tournament_fixed_v1 \
 - [x] AZ 9-variant training (50 iters × 100 games × 50 sims × 150 ply each)
 - [x] Cross-variant tournament (3,600 games, temperature-sampled, deterministic seeds)
 - [x] Factor analysis (Queen × PK)
-- [x] Non-transitive cycle detection (PK > X_only > PK_xqQueen > PK)
-- [x] All figures regenerated from data (`course_project/plot_figures_fixed_v1.R`)
-- [ ] Final course report rewrite
+- [x] Non-transitive cycle detection (apparent at n=100, refuted at n=500)
+- [x] 500-game cycle replay with Wilson 95% CIs (`scripts/cycle_3pair_ci.py`)
+- [x] All figures regenerated from data (`course_project/plot_figures_fixed_v1.R`, `course_project/plot_cycle_replay.py`)
+- [x] Final course report rewrite

@@ -1,4 +1,4 @@
-# Hybrid Chess — Game Rules
+# Hybrid Chess: Game Rules
 
 **Board:** 9 columns × 10 rows (Xiangqi dimensions).
 Chess starts at the bottom (y=0–1), Xiangqi at the top (y=6–9).

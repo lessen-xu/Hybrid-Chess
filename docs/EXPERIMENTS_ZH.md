@@ -1,4 +1,4 @@
-# Hybrid Chess — 实验结果报告
+# Hybrid Chess：实验结果报告
 
 > 最后更新：2026-05-12（fixed_v1 重训）
 
@@ -8,7 +8,7 @@
 
 1. [项目结构](#项目结构)
 2. [实验概览](#实验概览)
-3. [RQ4 — 早期探索](#rq4--早期探索)
+3. [RQ4：早期探索](#rq4早期探索)
 4. [AB D2 规则改革扫描](#ab-d2-规则改革扫描)
 5. [规则改革工程实现](#规则改革工程实现)
 6. [AlphaZero 九变体训练](#alphazero-九变体训练)
@@ -73,7 +73,7 @@ hybrid chess/
 
 ---
 
-## RQ4 — 早期探索
+## RQ4：早期探索
 
 用 AB D2 试验了棋子削弱（no_queen, no_bishop, extra_soldier 等），发现：
 - 默认规则 mat_diff ≈ +19（Chess 碾压）
@@ -179,7 +179,7 @@ hybrid chess/
 | noQ+ALL | 50 | 1.5 | 4.6 | 93.9 | 0.3× | −11.58 |
 
 只看决定性比赛率合理（和棋率不超过 ~70%）的方案，**PK+xqQueen 是最接近 1:1 平衡的，C:X = 1.2×**。
-去掉 Chess Queen 的变体（Q only、noQ+*）虽然 C:X 比也接近 1，但靠的是把和棋率推到 95% 以上 — 这不是策略平衡，而是和棋退化。
+去掉 Chess Queen 的变体（Q only、noQ+*）虽然 C:X 比也接近 1，但靠的是把和棋率推到 95% 以上。这不是策略平衡，而是和棋退化。
 
 ---
 
@@ -195,7 +195,7 @@ hybrid chess/
 
 > 单一维度的干预不够。只加 `xq_queen`（X only）后 Chess 仍有 ~3× 的优势；只加 `PK` 后仍有 ~3.3×。
 > **必须把 `PK` 和 `xq_queen` 组合起来才能把 ratio 拉到 1.x 区间，且和棋率与 Default 同档。**
-> 去掉 Chess Queen 能把 ratio 压到 1 以下，但代价是 >95% 的和棋率 — 一个决断匮乏的退化博弈，不是策略平衡。
+> 去掉 Chess Queen 能把 ratio 压到 1 以下，但代价是 >95% 的和棋率。这是一个决断匮乏的退化博弈，不是策略平衡。
 
 ### xq_queen 稳定性（PK+xqQueen 每 10 轮趋势）
 
@@ -219,10 +219,10 @@ PK+xqQueen 在 ~20 轮时达到 1.2× 稳态，之后稳定在 1.0–1.5× 区�
 - **对局规则**：Default（标准 Hybrid Chess，无改革）
 - **局数**：36 对 × 每对 100 局（每个颜色分配 50 局）= **3,600 局**
 - **搜索**：50 sims MCTS，C++ 引擎，4 并行 worker
-- **动作选择**：访问数温度采样（`temperature=0.5`），保证同一对 agent + 同一颜色 + 不同种子的对局真正分散 — 3,600 局中每局都是独立样本。
+- **动作选择**：访问数温度采样（`temperature=0.5`），保证同一对 agent + 同一颜色 + 不同种子的对局真正分散。3,600 局中每局都是独立样本。
 - **种子**：用 `hashlib.sha256((name_a, name_b, half, gi))` 生成（跨进程/跨 session 完全可复现）。
 - **耗时**：≈ 264 分钟
-- **输出**：`runs/fixed_v1/cross_variant_tournament/` — `game_records.json`、`payoff_matrix.csv`、`wdl_matrix.csv`、`pairwise_ci.csv`、`summary.json`。
+- **输出**：`runs/fixed_v1/cross_variant_tournament/` 包含 `game_records.json`、`payoff_matrix.csv`、`wdl_matrix.csv`、`pairwise_ci.csv`、`summary.json`。
 
 ### Payoff 矩阵
 
@@ -252,36 +252,46 @@ PK+xqQueen 在 ~20 轮时达到 1.2× 稳态，之后稳定在 1.0–1.5× 区�
 | 8 | noQ_ALL | 0.487 | 所有限制 |
 | 9 | noQ_PK | 0.449 | noQ + PK |
 
-> 9 个 agent 的平均分都落在 0.449–0.531 这窄窄的 0.08 区间 — 在 default 规则下**没有任何 agent 显著占优**。
+> 9 个 agent 的平均分都落在 0.449–0.531 这窄窄的 0.08 区间。在 default 规则下**没有任何 agent 显著占优**。
 
 ### 关键发现
 
 #### 1. 训练时平衡 ≠ default 下迁移强
 
 训练时最平衡的变体（PK+xqQueen，in-variant C:X = 1.2×）在 default 规则下的迁移性**不是**最强的（排第 7）。反过来，
-在限制最严的 Chess 变体（Q_only、noQ_noPromo）— 它们的自对弈高度退化、和棋率很高 — 训练出来的 agent 在 default 下表现**最好**。可能的解释：受限训练条件迫使网络学到更强的位置感，部分弥补了评估时 Chess Queen 的存在带来的不熟悉。
+在限制最严的 Chess 变体（Q_only、noQ_noPromo）下训练出来的 agent，虽然自对弈高度退化、和棋率很高，但它们在 default 下迁移表现**最好**。一种合理的解释是：受限训练条件迫使网络学到更强的位置感，部分弥补了评估时 Chess Queen 的存在带来的不熟悉。
 
-#### 2. 严格的非传递循环
+#### 2. n=100 时的表观 3-cycle，n=500 复测后被推翻
 
-锦标赛在 `PK`、`X_only`、`PK_xqQueen` 之间形成了严格的"石头剪刀布"循环：
+100 局锦标赛在 `PK`、`X_only`、`PK_xqQueen` 之间表面上构成了一个闭合的"石头剪刀布"循环：
 
-| Edge | 分数 | 方向 |
-|------|------|------|
-| PK vs X_only | 0.575 | PK > X_only |
-| X_only vs PK_xqQueen | 0.520 | X_only > PK_xqQueen |
-| PK_xqQueen vs PK | 0.515 | PK_xqQueen > PK |
+| Edge | 分数 (n=100) | 95% CI (n=100) |
+|------|-------------|----------------|
+| PK vs X_only | 0.575 | [0.477, 0.667] |
+| X_only vs PK_xqQueen | 0.520 | [0.423, 0.615] |
+| PK_xqQueen vs PK | 0.515 | [0.418, 0.611] |
 
-三条边都 > 0.50，构成闭合 3-cycle。这支持了 RQ3 的假设：非对称规则设计不会给出单一的线性强度排名，而是产生多极的策略生态。
+为了判断这个 cycle 是规则空间的真实结构还是 100 局采样噪声，我们对这三对各跑了 500 局复测（相同 seed、side-swapped、T=0.5）：
+
+| Edge | 分数 (n=500) | 95% CI (n=500) | 方向 |
+|------|-------------|----------------|------|
+| PK vs X_only | 0.508 | [0.464, 0.552] | 保持方向，但 CI 横跨 0.5 |
+| X_only vs PK_xqQueen | 0.497 | [0.453, 0.541] | 方向翻转，CI 横跨 0.5 |
+| PK_xqQueen vs PK | 0.497 | [0.453, 0.541] | 方向翻转，CI 横跨 0.5 |
+
+500 局下三条 Wilson 95% CI 都包含 0.5，且其中两条点估值跌到 0.5 以下。**原本的 3-cycle 是小样本采样伪结构**。复测输出在 `runs/fixed_v1/cycle_3pair_ci/`。
+
+复现命令：`python -m scripts.cycle_3pair_ci --games 250 --workers 12`。
 
 #### 3. 局级多样性
 
-`temperature=0.5` 的动作采样让锦标赛产生 19.4% 和棋 + 80.6% 决定性比赛（78.6% checkmate、1.3% threefold、18.1% max-plies）。每个 (pair, color) 桶内平均有 38/50 个独立的 (outcome, ply-count) 组合 — 说明 100 局每对的样本确实是策略分布的独立抽样，不是确定性复制。
+`temperature=0.5` 的动作采样让锦标赛产生 19.4% 和棋 + 80.6% 决定性比赛（78.6% checkmate、1.3% threefold、18.1% max-plies）。每个 (pair, color) 桶内平均有 38/50 个独立的 (outcome, ply-count) 组合，说明 100 局每对的样本确实是策略分布的独立抽样，不是确定性复制。
 
 ---
 
 ## 推荐方案
 
-**`chess_palace + knight_block + xq_queen` (PK+xqQueen)** — 最干净的 in-variant 平衡：
+**`chess_palace + knight_block + xq_queen` (PK+xqQueen)** 是最干净的 in-variant 平衡：
 - In-variant C:X ≈ **1.2×**（在非退化的方案里最接近 1:1）
 - 和棋率 ~61%（与 Default 相当，远低于去 Queen 类的 95%+）
 - 把结构性约束（Chess 的宫 + 蹩脚）和战术资源（xiangqi 侧的 queen-like 棋子）组合起来，不依赖单一维度干预。
@@ -322,6 +332,7 @@ python -m scripts.cross_variant_tournament_fixed_v1 \
 - [x] AZ 9 变体训练（每个 50 轮 × 100 局 × 50 sims × 150 ply）
 - [x] 跨变体锦标赛（3600 局，温度采样，确定性种子）
 - [x] 因子分析（Queen × PK）
-- [x] 非传递循环检测（PK > X_only > PK_xqQueen > PK）
-- [x] 全部图表从数据重新生成（`course_project/plot_figures_fixed_v1.R`）
-- [ ] 课程最终报告改写
+- [x] 非传递循环检测（n=100 时出现，n=500 复测后被推翻）
+- [x] 500 局 cycle 复测 + Wilson 95% CI（`scripts/cycle_3pair_ci.py`）
+- [x] 全部图表从数据重新生成（`course_project/plot_figures_fixed_v1.R`、`course_project/plot_cycle_replay.py`）
+- [x] 课程最终报告改写

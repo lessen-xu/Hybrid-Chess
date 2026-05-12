@@ -103,7 +103,7 @@ graph TB
 
 ### Core Engine (`hybrid/core/`)
 
-The game engine is the foundation. It implements the rules and state management for **asymmetric chess** — International Chess (bottom) vs Chinese Chess / Xiangqi (top) on a shared 9×10 board.
+The game engine is the foundation. It implements the rules and state management for **asymmetric chess**: International Chess (bottom) vs Chinese Chess / Xiangqi (top) on a shared 9×10 board.
 
 | Module | Responsibility |
 |--------|---------------|
@@ -111,7 +111,7 @@ The game engine is the foundation. It implements the rules and state management 
 | **board.py** | `Board` class (9×10 grid stored as `grid[y][x]`), `initial_board(variant)` setup |
 | **rules.py** | `generate_legal_moves()`, `apply_move()`, `terminal_info()`, check detection |
 | **config.py** | `VariantConfig` (frozen dataclass), board constants, legacy global flags |
-| **env.py** | `HybridChessEnv` — gym-like API: `reset()`, `step()`, `legal_moves()` |
+| **env.py** | `HybridChessEnv`, gym-like API: `reset()`, `step()`, `legal_moves()` |
 | **fen.py** | `parse_fen()` / `board_to_fen()` for arbitrary position setup |
 | **render.py** | ASCII board renderer (uppercase = Chess, lowercase = Xiangqi) |
 
@@ -160,7 +160,7 @@ flowchart LR
 #### State & Action Encoding
 
 ```
-State Encoding — 15 binary planes (10 × 9 each):
+State Encoding: 15 binary planes (10 × 9 each):
 ┌───────────────────────────────────────┐
 │ Ch 0:  King positions                 │
 │ Ch 1:  Queen positions                │
@@ -179,7 +179,7 @@ State Encoding — 15 binary planes (10 × 9 each):
 │ Ch 14: Side-to-move (1 = Chess)       │
 └───────────────────────────────────────┘
 
-Action Space — 92 planes × 10 × 9 = 8,280 actions:
+Action Space: 92 planes × 10 × 9 = 8,280 actions:
   Planes  0–71: Sliding (8 directions × 9 distances)
   Planes 72–79: Knight/Horse (8 L-shaped deltas)
   Planes 80–91: Promotions (3 dx × 4 piece types)
@@ -245,7 +245,7 @@ graph LR
 | **Memory** | `SharedMemoryPool`, zero-copy, pinned DMA buffers | Eliminate pickling overhead |
 | **MCTS** | Leaf batching with virtual loss | K leaves evaluated in one GPU call |
 | **Precision** | FP16 autocast + TF32 matmul (Ampere+) | ~2× inference throughput |
-| **Encoding** | `encode_batch_gpu()` — scatter-based one-hot on GPU | Zero-allocation hot path |
+| **Encoding** | `encode_batch_gpu()`, scatter-based one-hot on GPU | Zero-allocation hot path |
 | **Parallelism** | `torch.multiprocessing.spawn` | Scales linearly with CPU cores |
 
 ### Agents (`hybrid/agents/`)
@@ -282,9 +282,9 @@ The browser-based UI is served by a zero-dependency HTTP server (`server.py`):
 Standard Gymnasium wrapper registered as `HybridChess-v0`:
 
 ```
-Observation: Box(15, 10, 9)  — binary piece planes + side-to-move
-Action:      Discrete(8280)  — 92 × 10 × 9 flat action space
-Reward:      +1 / 0 / -1    — win / draw / loss from mover's perspective
+Observation: Box(15, 10, 9)   binary piece planes + side-to-move
+Action:      Discrete(8280)   92 × 10 × 9 flat action space
+Reward:      +1 / 0 / -1     win / draw / loss from mover's perspective
 Info:        {"legal_actions": [...], "side_to_move": "chess", "ply": 0}
 ```
 
