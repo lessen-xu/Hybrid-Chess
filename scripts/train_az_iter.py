@@ -125,16 +125,6 @@ def main():
                         help="inference server batch timeout ms (default: 5.0)")
     parser.add_argument("--inference-device", type=str, default="auto",
                         help="inference server device: auto/cuda/cpu (default: auto)")
-    # Endgame curriculum
-    parser.add_argument("--endgame-ratio", type=float, default=0.0,
-                        help="fraction of self-play games starting from endgame positions "
-                             "(0.0=none, 1.0=all, default: 0.0)")
-    # Curriculum annealing
-    parser.add_argument("--curriculum-schedule", type=str, default="none",
-                        choices=["none", "3phase", "3phase_v2"],
-                        help="curriculum annealing: none, 3phase, or 3phase_v2 "
-                             "(v2: endgame anchor 80%%→40%%→15%%, gating always off). "
-                             "Default: none")
     parser.add_argument("--disable-gating", type=int, default=0,
                         help="1=unconditionally accept new model, skip gating "
                              "(default: 0)")
@@ -184,8 +174,6 @@ def main():
         inference_batch_size=args.inference_batch_size,
         inference_timeout_ms=args.inference_timeout_ms,
         inference_device=args.inference_device,
-        endgame_ratio=args.endgame_ratio,
-        curriculum_schedule=args.curriculum_schedule,
         disable_gating=bool(args.disable_gating),
         use_cpp=args.use_cpp,
     )

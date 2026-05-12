@@ -37,7 +37,6 @@ def selfplay_worker(
     request_queue: Optional[mp.Queue] = None,
     pool: object = None,
     track_latency: bool = False,
-    endgame_ratio: float = 0.0,
     use_cpp: bool = False,
 ) -> None:
     """Worker entry point: run num_games self-play games, save to out_npz_path."""
@@ -64,20 +63,8 @@ def selfplay_worker(
 
     all_examples = []
     all_records = []
-    import random as _random
-    endgame_rng = _random.Random(seed + 9999)
     for game_i in range(num_games):
-        initial_state = None
-        if endgame_ratio > 0 and endgame_rng.random() < endgame_ratio:
-            from hybrid.rl.endgame_spawner import generate_endgame_board
-            from hybrid.core.env import GameState
-            eg_board, eg_side = generate_endgame_board(endgame_rng)
-            initial_state = GameState(
-                board=eg_board, side_to_move=eg_side, ply=0, repetition={}
-            )
-        examples, record = self_play_game(
-            env, agent, selfplay_cfg, initial_state=initial_state,
-        )
+        examples, record = self_play_game(env, agent, selfplay_cfg)
         all_examples.extend(examples)
         all_records.append(record)
 
@@ -112,7 +99,6 @@ def generate_selfplay_parallel(
     inference_timeout_ms: float = 5.0,
     inference_device: str = "cuda",
     track_latency: bool = False,
-    endgame_ratio: float = 0.0,
     use_cpp: bool = False,
 ) -> Dict[str, float]:
     """Orchestrate multi-process parallel self-play.
@@ -189,7 +175,6 @@ def generate_selfplay_parallel(
             seed=seed + wid * 10000,
             ablation=ablation,
             track_latency=track_latency and use_inference_server,
-            endgame_ratio=endgame_ratio,
             use_cpp=use_cpp,
         )
         if use_inference_server:

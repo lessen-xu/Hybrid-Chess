@@ -51,9 +51,6 @@ def cmd_train(args):
         eval_games=args.eval_games,
         eval_simulations=args.eval_simulations,
         gating_simulations=args.gating_simulations,
-        # Curriculum / endgame
-        curriculum_schedule=args.curriculum,
-        endgame_ratio=args.endgame_ratio,
         # Training
         buffer_capacity_states=args.buffer_capacity,
         train_epochs=args.train_epochs,
@@ -153,12 +150,6 @@ def build_parser():
                          help="MCTS sims for evaluation (decoupled from self-play)")
     p_train.add_argument("--gating-simulations", type=int, default=20,
                          help="MCTS sims for gating matches")
-    # Curriculum / endgame
-    p_train.add_argument("--curriculum", default="none",
-                         choices=["none", "3phase", "3phase_v2"],
-                         help="Curriculum schedule")
-    p_train.add_argument("--endgame-ratio", type=float, default=0.0,
-                         help="Fraction of self-play starting from endgame")
     # Training
     p_train.add_argument("--buffer-capacity", type=int, default=50_000,
                          help="Replay buffer capacity (states)")

@@ -34,7 +34,6 @@ from hybrid.rl.az_selfplay import self_play_game, SelfPlayConfig, GameRecord
 from hybrid.rl.az_replay import ReplayBuffer
 from hybrid.rl.az_train import train_one_epoch
 from hybrid.rl.az_eval import play_match, make_eval_az_agent, MatchStats, wilson_ci, score_ci
-from hybrid.rl.endgame_spawner import generate_endgame_board
 # Configuration
 
 @dataclass
@@ -91,11 +90,6 @@ class AZIterConfig:
     gating_simulations: int = 20
     gating_use_score: bool = True  # True=score_ci(W,D,L), False=wilson_ci(W,L)
 
-    # Endgame curriculum
-    endgame_ratio: float = 0.0   # fraction of self-play games starting from endgame positions
-
-    # Curriculum annealing
-    curriculum_schedule: str = "none"   # "none" or "3phase"
     disable_gating: bool = False        # unconditionally accept new model (skip gating)
 
     # Environment
@@ -348,7 +342,6 @@ CSV_COLUMNS = [
     "selfplay_move_limit_value_mode", "selfplay_move_limit_value_scale",
     "draw_adjudicate_enabled", "draw_adjudicate_min_ply",
     "draw_adjudicate_patience", "draw_adjudicate_value_abs_thr",
-    "endgame_ratio",
     "selfplay_seconds", "samples_per_sec",
     "sp_games", "sp_decisive", "sp_draw_move_limit",
     "sp_draw_threefold", "sp_draw_stalemate", "sp_draw_adjudicated",
@@ -437,26 +430,6 @@ def _save_game_recordings(recordings: List[dict], outdir: Path,
             json.dump(rec, f, ensure_ascii=False, indent=2)
 # Curriculum annealing
 
-def _get_curriculum_params(
-    iteration: int, schedule: str, cfg: AZIterConfig,
-) -> tuple:
-    """Return (endgame_ratio, max_ply, disable_gating) for this iteration."""
-    if schedule == "3phase":
-        if iteration <= 4:      # Phase 1: Endgame Consolidation
-            return 0.6, 80, True
-        elif iteration <= 11:   # Phase 2: Middlegame Bridge
-            return 0.2, 120, False
-        else:                   # Phase 3: Full Game
-            return 0.0, 150, False
-    if schedule == "3phase_v2":
-        if iteration <= 4:      # Phase 1: Heavy endgame bootstrap
-            return 0.8, 80, True
-        elif iteration <= 11:   # Phase 2: Midgame bridge + endgame anchor
-            return 0.4, 120, True
-        else:                   # Phase 3: Full game + 15% endgame anchor
-            return 0.15, 150, True
-    # No schedule — use static config values
-    return cfg.endgame_ratio, cfg.selfplay_max_ply, cfg.disable_gating
 # Main iteration loop
 
 def run_iterations(cfg: AZIterConfig, outdir: Path) -> None:
@@ -567,24 +540,13 @@ def run_iterations(cfg: AZIterConfig, outdir: Path) -> None:
         print(f"  Iteration {iteration}/{cfg.iterations - 1}")
         print(f"{'='*60}")
 
-        # Per-iteration curriculum overrides
-        iter_endgame_ratio, iter_max_ply, iter_disable_gating = \
-            _get_curriculum_params(iteration, cfg.curriculum_schedule, cfg)
-
-        if cfg.curriculum_schedule != "none":
-            phase = ("Phase 1: Endgame" if iteration <= 4
-                     else "Phase 2: Middlegame" if iteration <= 11
-                     else "Phase 3: Full Game")
-            print(f"  [Curriculum] {phase}: endgame={iter_endgame_ratio}, "
-                  f"max_ply={iter_max_ply}, "
-                  f"gating={'OFF' if iter_disable_gating else 'ON'}")
         # 1. Self-play
 
         selfplay_cfg = SelfPlayConfig(
             temperature=1.0,
             temp_cutoff_ply=cfg.temp_cutoff,
             simulations=cfg.simulations,
-            max_ply=iter_max_ply,
+            max_ply=cfg.selfplay_max_ply,
             move_limit_value_mode=cfg.selfplay_move_limit_value_mode,
             move_limit_value_scale=cfg.selfplay_move_limit_value_scale,
             resign_enabled=cfg.resign_enabled,
@@ -603,7 +565,7 @@ def run_iterations(cfg: AZIterConfig, outdir: Path) -> None:
             # Sequential self-play (single process)
             print(f"\n  [Self-play] {cfg.selfplay_games_per_iter} games, "
                   f"{cfg.simulations} sim/step, "
-                  f"max_ply={iter_max_ply}, "
+                  f"max_ply={cfg.selfplay_max_ply}, "
                   f"resign={'ON' if cfg.resign_enabled else 'OFF'} ...")
 
             model = TorchPolicyValueModel(net, device=str(device))
@@ -613,31 +575,19 @@ def run_iterations(cfg: AZIterConfig, outdir: Path) -> None:
                     simulations=cfg.simulations,
                     dirichlet_alpha=cfg.dirichlet_alpha,
                     dirichlet_eps=cfg.dirichlet_eps,
-                    max_plies=iter_max_ply,
+                    max_plies=cfg.selfplay_max_ply,
                 ),
                 seed=cfg.seed + iteration * 1000,
                 use_cpp=cfg.use_cpp,
             )
 
-            env = HybridChessEnv(max_plies=iter_max_ply, use_cpp=cfg.use_cpp, variant=variant_cfg)
+            env = HybridChessEnv(max_plies=cfg.selfplay_max_ply, use_cpp=cfg.use_cpp, variant=variant_cfg)
             iter_examples = []
             sp_start = time.time()
-            endgame_rng = __import__('random').Random(cfg.seed + iteration * 7777)
 
             for game_i in range(cfg.selfplay_games_per_iter):
-                # Endgame curriculum: with probability endgame_ratio,
-                # start from a generated endgame position
-                initial_state = None
-                if iter_endgame_ratio > 0 and endgame_rng.random() < iter_endgame_ratio:
-                    from hybrid.core.env import GameState
-                    eg_board, eg_side = generate_endgame_board(endgame_rng)
-                    initial_state = GameState(
-                        board=eg_board, side_to_move=eg_side, ply=0, repetition={}
-                    )
-
                 examples, record = self_play_game(
                     env, selfplay_agent, selfplay_cfg,
-                    initial_state=initial_state,
                 )
                 iter_examples.extend(examples)
                 buffer.append(examples)
@@ -666,7 +616,7 @@ def run_iterations(cfg: AZIterConfig, outdir: Path) -> None:
 
             print(f"\n  [Self-play] {cfg.selfplay_games_per_iter} games, "
                   f"{cfg.simulations} sim/step, "
-                  f"max_ply={iter_max_ply}, "
+                  f"max_ply={cfg.selfplay_max_ply}, "
                   f"{cfg.num_workers} workers, "
                   f"server={'ON' if cfg.use_inference_server else 'OFF'}, "
                   f"resign={'ON' if cfg.resign_enabled else 'OFF'} ...")
@@ -695,7 +645,7 @@ def run_iterations(cfg: AZIterConfig, outdir: Path) -> None:
                     simulations=cfg.simulations,
                     dirichlet_alpha=cfg.dirichlet_alpha,
                     dirichlet_eps=cfg.dirichlet_eps,
-                    max_plies=iter_max_ply,
+                    max_plies=cfg.selfplay_max_ply,
                 ),
                 model_ckpt_path=tmp_ckpt_path,
                 out_dir=sp_out_dir,
@@ -705,7 +655,6 @@ def run_iterations(cfg: AZIterConfig, outdir: Path) -> None:
                 inference_batch_size=cfg.inference_batch_size,
                 inference_timeout_ms=cfg.inference_timeout_ms,
                 inference_device=inf_device,
-                endgame_ratio=iter_endgame_ratio,
                 use_cpp=cfg.use_cpp,
             )
 
@@ -810,7 +759,7 @@ def run_iterations(cfg: AZIterConfig, outdir: Path) -> None:
 
         candidate_ckpt_path = str(ckpt_path)
 
-        if best_model_path.exists() and not iter_disable_gating:
+        if best_model_path.exists() and not cfg.disable_gating:
             gating_sims = cfg.gating_simulations
             eval_workers = max(1, cfg.num_workers)
             ci_mode = "score" if cfg.gating_use_score else "wilson"
@@ -881,10 +830,10 @@ def run_iterations(cfg: AZIterConfig, outdir: Path) -> None:
             print(f"    Decision: {decision}  "
                   f"(W={gating_w} D={gating_d} L={gating_l}, "
                   f"{gating_games_used} games used)")
-        elif iter_disable_gating:
+        elif cfg.disable_gating:
             gate_accepted = True
             gating_games_used = 0
-            print(f"\n  [Gating] DISABLED (curriculum phase) → auto-accept")
+            print(f"\n  [Gating] DISABLED, auto-accept")
         else:
             gate_accepted = True
             gating_games_used = 0
@@ -981,14 +930,13 @@ def run_iterations(cfg: AZIterConfig, outdir: Path) -> None:
             "gate": "Y" if gate_accepted else "N",
             "lr": cfg.lr,
             "simulations": cfg.simulations,
-            "selfplay_max_ply": iter_max_ply,
+            "selfplay_max_ply": cfg.selfplay_max_ply,
             "selfplay_move_limit_value_mode": cfg.selfplay_move_limit_value_mode,
             "selfplay_move_limit_value_scale": cfg.selfplay_move_limit_value_scale,
             "draw_adjudicate_enabled": int(cfg.draw_adjudicate_enabled),
             "draw_adjudicate_min_ply": cfg.draw_adjudicate_min_ply,
             "draw_adjudicate_patience": cfg.draw_adjudicate_patience,
             "draw_adjudicate_value_abs_thr": cfg.draw_adjudicate_value_abs_thr,
-            "endgame_ratio": iter_endgame_ratio,
             "selfplay_seconds": round(selfplay_seconds, 2),
             "samples_per_sec": round(samples_per_sec, 1),
         }
