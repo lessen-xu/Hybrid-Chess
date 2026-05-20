@@ -1,23 +1,20 @@
-"""Cross-variant round-robin tournament for the fixed_v1 retrained models.
+"""Cross-variant round-robin tournament across the 9 trained AlphaZero
+variants under default Hybrid Chess rules.
 
-Reads best_model.pt from each runs/fixed_v1/rq4_az_*/ directory, plays a
-round-robin under default rules, and writes the payoff matrix + W/D/L
-counts + Wilson 95% confidence intervals to runs/fixed_v1/cross_variant_tournament/.
+Reads best_model.pt from each runs/rq4_az_*/ directory, plays a
+round-robin, and writes the payoff matrix + W/D/L counts + Wilson 95%
+confidence intervals to runs/cross_variant_tournament/.
 
-Differences vs the original scripts/cross_variant_tournament.py:
-  * Models loaded from runs/fixed_v1/, not the legacy _v2 directories.
   * Per-game seed uses hashlib.sha256 instead of Python's randomized
-    hash(), so reruns are byte-identical across processes/sessions
-    (audit issue B3).
-  * Adds wdl_matrix.csv (raw W/D/L counts) and pairwise_ci.csv (Wilson
-    score 95% CI per ordered pair) so pairwise differences can be read
-    with statistical uncertainty.
-  * Default --games is 50 (= 100 games/pair = 3600 total games), up
-    from the original 25 (= 50/pair = 1800), for tighter CIs.
+    hash(), so reruns are byte-identical across processes/sessions.
+  * Outputs: wdl_matrix.csv (raw W/D/L counts) and pairwise_ci.csv
+    (Wilson score 95% CI per ordered pair).
+  * Default --games is 50 (= 100 games/pair = 3600 total games);
+    pair with --seed-offset to extend an earlier run.
 
 Usage::
 
-    python -m scripts.cross_variant_tournament_fixed_v1 \\
+    python -m scripts.cross_variant_tournament \\
         --games 50 --sims 50 --workers 6 --seed 42
 """
 
@@ -40,17 +37,19 @@ if sys.stdout and hasattr(sys.stdout, "reconfigure"):
     except Exception: pass
 
 
-# ── Agent pool (fixed_v1 retrain) ───────────────────────────
+# ── Agent pool ──────────────────────────────────────────────
+# noQ / xqQueen are the bare single-rule variants (no Queen, replace-with-
+# xqQueen). PK is palace+knight-block. _* suffixes are combos.
 VARIANTS = {
-    "Default":     "runs/fixed_v1/rq4_az_default/best_model.pt",
-    "Q_only":      "runs/fixed_v1/rq4_az_noq_only/best_model.pt",
-    "X_only":      "runs/fixed_v1/rq4_az_xqqueen_only/best_model.pt",
-    "PK":          "runs/fixed_v1/rq4_az_palace_knight/best_model.pt",
-    "PK_noPromo":  "runs/fixed_v1/rq4_az_pk_nopromo/best_model.pt",
-    "PK_xqQueen":  "runs/fixed_v1/rq4_az_pk_xqqueen/best_model.pt",
-    "noQ_noPromo": "runs/fixed_v1/rq4_az_nq_nopromo/best_model.pt",
-    "noQ_PK":      "runs/fixed_v1/rq4_az_nq_pk/best_model.pt",
-    "noQ_ALL":     "runs/fixed_v1/rq4_az_nq_allrules/best_model.pt",
+    "Default":     "runs/rq4_az_default/best_model.pt",
+    "noQ":         "runs/rq4_az_noq_only/best_model.pt",
+    "xqQueen":     "runs/rq4_az_xqqueen_only/best_model.pt",
+    "PK":          "runs/rq4_az_palace_knight/best_model.pt",
+    "PK_noPromo":  "runs/rq4_az_pk_nopromo/best_model.pt",
+    "PK_xqQueen":  "runs/rq4_az_pk_xqqueen/best_model.pt",
+    "noQ_noPromo": "runs/rq4_az_nq_nopromo/best_model.pt",
+    "noQ_PK":      "runs/rq4_az_nq_pk/best_model.pt",
+    "noQ_ALL":     "runs/rq4_az_nq_allrules/best_model.pt",
 }
 
 
@@ -73,6 +72,23 @@ def wilson_ci(wins: float, n: int, z: float = 1.96) -> tuple[float, float]:
     return (max(0.0, centre - half), min(1.0, centre + half))
 
 
+_MODEL_CACHE: dict = {}  # worker-local: maps checkpoint path → TorchPolicyValueModel
+
+
+def _get_or_load_model(path: str, device: str):
+    """Worker-local cache. With ProcessPoolExecutor reusing workers, each
+    worker loads each of the 9 checkpoints from disk only once, instead of
+    rebuilding the net for every game (saves 7200 → ~9 torch.load calls
+    per worker across the full tournament).
+    """
+    from hybrid.rl.az_runner import build_net_from_checkpoint
+    from hybrid.agents.alphazero_stub import TorchPolicyValueModel
+    if path not in _MODEL_CACHE:
+        net = build_net_from_checkpoint(path, device=device)
+        _MODEL_CACHE[path] = TorchPolicyValueModel(net, device=device)
+    return _MODEL_CACHE[path]
+
+
 def _play_one(args: tuple) -> dict:
     """Worker: play one game between two AZ models under default rules.
 
@@ -92,16 +108,14 @@ def _play_one(args: tuple) -> dict:
     from hybrid.core.env import HybridChessEnv
     from hybrid.core.types import Side
     from hybrid.core.config import DEFAULT_VARIANT
-    from hybrid.rl.az_runner import build_net_from_checkpoint
     from hybrid.agents.alphazero_stub import (
-        AlphaZeroMiniAgent, MCTSConfig, TorchPolicyValueModel,
+        AlphaZeroMiniAgent, MCTSConfig,
     )
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
 
     def _make_agent(path, s):
-        net = build_net_from_checkpoint(path, device=device)
-        model = TorchPolicyValueModel(net, device=device)
+        model = _get_or_load_model(path, device)
         return AlphaZeroMiniAgent(
             model=model,
             cfg=MCTSConfig(simulations=sims, dirichlet_eps=0.0),
@@ -155,7 +169,8 @@ def _play_one(args: tuple) -> dict:
 
 
 def run_tournament(games_per_half: int, sims: int, workers: int, seed: int,
-                   outdir: Path, temperature: float = 0.5) -> None:
+                   outdir: Path, temperature: float = 0.5,
+                   seed_offset: int = 0) -> None:
     outdir.mkdir(parents=True, exist_ok=True)
 
     missing = [(name, p) for name, p in VARIANTS.items() if not Path(p).exists()]
@@ -176,10 +191,15 @@ def run_tournament(games_per_half: int, sims: int, workers: int, seed: int,
         path_a, path_b = VARIANTS[name_a], VARIANTS[name_b]
         for half, a_is_chess in [(0, True), (1, False)]:
             for gi in range(games_per_half):
-                game_seed = stable_seed(seed, name_a, name_b, half, gi)
+                # seed_offset shifts the gi index in stable_seed so a follow-up
+                # run can extend an earlier tournament without re-playing the
+                # same games. Game_idx label is also shifted so the merged
+                # records have unique (pair, half, game_idx) triples.
+                gi_eff = gi + seed_offset
+                game_seed = stable_seed(seed, name_a, name_b, half, gi_eff)
                 tasks.append((
                     name_a, path_a, name_b, path_b,
-                    gi + half * games_per_half,
+                    gi_eff + half * (games_per_half + seed_offset),
                     a_is_chess, sims, game_seed, temperature,
                 ))
 
@@ -291,7 +311,7 @@ def run_tournament(games_per_half: int, sims: int, workers: int, seed: int,
                             W, D, L, N])
 
     summary = {
-        "source": "runs/fixed_v1/",
+        "source": "runs/",
         "n_agents": n,
         "n_pairs": len(pairs),
         "games_per_half": games_per_half,
@@ -323,7 +343,13 @@ if __name__ == "__main__":
                    help="action-selection temperature; visit counts ^ (1/T). "
                         "T>0 guarantees inter-game divergence even at fixed model+state.")
     p.add_argument("--outdir", type=str,
-                   default="runs/fixed_v1/cross_variant_tournament")
+                   default="runs/cross_variant_tournament")
+    p.add_argument("--seed-offset", type=int, default=0,
+                   help="Shifts the per-game seed index so a follow-up run "
+                        "extends an earlier tournament with disjoint games. "
+                        "Use --seed-offset 50 to skip the first 50 gi values "
+                        "already played at --games 50.")
     args = p.parse_args()
     run_tournament(args.games, args.sims, args.workers, args.seed,
-                   Path(args.outdir), temperature=args.temperature)
+                   Path(args.outdir), temperature=args.temperature,
+                   seed_offset=args.seed_offset)

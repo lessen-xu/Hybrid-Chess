@@ -1,7 +1,6 @@
 # Hybrid Chess: Experiment Results
 
-> Last updated: 2026-05-12 (fixed_v1 retrain)
-
+> Last updated: 2026-05-12
 ---
 
 ## Table of Contents
@@ -32,14 +31,14 @@ hybrid chess/
 │   └── rl/                # AlphaZero pipeline (network, encoding, selfplay, train, eval, runner)
 ├── scripts/
 │   ├── train_az_iter.py                       # AZ training CLI entry
-│   ├── run_fixed_v1_all.py                    # Orchestrator: trains all 9 variants in sequence
-│   ├── dashboard_fixed_v1.py                  # Live HTML progress dashboard
-│   ├── cross_variant_tournament_fixed_v1.py   # Cross-variant tournament with temperature sampling
-│   ├── rq4_rule_reform_ab_fixed_v1.py         # AB D2 rule reform scan
+│   ├── run_all.py                    # Orchestrator: trains all 9 variants in sequence
+│   ├── dashboard.py                  # Live HTML progress dashboard
+│   ├── cross_variant_tournament.py   # Cross-variant tournament with temperature sampling
+│   ├── rq4_rule_reform_ab.py         # AB D2 rule reform scan
 │   └── eval_arena.py                          # Side-swapped evaluation
 ├── tests/                 # Test suite (340+ tests, including conftest.py state reset)
 ├── ui/                    # Browser game UI
-├── runs/fixed_v1/         # Experiment outputs (gitignored)
+├── runs/         # Experiment outputs (gitignored)
 │   ├── rq4_rule_reform_ab/         # AB scan results
 │   ├── rq4_az_default/             # Default 50 iters
 │   ├── rq4_az_noq_only/            # Q only 50 iters
@@ -63,9 +62,9 @@ hybrid chess/
 
 | Phase | Goal | Status | Output |
 |-------|------|--------|--------|
-| AB D2 Rule Reform Scan | Fast screening of 23 variants | ✅ Done | `runs/fixed_v1/rq4_rule_reform_ab/` |
-| AZ Nine-Variant Comparison (50 iters each) | Find optimal balance | ✅ Done | `runs/fixed_v1/rq4_az_*` |
-| Cross-Variant Tournament | Meta-strategy analysis | ✅ Done | `runs/fixed_v1/cross_variant_tournament/` |
+| AB D2 Rule Reform Scan | Fast screening of 23 variants | ✅ Done | `runs/rq4_rule_reform_ab/` |
+| AZ Nine-Variant Comparison (50 iters each) | Find optimal balance | ✅ Done | `runs/rq4_az_*` |
+| Cross-Variant Tournament | Meta-strategy analysis | ✅ Done | `runs/cross_variant_tournament/` |
 
 - **AZ Training**: 9 variants × 50 iters = 450 iters, 45,000 self-play games total
 - **AB Scan**: 23 variants × 40 games = 920 games
@@ -86,8 +85,8 @@ Tested piece-reduction variants (no_queen, no_bishop, extra_soldier, etc.) using
 
 ## AB D2 Rule Reform Scan
 
-- **Script**: `scripts/rq4_rule_reform_ab_fixed_v1.py`
-- **Output**: `runs/fixed_v1/rq4_rule_reform_ab/results.json` + `progress.log`
+- **Script**: `scripts/rq4_rule_reform_ab.py`
+- **Output**: `runs/rq4_rule_reform_ab/results.json` + `progress.log`
 - **Scale**: 23 variants × 40 games, Alpha-Beta depth=2, C++ accelerated, 8 workers
 - **Three reform rules**:
   - `no_promotion`: Pawns do not promote upon reaching the back rank
@@ -197,7 +196,7 @@ Among interventions that keep a meaningful decisive rate (draw % below ~70%), **
 
 ### xq_queen Stability (PK+xqQueen per-10-iter trend)
 
-PK+xqQueen reaches its 1.2× steady state by iteration ~20 and stays in the 1.0–1.5× band thereafter (see `runs/fixed_v1/rq4_az_pk_xqqueen/metrics.csv`).
+PK+xqQueen reaches its 1.2× steady state by iteration ~20 and stays in the 1.0–1.5× band thereafter (see `runs/rq4_az_pk_xqqueen/metrics.csv`).
 
 ### Piece Survival Rate (PK+xqQueen variant, last 10 iters avg)
 
@@ -220,15 +219,15 @@ AZ agents trained under different rule variants compete against each other under
 - **Action selection**: temperature-sampled visit counts (`temperature=0.5`) so games with the same (pair, color) but different seeds genuinely diverge. Each of the 3,600 games is an independent sample.
 - **Seeds**: deterministic `hashlib.sha256` per `(name_a, name_b, half, gi)` (reproducible across processes and sessions).
 - **Duration**: ≈ 264 min
-- **Output**: `runs/fixed_v1/cross_variant_tournament/` contains `game_records.json`, `payoff_matrix.csv`, `wdl_matrix.csv`, `pairwise_ci.csv`, `summary.json`.
+- **Output**: `runs/cross_variant_tournament/` contains `game_records.json`, `payoff_matrix.csv`, `wdl_matrix.csv`, `pairwise_ci.csv`, `summary.json`.
 
 ### Payoff Matrix
 
-| | Default | Q_only | X_only | PK | PK_noPromo | PK_xqQueen | noQ_noPromo | noQ_PK | noQ_ALL |
+| | Default | noQ | xqQueen | PK | PK_noPromo | PK_xqQueen | noQ_noPromo | noQ_PK | noQ_ALL |
 |--|------|------|------|------|------|------|------|------|------|
 | **Default** | 0.500 | 0.480 | 0.510 | 0.485 | 0.500 | 0.555 | 0.470 | 0.535 | 0.525 |
-| **Q_only** | 0.520 | 0.500 | 0.510 | 0.515 | 0.545 | 0.505 | 0.500 | 0.595 | 0.560 |
-| **X_only** | 0.490 | 0.490 | 0.500 | 0.425 | 0.505 | 0.520 | 0.465 | 0.550 | 0.520 |
+| **noQ** | 0.520 | 0.500 | 0.510 | 0.515 | 0.545 | 0.505 | 0.500 | 0.595 | 0.560 |
+| **xqQueen** | 0.490 | 0.490 | 0.500 | 0.425 | 0.505 | 0.520 | 0.465 | 0.550 | 0.520 |
 | **PK** | 0.515 | 0.485 | 0.575 | 0.500 | 0.525 | 0.485 | 0.460 | 0.575 | 0.490 |
 | **PK_noPromo** | 0.500 | 0.455 | 0.495 | 0.475 | 0.500 | 0.525 | 0.470 | 0.590 | 0.485 |
 | **PK_xqQueen** | 0.445 | 0.495 | 0.480 | 0.515 | 0.475 | 0.500 | 0.455 | 0.505 | 0.540 |
@@ -240,12 +239,12 @@ AZ agents trained under different rule variants compete against each other under
 
 | Rank | Agent | Avg Score | Training Rules |
 |------|-------|-----------|----------------|
-| 1 | **Q_only** | 0.531 | Remove Chess Queen |
+| 1 | **noQ** | 0.531 | Remove Chess Queen |
 | 2 | **noQ_noPromo** | 0.528 | noQ + No Promotion |
 | 3 | **PK** | 0.514 | Palace + Knight Block |
 | 4 | Default | 0.508 | Standard Rules |
 | 5 | PK_noPromo | 0.499 | PK + No Promotion |
-| 6 | X_only | 0.496 | Give XQ a Queen |
+| 6 | xqQueen | 0.496 | Give XQ a Queen |
 | 7 | PK_xqQueen | 0.489 | PK + XQ Queen |
 | 8 | noQ_ALL | 0.487 | All Restrictions |
 | 9 | noQ_PK | 0.449 | noQ + PK |
@@ -256,7 +255,7 @@ AZ agents trained under different rule variants compete against each other under
 
 #### 1. In-variant balance ≠ out-of-variant transfer
 
-The variant with the best in-training balance (PK+xqQueen, in-variant C:X = 1.2×) is **not** the strongest agent under Default rules (rank 7). Conversely, agents trained under restrictive Chess variants (Q_only, noQ_noPromo), which produce degenerate, draw-heavy self-play, transfer **best** to Default rules. A plausible explanation is that constrained training conditions force the network to learn stronger positional play that compensates for the missing Chess Queen at evaluation time.
+The variant with the best in-training balance (PK+xqQueen, in-variant C:X = 1.2×) is **not** the strongest agent under Default rules (rank 7). Conversely, agents trained under restrictive Chess variants (noQ, noQ_noPromo), which produce degenerate, draw-heavy self-play, transfer **best** to Default rules. A plausible explanation is that constrained training conditions force the network to learn stronger positional play that compensates for the missing Chess Queen at evaluation time.
 
 #### 2. Apparent 3-cycle at n=100, refuted at n=500
 
@@ -264,19 +263,19 @@ The 100-game tournament shows three pairings whose scores nominally form a close
 
 | Edge | Score (n=100) | 95% CI (n=100) |
 |------|---------------|----------------|
-| PK vs X_only | 0.575 | [0.477, 0.667] |
-| X_only vs PK_xqQueen | 0.520 | [0.423, 0.615] |
+| PK vs xqQueen | 0.575 | [0.477, 0.667] |
+| xqQueen vs PK_xqQueen | 0.520 | [0.423, 0.615] |
 | PK_xqQueen vs PK | 0.515 | [0.418, 0.611] |
 
 To check whether this cycle was a real property of the rule space or a 100-game sampling artifact, we replayed the three pairings with 500 games each (same seed, side-swapped, T=0.5):
 
 | Edge | Score (n=500) | 95% CI (n=500) | Direction |
 |------|---------------|----------------|-----------|
-| PK vs X_only | 0.508 | [0.464, 0.552] | kept, but inside CI of 0.5 |
-| X_only vs PK_xqQueen | 0.497 | [0.453, 0.541] | flipped, inside CI of 0.5 |
+| PK vs xqQueen | 0.508 | [0.464, 0.552] | kept, but inside CI of 0.5 |
+| xqQueen vs PK_xqQueen | 0.497 | [0.453, 0.541] | flipped, inside CI of 0.5 |
 | PK_xqQueen vs PK | 0.497 | [0.453, 0.541] | flipped, inside CI of 0.5 |
 
-At 500 games per pair, all three Wilson 95% intervals contain 0.5, and two of the three point estimates fall below 0.5. The headline 3-cycle is a small-sample artifact. Replay output is at `runs/fixed_v1/cycle_3pair_ci/`.
+At 500 games per pair, all three Wilson 95% intervals contain 0.5, and two of the three point estimates fall below 0.5. The headline 3-cycle is a small-sample artifact. Replay output is at `runs/cycle_3pair_ci/`.
 
 Reproduce with: `python -m scripts.cycle_3pair_ci --games 250 --workers 12`.
 
@@ -307,17 +306,17 @@ python scripts/train_az_iter.py \
   --eval-games 20 --eval-interval 2 --eval-simulations 100 \
   --disable-gating 1 --resign-enabled 1 --device auto --seed 42 \
   --ablation "chess_palace,knight_block,xq_queen" --use-cpp --num-workers 4 \
-  --outdir runs/fixed_v1/rq4_az_pk_xqqueen
+  --outdir runs/rq4_az_pk_xqqueen
 
 # All 9 variants sequentially with auto-resume + retry
-python -m scripts.run_fixed_v1_all
+python -m scripts.run_all
 
 # Live HTML progress dashboard (in another terminal)
-python -m scripts.dashboard_fixed_v1
-# then open runs/fixed_v1/progress.html in a browser (auto-refresh every 30s)
+python -m scripts.dashboard
+# then open runs/progress.html in a browser (auto-refresh every 30s)
 
 # Cross-variant tournament on the 9 best_model.pt
-python -m scripts.cross_variant_tournament_fixed_v1 \
+python -m scripts.cross_variant_tournament \
   --games 50 --sims 50 --workers 4 --temperature 0.5 --seed 42
 ```
 
@@ -331,5 +330,5 @@ python -m scripts.cross_variant_tournament_fixed_v1 \
 - [x] Factor analysis (Queen × PK)
 - [x] Non-transitive cycle detection (apparent at n=100, refuted at n=500)
 - [x] 500-game cycle replay with Wilson 95% CIs (`scripts/cycle_3pair_ci.py`)
-- [x] All figures regenerated from data (`course_project/plot_figures_fixed_v1.R`, `course_project/plot_cycle_replay.py`)
+- [x] All figures regenerated from data (`course_project/plot_figures.R`, `course_project/plot_cycle_replay.py`)
 - [x] Final course report rewrite

@@ -1,11 +1,11 @@
-"""Live progress dashboard for runs/fixed_v1/.
+"""Live progress dashboard for runs/.
 
 Usage::
 
     # In a separate terminal while the orchestrator runs.
-    python -m scripts.dashboard_fixed_v1
+    python -m scripts.dashboard
 
-This polls every 30 seconds and writes ``runs/fixed_v1/progress.html``.
+This polls every 30 seconds and writes ``runs/progress.html``.
 Open that file in a browser — the page contains a meta-refresh tag, so it
 reloads itself.
 
@@ -193,7 +193,7 @@ def render_html(root: Path) -> str:
 <html lang="en"><head>
 <meta charset="utf-8">
 <meta http-equiv="refresh" content="{REFRESH_SECONDS}">
-<title>fixed_v1 progress · hybrid chess</title>
+<title>training progress · hybrid chess</title>
 <style>
   body{{font-family:-apple-system,Segoe UI,Helvetica,Arial,sans-serif;
        margin:24px;background:#f7f7f7;color:#222;}}
@@ -220,7 +220,7 @@ def render_html(root: Path) -> str:
           letter-spacing:.4px;}}
 </style>
 </head><body>
-<h1>fixed_v1 — 9-variant retraining</h1>
+<h1>9-variant AlphaZero training</h1>
 <div class="meta">
   Auto-refresh every {REFRESH_SECONDS}s · last regenerated
   {now.astimezone().strftime('%Y-%m-%d %H:%M:%S')} ·
@@ -246,7 +246,7 @@ def render_html(root: Path) -> str:
 
 def main() -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--root", type=str, default="runs/fixed_v1")
+    ap.add_argument("--root", type=str, default="runs")
     ap.add_argument("--out", type=str, default="",
                     help="output html path (default: <root>/progress.html)")
     ap.add_argument("--once", action="store_true",

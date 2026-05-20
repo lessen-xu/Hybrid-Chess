@@ -1,8 +1,8 @@
 """Tighten the 3-cycle CI by running 500 games per pair on the three
 variants involved in the cycle observed in cross_variant_tournament:
-PK, X_only, PK_xqQueen.
+PK, xqQueen, PK_xqQueen.
 
-Reuses `_play_one` and `run_tournament` from cross_variant_tournament_fixed_v1
+Reuses `_play_one` and `run_tournament` from cross_variant_tournament
 to keep all per-game logic byte-identical with the main tournament. Same
 seed=42 means the first 50 games/half are exactly the same as the main
 tournament's; the remaining 200 games/half are fresh draws.
@@ -21,12 +21,12 @@ from pathlib import Path
 # Patch VARIANTS in the parent script to only the 3 cycle agents, then
 # delegate to run_tournament so the combinations(...) call produces
 # exactly the 3 cycle pairs.
-from scripts import cross_variant_tournament_fixed_v1 as _tour
+from scripts import cross_variant_tournament as _tour
 
 CYCLE_VARIANTS = {
-    "PK":         "runs/fixed_v1/rq4_az_palace_knight/best_model.pt",
-    "X_only":     "runs/fixed_v1/rq4_az_xqqueen_only/best_model.pt",
-    "PK_xqQueen": "runs/fixed_v1/rq4_az_pk_xqqueen/best_model.pt",
+    "PK":         "runs/rq4_az_palace_knight/best_model.pt",
+    "xqQueen":    "runs/rq4_az_xqqueen_only/best_model.pt",
+    "PK_xqQueen": "runs/rq4_az_pk_xqqueen/best_model.pt",
 }
 
 
@@ -40,7 +40,7 @@ if __name__ == "__main__":
                    help="same as main tournament: first 50/half will reproduce exactly")
     p.add_argument("--temperature", type=float, default=0.5)
     p.add_argument("--outdir", type=str,
-                   default="runs/fixed_v1/cycle_3pair_ci")
+                   default="runs/cycle_3pair_ci")
     args = p.parse_args()
 
     _tour.VARIANTS = CYCLE_VARIANTS

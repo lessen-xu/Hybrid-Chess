@@ -1,8 +1,8 @@
-"""Sequentially train all 9 AlphaZero variants in runs/fixed_v1/.
+"""Sequentially train all 9 AlphaZero variants in runs/.
 
 Usage::
 
-    python -m scripts.run_fixed_v1_all
+    python -m scripts.run_all
 
 Behavior:
   * Variants run one-at-a-time in a fixed order.
@@ -11,8 +11,8 @@ Behavior:
   * If a variant's outdir already contains ckpt_iter*.pt, ``run_iterations``
     auto-resumes from the last completed iteration. So re-running this
     orchestrator after a crash safely continues where it left off.
-  * Per-variant stdout is tee'd to ``runs/fixed_v1/<name>/train.log``.
-  * After each iteration of each variant, ``runs/fixed_v1/orchestrator_status.json``
+  * Per-variant stdout is tee'd to ``runs/<name>/train.log``.
+  * After each iteration of each variant, ``runs/orchestrator_status.json``
     is updated; the dashboard script reads that + per-variant metrics.csv.
 """
 
@@ -30,7 +30,7 @@ from pathlib import Path
 
 
 # Variant manifest: (run_name, --ablation arg).
-# Names match the audit/report mapping for runs/fixed_v1/.
+# Names match the audit/report mapping for runs/.
 VARIANTS: "OrderedDict[str, str]" = OrderedDict([
     ("rq4_az_default",        "none"),
     ("rq4_az_xqqueen_only",   "xq_queen"),
@@ -162,7 +162,7 @@ def run_one(run_name: str, ablation: str, root: Path, cfg: dict,
 
 def main() -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--root", type=str, default="runs/fixed_v1",
+    ap.add_argument("--root", type=str, default="runs",
                     help="root directory for all 9 variant runs")
     ap.add_argument("--variants", type=str, default="",
                     help="comma-separated list of run_names to include "
