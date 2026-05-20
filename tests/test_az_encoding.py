@@ -116,7 +116,7 @@ import time
 import numpy as np
 
 from hybrid.rl.az_encoding import (
-    encode_state_cpu_legacy,
+    encode_state,
     encode_batch_gpu,
     board_to_piece_ids,
 )
@@ -154,7 +154,7 @@ def test_encode_batch_gpu_vs_cpu_legacy():
     states = _generate_random_states(100, seed=12345)
 
     # CPU legacy: encode each state individually, stack
-    cpu_tensors = [encode_state_cpu_legacy(s) for s in states]
+    cpu_tensors = [encode_state(s) for s in states]
     cpu_batch = torch.stack(cpu_tensors)  # (100, NUM_STATE_CHANNELS, 10, 9)
 
     # GPU batch: convert to IDs and encode
@@ -230,7 +230,7 @@ def test_encode_batch_gpu_micro_benchmark():
     # CPU legacy timing
     t0 = time.perf_counter()
     for _ in range(ITERS):
-        batch = torch.stack([encode_state_cpu_legacy(s) for s in states])
+        batch = torch.stack([encode_state(s) for s in states])
     cpu_time = time.perf_counter() - t0
 
     # GPU batch timing (on CPU device for CI)

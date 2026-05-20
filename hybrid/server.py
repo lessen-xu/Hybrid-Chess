@@ -77,7 +77,13 @@ class GameSession:
         self.env = HybridChessEnv(max_plies=400, use_cpp=False)
         self.env.reset()
 
-        # Apply variant
+        # Apply variant by mutating the freshly-reset board in place rather
+        # than rebuilding through VariantConfig. The web UI only supports the
+        # two demo variants below and the agents loaded here were not trained
+        # under those flags, so we just hand the network a different opening
+        # position and accept that any further variant-aware logic (rule
+        # adjustments inside generate_legal_moves, terminal_info, etc.) will
+        # not fire for this session. This is a demo path, not training.
         if variant == "no_queen":
             self._apply_no_queen()
         elif variant == "extra_cannon":

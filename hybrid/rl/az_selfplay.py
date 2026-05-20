@@ -254,7 +254,16 @@ def self_play_game(
         )
         examples.append(example)
 
-        # Resign check
+        # Resign check.
+        #
+        # The mechanic is a small state machine. While the root value stays at
+        # or below the resign threshold (about -0.95 by default) we count plies.
+        # If the value pops back up above the threshold even once, the counter
+        # resets to zero, so a single recovered position cancels a resign-in-
+        # progress. The point of the patience window is to avoid resigning
+        # on a transient pessimistic eval; only sustained hopelessness counts.
+        # We do not start counting until after move 40 because early-game
+        # values are noisy.
         if cfg.resign_enabled and current_ply >= cfg.resign_min_ply:
             if root_value <= cfg.resign_threshold:
                 resign_counter += 1
@@ -285,7 +294,14 @@ def self_play_game(
                 )
                 return examples, record
 
-        # Draw adjudication check
+        # Draw adjudication check.
+        #
+        # Symmetric version of the resign state machine. While the root value
+        # sits inside a tight band around zero (about |v| <= 0.08), we count
+        # plies. If the value escapes the band, the counter resets, because the
+        # position turned out to be sharper than it looked. After enough
+        # consecutive flat plies past move 60 we call the game a draw to avoid
+        # burning training budget on positions neither side can convert.
         if cfg.draw_adjudicate_enabled and current_ply >= cfg.draw_adjudicate_min_ply:
             if abs(root_value) <= cfg.draw_adjudicate_value_abs_thr:
                 draw_adjudicate_counter += 1

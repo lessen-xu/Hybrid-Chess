@@ -1,10 +1,12 @@
 """AlphaZero-Mini: MCTS + policy/value network agent.
 
-Value convention (critical for correctness):
-- Network `predict` returns value from `state.side_to_move`'s perspective, in [-1, 1].
-- Node.W/Q store cumulative/mean value from that node's side_to_move perspective.
-- In _select_child, parent maximizes (-child.Q) because child.Q is the opponent's perspective.
-- In _backup, value sign flips at each level.
+Value convention. Every node stores its W/Q from the perspective of whoever
+is to move at that node. The network's value head is also queried from that
+side's perspective. The parent then picks the move that maximises ``-child.Q``
+because the child's Q is recorded from the opponent's point of view, and the
+backup flips the sign on every level for the same reason. Getting this sign
+flip wrong is the easiest way to silently train an agent that prefers losing
+positions, so the whole file is written defensively around it.
 """
 
 from __future__ import annotations
@@ -26,11 +28,17 @@ class MCTSConfig:
     c_puct: float = 1.5
     dirichlet_alpha: float = 0.3
     dirichlet_eps: float = 0.25
-    discount_factor: float = 0.99   # γ: value decay per tree depth to prefer shorter wins
-    leaf_batch_size: int = 8        # K: virtual-loss leaf gathering batch size
-    # Max-ply used inside MCTS terminal checks. Should match the calling
-    # environment's truncation horizon (e.g. self-play uses --selfplay-max-ply,
-    # eval uses MAX_PLIES). Default keeps the rule-engine cap.
+    # γ shrinks every backed-up value by one power per level deeper. Without it
+    # the tree treats a win-in-5 the same as a win-in-50; with γ slightly below
+    # 1 the agent prefers the closer mate (and the longer loss).
+    discount_factor: float = 0.99
+    # K = how many leaves we gather per round before calling the network once.
+    # Each gathered path adds virtual loss to make the next gather diverge, so K
+    # is essentially how many NN inputs we can stuff into one batched call.
+    leaf_batch_size: int = 8
+    # Should match the environment we are inside. Self-play uses
+    # --selfplay-max-ply (often 150), eval uses MAX_PLIES (400). If this disagrees
+    # with the environment, MCTS may think a position is terminal when it is not.
     max_plies: int = MAX_PLIES
 
 
@@ -142,21 +150,39 @@ class AlphaZeroMiniAgent(Agent):
 
     def _run_mcts_search_cpp(self, state: GameState, legal_moves: List[Move],
                               add_noise: bool = True) -> Node:
-        """Run MCTS using C++ engine with virtual-loss leaf batching.
+        """C++ MCTS with virtual-loss leaf batching.
 
-        Gathers up to K=leaf_batch_size leaves per round before calling
-        model.predict_batch() once, dramatically reducing IPC round-trips.
+        We run MCTS in three repeating phases per round. Phase 1 walks the tree
+        K times to collect K different leaves; on each walk we add virtual loss
+        (a temporary +1 penalty against the path) so that the next walk inside
+        the same round is forced to diverge into a different subtree. Phase 2
+        feeds all K leaves to the policy/value network in one batched call,
+        which is the whole point of the exercise: K NN inferences cost about as
+        much as one because the network spends most of its time on per-call
+        overhead (kernel launch, IPC, queue handoff). Phase 3 expands each leaf,
+        backs the network's value estimate up the path, and removes the virtual
+        loss that phase 1 added. A DFS at the end checks that we removed exactly
+        what we added.
+
+        Terminal leaves short-circuit the network call. They contribute a fixed
+        +1/-1/0 value and never get virtual loss because they are not going to
+        be re-visited within this round.
         """
         cpp = self._cpp
         module = cpp.module
         K = self.cfg.leaf_batch_size
 
-        # Build root: sync Python board → C++ board once
+        # Sync Python board into C++ once. From here on, the C++ board is the
+        # authoritative game state during search and the Python board only gets
+        # rebuilt when we need to feed the network (which wants a GameState).
         cpp_board = cpp.sync_to_cpp(state.board)
         cpp_side = cpp.PY_TO_CPP_SIDE[state.side_to_move]
         root = Node(state=state, cpp_board=cpp_board, cpp_side=cpp_side)
 
-        # Expand root: need NN inference → use Python state (already available)
+        # Root expansion: we already have a Python GameState in hand, so do a
+        # single (un-batched) NN call here, then optionally inject Dirichlet
+        # noise on the priors so self-play explores outside the network's
+        # current preferences.
         policy, _ = self.model.predict(state, legal_moves)
         priors = {m: policy.get(m, 0.0) for m in legal_moves}
         if add_noise:
@@ -168,27 +194,32 @@ class AlphaZeroMiniAgent(Agent):
 
         while sims_done < total_sims:
             current_k = min(K, total_sims - sims_done)
-            leaves_data = []   # (leaf_state, py_moves, path) for NN eval
-            paths_for_vl = []  # paths that have virtual loss applied
+            leaves_data = []   # (leaf_state, py_moves, path) for the batched NN call
+            paths_for_vl = []  # paths that received virtual loss this round
 
-            # ── Phase 1: Gather up to K leaves ──
+            # Phase 1: gather up to K leaves.
             for _ in range(current_k):
                 node = root
                 path = [node]
 
-                # Selection: traverse using VL-adjusted PUCT
+                # Selection walks down using PUCT. Because earlier walks in this
+                # round added virtual loss to their paths, _select_child sees a
+                # worse-looking Q on those branches and is steered elsewhere.
                 while node.is_expanded():
                     mv, node = self._select_child(node)
                     path.append(node)
 
-                # Terminal check via C++
+                # Terminal check goes through C++ for speed. Note we pass the
+                # MCTS max_plies, not the env's, so the search treats truncation
+                # consistently with the calling context.
                 cpp_info = module.terminal_info(
                     node.cpp_board, node.cpp_side,
                     node.state.repetition, node.state.ply, self.cfg.max_plies,
                 )
 
                 if cpp_info.status != TerminalStatus.ONGOING:
-                    # Terminal: backup immediately, no VL needed
+                    # Terminal leaf: skip the NN, back up the rule-engine value,
+                    # do not add virtual loss (this path is closed for the round).
                     if cpp_info.status == TerminalStatus.DRAW:
                         value = 0.0
                     else:
@@ -204,12 +235,15 @@ class AlphaZeroMiniAgent(Agent):
                     sims_done += 1
                     continue
 
-                # Non-terminal leaf: apply virtual loss to divert next selection
+                # Non-terminal leaf: apply virtual loss to the whole path so the
+                # next inner-loop walk avoids re-picking the same line.
                 for n in path:
                     n.virtual_loss += 1
                 paths_for_vl.append(path)
 
-                # Generate legal moves via C++ and sync board for encoding
+                # Materialise a Python GameState at the leaf so the network
+                # encoder can ingest it. We only rebuild the Python board on
+                # leaves we actually evaluate, not on every internal node.
                 cpp_moves = module.gen_legal(node.cpp_board, node.cpp_side)
                 py_moves = [cpp.cpp_to_py_move(cm) for cm in cpp_moves]
                 py_board = cpp.sync_to_py(node.cpp_board)
@@ -222,28 +256,32 @@ class AlphaZeroMiniAgent(Agent):
                 node.state = leaf_state
                 leaves_data.append((leaf_state, py_moves, path))
 
-            # ── Phase 2: Batch NN evaluation ──
+            # Phase 2: one batched NN call for the whole round.
             if leaves_data:
                 if hasattr(self.model, 'predict_batch') and len(leaves_data) > 1:
                     results = self.model.predict_batch(
                         [(ld[0], ld[1]) for ld in leaves_data]
                     )
                 else:
-                    # Fallback: serial predict (for TorchPolicyValueModel / K=1)
+                    # Fallback for models that do not implement predict_batch,
+                    # and for the K=1 case where batching adds no value.
                     results = [
                         self.model.predict(ld[0], ld[1])
                         for ld in leaves_data
                     ]
 
-                # ── Phase 3: Remove VL, expand, backup ──
+                # Phase 3: remove virtual loss, expand the leaf, back up the
+                # value. The expansion guard handles the rare case where two
+                # walks in the same round picked the same leaf (a "collision")
+                # because the virtual loss penalty was not enough to steer them
+                # apart; the second walk would otherwise expand on top of the
+                # first.
                 for (leaf_state, py_moves, path), (policy, value) in zip(leaves_data, results):
                     leaf_node = path[-1]
 
-                    # Remove virtual loss from entire path
                     for n in path:
                         n.virtual_loss -= 1
 
-                    # Expand leaf (guard against duplicate expansion from collision)
                     if not leaf_node.is_expanded():
                         priors = {m: policy.get(m, 0.0) for m in py_moves}
                         self._expand_cpp(leaf_node, priors)
@@ -251,7 +289,9 @@ class AlphaZeroMiniAgent(Agent):
                     self._backup(path, value)
                     sims_done += 1
 
-        # Safety: DFS verify zero virtual loss leakage
+        # Every leaf we added VL to in phase 1 must have had it removed in
+        # phase 3. If not, future searches will pick worse moves because they
+        # see a permanently penalised subtree.
         self._assert_no_vl_leak(root)
 
         return root
@@ -361,10 +401,15 @@ class AlphaZeroMiniAgent(Agent):
             node.children[mv] = Node(state=child_state, prior=float(p), parent=node)
 
     def _select_child(self, node: Node) -> Tuple[Move, Node]:
-        """PUCT selection with virtual loss support.
+        """PUCT selection, with virtual loss baked into the Q estimate.
 
-        Uses -effective_Q (opponent's value flipped) where effective_Q accounts
-        for in-flight virtual losses to divert parallel selections.
+        For every in-flight visit we pretend that visit returned a loss for the
+        side to move at the child. That makes ``effective_W = W - VL`` and
+        ``effective_N = N + VL``, which lowers the apparent Q on a path another
+        walker has already taken in this round. Combined with the U term
+        (``c_puct * prior * sqrt(parent_N) / (1 + child_N)``) this nudges the
+        next walker into a different subtree. We then negate Q because the
+        child stores Q from the opponent's perspective.
         """
         best_score = -1e18
         best = None
@@ -373,7 +418,7 @@ class AlphaZeroMiniAgent(Agent):
         for mv, ch in node.children.items():
             effective_N = ch.N + ch.virtual_loss
             if effective_N > 0:
-                effective_W = ch.W - ch.virtual_loss  # -1 penalty per VL
+                effective_W = ch.W - ch.virtual_loss
                 Q = effective_W / effective_N
             else:
                 Q = 0.0
@@ -386,11 +431,15 @@ class AlphaZeroMiniAgent(Agent):
         return best
 
     def _backup(self, path: List[Node], value: float) -> None:
-        """Propagate value up the tree, flipping sign and applying
-        discount γ at each level so shorter wins are strictly preferred.
-
-        With γ=0.99 a mate-in-3 returns ≈0.97 while mate-in-15 returns ≈0.86,
-        giving the agent a strong "sense of urgency" that breaks king-chase loops.
+        """Walk the path from leaf back to root, updating N and W on every
+        node. Two non-obvious things happen per step. (1) We flip the sign on
+        ``v``, because every level changes the side to move and W is stored
+        from the local side's perspective. (2) We multiply by gamma, so a value
+        five levels deep contributes only ``gamma**5`` to the root. With
+        gamma = 0.99 a mate-in-3 backs up to about 0.97 at the root while a
+        mate-in-15 backs up to about 0.86, which gives the search a built-in
+        preference for the shorter mate and breaks king-chase loops that would
+        otherwise look equally winning at every depth.
         """
         gamma = self.cfg.discount_factor
         v = value

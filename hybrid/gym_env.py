@@ -51,7 +51,14 @@ for _di, _dx in enumerate(_PROMO_DX_VALUES):
     for _pi, _pk in enumerate(_PROMO_KINDS):
         _PROMO_LOOKUP[(_dx, _pk)] = _di * len(_PROMO_KINDS) + _pi
 
-TOTAL_POLICY_PLANES = 92  # 72 slide + 8 knight + 12 promo
+# Policy planes are packed into three contiguous bands. Every action is a
+# (plane, from_y, from_x) triple, flattened to a single integer in [0, 8280).
+# Planes 0..71  = sliding moves, 8 directions x 9 maximum distances.
+# Planes 72..79 = knight L-moves, 8 deltas.
+# Planes 80..91 = promotions, 3 forward directions x 4 promotion kinds.
+# The same plane layout is what the policy network's output channels mean, so
+# the encoder here and the network head have to stay in sync.
+TOTAL_POLICY_PLANES = 92
 TOTAL_ACTIONS = TOTAL_POLICY_PLANES * BOARD_H * BOARD_W  # 92 * 10 * 9 = 8280
 
 # Piece channel map (same as az_encoding.py)

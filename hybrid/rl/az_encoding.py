@@ -46,10 +46,12 @@ SIDE_TO_MOVE_CHANNEL = 14
 NUM_STATE_CHANNELS = 15
 
 
-def encode_state_cpu_legacy(state: GameState) -> torch.Tensor:
-    """Encode GameState as (C, H, W) = (NUM_STATE_CHANNELS, 10, 9) float32 tensor.
+def encode_state(state: GameState) -> torch.Tensor:
+    """GameState -> (15, 10, 9) float32 tensor.
 
-    Original CPU implementation kept as reference/baseline.
+    Channels 0..13 are one-hot piece planes (one channel per piece kind, listed in
+    ``PIECE_CHANNELS``). Channel 14 is the side-to-move plane: all ones when it is
+    Chess to move, all zeros when it is Xiangqi to move.
     """
     tensor = torch.zeros(NUM_STATE_CHANNELS, BOARD_H, BOARD_W, dtype=torch.float32)
 
@@ -61,14 +63,6 @@ def encode_state_cpu_legacy(state: GameState) -> torch.Tensor:
         tensor[SIDE_TO_MOVE_CHANNEL, :, :] = 1.0
 
     return tensor
-
-
-def encode_state(state: GameState) -> torch.Tensor:
-    """Encode GameState as (C, H, W) = (NUM_STATE_CHANNELS, 10, 9) float32 tensor.
-
-    Thin wrapper over encode_state_cpu_legacy for backward compatibility.
-    """
-    return encode_state_cpu_legacy(state)
 
 
 def board_to_piece_ids(board) -> np.ndarray:
@@ -102,7 +96,7 @@ def encode_batch_gpu(
 
     Returns:
         (B, NUM_STATE_CHANNELS, 10, 9) float32 tensor equivalent to stacking
-        encode_state_cpu_legacy for each board.
+        encode_state for each board.
     """
     B, H, W = piece_ids.shape
 

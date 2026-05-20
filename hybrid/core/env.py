@@ -30,6 +30,15 @@ class GameState:
 
 # ═══════════════════════════════════════════════════════════════
 # C++ engine helpers (lazy-imported only when use_cpp=True)
+#
+# We do not import the pybind11 extension at module import time. Two reasons:
+# (1) the extension does not always build cleanly on every machine, so users who
+# only need the pure-Python path should still be able to ``import hybrid.core``.
+# (2) tests sometimes monkeypatch rule flags before the C++ module is touched,
+# so deferring the import keeps the import order out of the test surface.
+# Bidirectional kind/side maps live as module-level globals; they are populated
+# on the first ``_ensure_cpp_maps()`` call and reused for the lifetime of the
+# process.
 # ═══════════════════════════════════════════════════════════════
 
 _PY_TO_CPP_SIDE = None
@@ -39,7 +48,7 @@ _cpp_module = None
 
 
 def _ensure_cpp_maps():
-    """Lazy-initialize the Python ↔ C++ type mappings."""
+    """Populate the Python <-> C++ type maps on first use, no-op afterwards."""
     global _PY_TO_CPP_SIDE, _PY_TO_CPP_KIND, _CPP_TO_PY_KIND, _cpp_module
     if _cpp_module is not None:
         return
@@ -266,19 +275,27 @@ class HybridChessEnv:
         return next_state.clone(), reward, done, info
 
     def _step_cpp(self, mv: Move) -> Tuple[GameState, float, bool, GameInfo]:
-        """Execute one move using the C++ engine."""
+        """One step of the env, with the C++ engine as the authoritative board.
+
+        We keep two parallel board objects on this path. ``self._cpp_board`` is
+        the one we mutate (apply_move, repetition hash, terminal_info all run
+        in C++). The Python ``Board`` we hand back inside ``GameState`` is
+        re-built from the C++ board each step and is only used by the neural
+        encoder, which still wants a Python object. Repetition keys come from
+        the C++ board hash too, so the Python and C++ paths agree on what
+        counts as the same position.
+        """
         s = self.state
         moving_side = s.side_to_move
 
-        # Apply move on C++ board
         cpp_mv = _py_to_cpp_move(mv)
         self._cpp_board = _cpp_module.apply_move(self._cpp_board, cpp_mv)
 
-        # Advance side
         next_py_side = moving_side.opponent()
         self._cpp_side = _PY_TO_CPP_SIDE[next_py_side]
 
-        # Sync Python board from C++ (needed for state encoding)
+        # Rebuild a Python board only because the NN encoder needs one. The C++
+        # board is what the next call into apply_move / terminal_info will see.
         py_board = _sync_to_py(self._cpp_board)
 
         # Build next GameState

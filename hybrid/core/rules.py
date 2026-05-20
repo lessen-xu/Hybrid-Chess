@@ -226,10 +226,18 @@ def _xiangqi_cannon_moves(board: Board, x: int, y: int, side: Side) -> List[Move
 
 
 def _xiangqi_horse_moves(board: Board, x: int, y: int, side: Side) -> List[Move]:
-    """Horse: one orthogonal step + one diagonal step. Blocked if the leg square is occupied."""
+    """Horse: one orthogonal step then one diagonal outward.
+
+    The "leg" is the orthogonal step. If any piece (friend or enemy) occupies
+    the leg square, the horse cannot use that L-shape this turn. This is what
+    distinguishes the horse from a chess knight: blocking the leg pins the
+    horse without capturing it.
+    """
     out: List[Move] = []
+    # Each candidate is (leg_dx, leg_dy, dst_dx, dst_dy). The leg vector is the
+    # orthogonal half-step that must be clear; the dst vector is the L-shape
+    # endpoint.
     candidates = [
-        # (leg_dx, leg_dy, dst_dx, dst_dy)
         (1, 0, 2, 1), (1, 0, 2, -1),
         (-1, 0, -2, 1), (-1, 0, -2, -1),
         (0, 1, 1, 2), (0, 1, -1, 2),
@@ -240,7 +248,7 @@ def _xiangqi_horse_moves(board: Board, x: int, y: int, side: Side) -> List[Move]
         if not board.in_bounds(lx, ly):
             continue
         if board.get(lx, ly) is not None:
-            continue  # leg blocked
+            continue  # leg is occupied, horse cannot leap over it
         nx, ny = x + dst_dx, y + dst_dy
         if not board.in_bounds(nx, ny):
             continue
@@ -251,7 +259,14 @@ def _xiangqi_horse_moves(board: Board, x: int, y: int, side: Side) -> List[Move]
 
 
 def _xiangqi_elephant_moves(board: Board, x: int, y: int, side: Side) -> List[Move]:
-    """Elephant: diagonal 2-step, blocked if eye square is occupied, cannot cross river."""
+    """Elephant: two squares diagonally, can be blocked, cannot cross the river.
+
+    The "eye" is the intermediate diagonal square between the start and the
+    destination. If the eye is occupied (by anything), the move is blocked.
+    The river constraint lives in ``_xiangqi_elephant_can_go``: the Xiangqi
+    elephant stays on its own half of the board (y in 0..4 for the Xiangqi side
+    is the bottom half; the river sits between y=4 and y=5).
+    """
     out: List[Move] = []
     assert side == Side.XIANGQI
     for dx, dy in [(2, 2), (2, -2), (-2, 2), (-2, -2)]:
@@ -260,7 +275,7 @@ def _xiangqi_elephant_moves(board: Board, x: int, y: int, side: Side) -> List[Mo
             continue
         if not _xiangqi_elephant_can_go(x, y, nx, ny):
             continue
-        ex, ey = x + dx // 2, y + dy // 2  # eye square
+        ex, ey = x + dx // 2, y + dy // 2  # eye square = midpoint of the diagonal
         if board.get(ex, ey) is not None:
             continue
         t = board.get(nx, ny)

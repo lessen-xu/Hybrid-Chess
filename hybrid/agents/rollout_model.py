@@ -53,15 +53,23 @@ class RolloutModel(PolicyValueModel):
         self._cpp_xiangqi_side = None
 
     def _ensure_cpp(self):
-        """Lazy-load the C++ engine module and type maps."""
+        """Cache the C++ engine handles into this instance on first use.
+
+        ``env._ensure_cpp_maps()`` populates the module-level globals in
+        ``hybrid.core.env``. Those globals start out as ``None``, so we cannot
+        just import them at the top of this method: a name imported when the
+        module was None gives us a local copy of None. We import once to
+        trigger initialisation, then import a second time after the call so
+        the locals see the populated values, and cache them on ``self`` so we
+        do not pay the import cost again per rollout.
+        """
         if self._cpp is not None:
             return
-        from hybrid.core.env import _ensure_cpp_maps, _sync_to_cpp, _PY_TO_CPP_SIDE
+        from hybrid.core.env import _ensure_cpp_maps, _sync_to_cpp
         _ensure_cpp_maps()
-        # Re-read module-level globals after initialization
         from hybrid.core.env import _cpp_module, _PY_TO_CPP_SIDE as side_map
         from hybrid.core.env import _CPP_TO_PY_KIND as kind_map
-        self._cpp = _cpp_module             # SimpleNamespace: gen_legal, apply_move, ...
+        self._cpp = _cpp_module
         self._sync_to_cpp = _sync_to_cpp
         self._side_map = side_map
         self._kind_map = kind_map
@@ -98,10 +106,15 @@ class RolloutModel(PolicyValueModel):
                 value = 1.0 if root_side == Side.CHESS else -1.0
                 return policy, value
 
-            # Generate legal moves in C++
+            # Generate legal moves in C++.
             cpp_moves = cpp.gen_legal(cpp_board, cpp_side)
             if not cpp_moves:
-                # No legal moves = stalemate (draw)
+                # Local convention for the rollout: stalemate ends the
+                # simulation with value 0. This is NOT the same as the global
+                # terminal rule (rules.py treats stalemate as a loss for the
+                # stalemated side, Xiangqi-style); rollouts just need a stop
+                # condition and a neutral value is the safest thing to back up
+                # in the absence of further information.
                 return policy, 0.0
 
             # Random selection

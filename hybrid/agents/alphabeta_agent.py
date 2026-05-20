@@ -50,7 +50,11 @@ class AlphaBetaAgent(Agent):
         if info.status != TerminalStatus.ONGOING:
             if info.status == TerminalStatus.DRAW:
                 return 0.0
-            # Prefer shorter mates: subtract ply count so mate-in-1 > mate-in-3
+            # Subtracting ply from the mate score nudges the search toward
+            # mate-in-1 over mate-in-3 (winning side) and toward longer
+            # surviving lines over immediate loss (losing side). This does not
+            # change which moves are correct, only which equally-winning move
+            # the engine picks first.
             mate_score = 1e6 - state.ply
             return mate_score if info.winner == perspective else -mate_score
 
@@ -75,7 +79,13 @@ class AlphaBetaAgent(Agent):
         return best
 
     def _move_order_key(self, state: GameState, mv: Move) -> float:
-        """Heuristic key for move ordering: captures + checks."""
+        """Sort key for move ordering. Captures first, then checks.
+
+        The 10.0 and 2.0 are only relative weights; they never appear in the
+        returned search value, they only decide which moves alpha-beta visits
+        first. Better-looking moves earlier produce more cutoffs, which is the
+        whole point.
+        """
         b = state.board
         t = b.get(mv.tx, mv.ty)
         capture_bonus = 10.0 if t is not None else 0.0
