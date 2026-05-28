@@ -89,5 +89,5 @@ Multiple variants can be combined: `--ablation chess_palace,knight_block,xq_quee
 - **Material**: piece value sum
 - **Mobility**: 0.05 × legal move count
 - **Check bonus**: 0.3
-- **Endgame** (when |material_diff| > 3.0): 3× material amplification, piece→enemy king distance, mobility squeeze, check bonus 5.0
+- **Endgame** (only when the side to evaluate is winning by > 5.0): 3× material amplification, piece→enemy king distance, mobility squeeze, check bonus raised to 5.0
 - **Checkmate score**: 1e6 − ply (prefer shorter mates)

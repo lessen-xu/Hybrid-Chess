@@ -41,7 +41,6 @@ graph TB
         SHM["az_shm_pool.py<br/>Shared Memory IPC"]
         ParallelSP["az_selfplay_parallel.py<br/>Multi-Process Self-Play"]
         ParallelEval["az_eval_parallel.py<br/>Multi-Process Evaluation"]
-        Endgame["endgame_spawner.py<br/>Curriculum Positions"]
     end
 
     subgraph CppEngine["⚡ C++ Engine (cpp/)"]
@@ -155,7 +154,6 @@ flowchart LR
 | **az_shm_pool.py** | Zero-copy shared memory pool for worker ↔ server communication |
 | **az_selfplay_parallel.py** | Multi-process self-play via `torch.multiprocessing.spawn` |
 | **az_eval_parallel.py** | Multi-process gating and evaluation matches |
-| **endgame_spawner.py** | Generate random endgame positions for curriculum learning |
 
 #### State & Action Encoding
 

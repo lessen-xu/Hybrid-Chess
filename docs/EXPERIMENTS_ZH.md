@@ -1,6 +1,6 @@
 # Hybrid Chess：实验结果报告
 
-> 最后更新：2026-05-12
+> 最后更新：2026-05-28
 ---
 
 ## 目录
@@ -36,20 +36,21 @@ hybrid chess/
 │   ├── cross_variant_tournament.py   # 带温度采样的跨变体锦标赛
 │   ├── rq4_rule_reform_ab.py         # AB D2 规则改革扫描
 │   └── eval_arena.py                          # 换边评估
-├── tests/                 # 测试套件（340+ 测试，含 conftest.py 全局态重置）
+├── tests/                 # 测试套件（331 测试，含 conftest.py 全局态重置）
 ├── ui/                    # 浏览器对局 UI
 ├── runs/         # 实验输出（gitignored）
 │   ├── rq4_rule_reform_ab/         # AB 扫描结果
 │   ├── rq4_az_default/             # Default 50 轮
-│   ├── rq4_az_noq_only/            # Q only 50 轮
-│   ├── rq4_az_xqqueen_only/        # X only 50 轮
+│   ├── rq4_az_noq_only/            # noQ 50 轮
+│   ├── rq4_az_xqqueen_only/        # xqQueen 50 轮
 │   ├── rq4_az_palace_knight/       # PK 50 轮
 │   ├── rq4_az_pk_nopromo/          # PK+noPromo 50 轮
 │   ├── rq4_az_pk_xqqueen/          # PK+xqQueen 50 轮 ⭐
 │   ├── rq4_az_nq_nopromo/          # noQ+noPromo 50 轮
 │   ├── rq4_az_nq_pk/               # noQ+PK 50 轮
 │   ├── rq4_az_nq_allrules/         # noQ+ALL 50 轮
-│   └── cross_variant_tournament/   # 3600 局锦标赛 (T=0.5)
+│   ├── cross_variant_tournament/   # 初版 n=100 锦标赛（3,600 局）
+│   └── cross_variant_tournament_ext/ # n=500 扩展（合计 17,969 局）
 └── docs/
     ├── ARCHITECTURE.md
     ├── EXPERIMENTS_ZH.md  # 本文件（中文）
@@ -68,7 +69,7 @@ hybrid chess/
 
 - **AZ 训练**：9 个变体 × 50 轮 = 450 轮，共 45,000 局自对弈
 - **AB 扫描**：23 个变体 × 40 局 = 920 局
-- **锦标赛**：36 对 × 每对 100 局 = 3,600 局（动作选择采用温度采样，保证每局都是独立样本）
+- **锦标赛**：36 个 unordered 对 × 每对 500 局 side-swapped = 17,969 局（初版 n=100 共 3,600 局曾出现表观 3-cycle，n=500 复测后被推翻）
 
 ---
 
@@ -161,15 +162,15 @@ hybrid chess/
 - 评测：每 2 轮一次，20 局对 Random + 20 局对 AB(d1)
 - 总计：**9 变体 × 50 轮 = 45,000 局自对弈**
 
-> **PK** = chess_palace + knight_block，**Q** = no_queen，**X** = xq_queen，**ALL** = PK + no_promotion
+> **PK** = chess_palace + knight_block，**noQ** = no_queen，**xqQueen** = xq_queen，**ALL** = PK + no_promotion
 
 ### 九变体对比（最后 10 轮平均）
 
 | 变体 | 轮数 | Chess% | XQ% | 和% | C:X | MatDiff |
 |------|------|--------|-----|-----|-----|---------|
 | Default | 50 | 35.6 | 4.0 | 60.4 | 8.9× | −6.40 |
-| Q only | 50 | 0.9 | 1.6 | 97.5 | 0.6× | −11.72 |
-| X only | 50 | 22.8 | 7.8 | 69.4 | 2.9× | −11.27 |
+| noQ | 50 | 0.9 | 1.6 | 97.5 | 0.6× | −11.72 |
+| xqQueen | 50 | 22.8 | 7.8 | 69.4 | 2.9× | −11.27 |
 | PK | 50 | 30.9 | 9.3 | 59.8 | 3.3× | −6.77 |
 | PK+noPromo | 50 | 31.1 | 9.1 | 59.8 | 3.4× | −6.25 |
 | **PK+xqQueen** ⭐ | 50 | **21.2** | **18.0** | **60.8** | **1.2×** | **−10.68** |
@@ -178,7 +179,7 @@ hybrid chess/
 | noQ+ALL | 50 | 1.5 | 4.6 | 93.9 | 0.3× | −11.58 |
 
 只看决定性比赛率合理（和棋率不超过 ~70%）的方案，**PK+xqQueen 是最接近 1:1 平衡的，C:X = 1.2×**。
-去掉 Chess Queen 的变体（Q only、noQ+*）虽然 C:X 比也接近 1，但靠的是把和棋率推到 95% 以上。这不是策略平衡，而是和棋退化。
+去掉 Chess Queen 的变体（noQ、noQ+*）虽然 C:X 比也接近 1，但靠的是把和棋率推到 95% 以上，这是和棋退化而不是策略平衡。
 
 ---
 
@@ -189,10 +190,10 @@ hybrid chess/
 | | 无 PK | 加 PK |
 |--|------|------|
 | **Chess 有 Q / XQ 无 Q** | Default 8.9× (60% 和) | PK 3.3× (60% 和) |
-| **Chess 有 Q / XQ 有 Q** | X only 2.9× (69% 和) | **PK+xqQueen 1.2× (61% 和)** ⭐ |
-| **Chess 无 Q / XQ 无 Q** | Q only 0.6× (98% 和) | noQ+PK 0.3× (95% 和) |
+| **Chess 有 Q / XQ 有 Q** | xqQueen 2.9× (69% 和) | **PK+xqQueen 1.2× (61% 和)** ⭐ |
+| **Chess 无 Q / XQ 无 Q** | noQ 0.6× (98% 和) | noQ+PK 0.3× (95% 和) |
 
-> 单一维度的干预不够。只加 `xq_queen`（X only）后 Chess 仍有 ~3× 的优势；只加 `PK` 后仍有 ~3.3×。
+> 单一维度的干预不够。只加 `xq_queen`（xqQueen）后 Chess 仍有 ~3× 的优势；只加 `PK` 后仍有 ~3.3×。
 > **必须把 `PK` 和 `xq_queen` 组合起来才能把 ratio 拉到 1.x 区间，且和棋率与 Default 同档。**
 > 去掉 Chess Queen 能把 ratio 压到 1 以下，但代价是 >95% 的和棋率。这是一个决断匮乏的退化博弈，不是策略平衡。
 
@@ -216,53 +217,51 @@ PK+xqQueen 在 ~20 轮时达到 1.2× 稳态，之后稳定在 1.0–1.5× 区�
 
 - **Agent 池**：9 个变体的 `best_model.pt`（都训练满 50 轮）
 - **对局规则**：Default（标准 Hybrid Chess，无改革）
-- **局数**：36 对 × 每对 100 局（每个颜色分配 50 局）= **3,600 局**
-- **搜索**：50 sims MCTS，C++ 引擎，4 并行 worker
-- **动作选择**：访问数温度采样（`temperature=0.5`），保证同一对 agent + 同一颜色 + 不同种子的对局真正分散。3,600 局中每局都是独立样本。
+- **局数**：36 个 unordered 对 × 每对 500 局 side-swapped = **17,969 局**（扣除 31 局 seed-collision 重复）
+- **搜索**：50 sims MCTS，C++ 引擎，6 并行 worker
+- **动作选择**：访问数温度采样（`temperature=0.5`），保证同一对 agent + 同一颜色 + 不同种子的对局真正分散。
 - **种子**：用 `hashlib.sha256((name_a, name_b, half, gi))` 生成（跨进程/跨 session 完全可复现）。
-- **耗时**：≈ 264 分钟
-- **输出**：`runs/cross_variant_tournament/` 包含 `game_records.json`、`payoff_matrix.csv`、`wdl_matrix.csv`、`pairwise_ci.csv`、`summary.json`。
+- **输出**：`runs/cross_variant_tournament/analysis_500/` 包含 `payoff_matrix.csv`、`elo.csv`、`per_side.csv`、`pairwise_significance.csv`、`decisive_rate.csv`、`game_length.csv`。
 
-### Payoff 矩阵
+### Payoff 矩阵（n=500，行对列）
 
 | | Default | noQ | xqQueen | PK | PK_noPromo | PK_xqQueen | noQ_noPromo | noQ_PK | noQ_ALL |
 |--|------|------|------|------|------|------|------|------|------|
-| **Default** | 0.500 | 0.480 | 0.510 | 0.485 | 0.500 | 0.555 | 0.470 | 0.535 | 0.525 |
-| **noQ** | 0.520 | 0.500 | 0.510 | 0.515 | 0.545 | 0.505 | 0.500 | 0.595 | 0.560 |
-| **xqQueen** | 0.490 | 0.490 | 0.500 | 0.425 | 0.505 | 0.520 | 0.465 | 0.550 | 0.520 |
-| **PK** | 0.515 | 0.485 | 0.575 | 0.500 | 0.525 | 0.485 | 0.460 | 0.575 | 0.490 |
-| **PK_noPromo** | 0.500 | 0.455 | 0.495 | 0.475 | 0.500 | 0.525 | 0.470 | 0.590 | 0.485 |
-| **PK_xqQueen** | 0.445 | 0.495 | 0.480 | 0.515 | 0.475 | 0.500 | 0.455 | 0.505 | 0.540 |
-| **noQ_noPromo** | 0.530 | 0.500 | 0.535 | 0.540 | 0.530 | 0.545 | 0.500 | 0.540 | 0.505 |
-| **noQ_PK** | 0.465 | 0.405 | 0.450 | 0.425 | 0.410 | 0.495 | 0.460 | 0.500 | 0.480 |
-| **noQ_ALL** | 0.475 | 0.440 | 0.480 | 0.510 | 0.515 | 0.460 | 0.495 | 0.520 | 0.500 |
+| **Default** | 0.500 | 0.484 | 0.509 | 0.492 | 0.522 | 0.522 | 0.487 | 0.537 | 0.499 |
+| **noQ** | 0.516 | 0.500 | 0.516 | 0.503 | 0.521 | 0.501 | 0.502 | 0.586 | 0.550 |
+| **xqQueen** | 0.491 | 0.484 | 0.500 | 0.460 | 0.476 | 0.497 | 0.466 | 0.538 | 0.516 |
+| **PK** | 0.508 | 0.497 | 0.540 | 0.500 | 0.530 | 0.505 | 0.491 | 0.528 | 0.509 |
+| **PK_noPromo** | 0.478 | 0.479 | 0.524 | 0.470 | 0.500 | 0.525 | 0.482 | 0.585 | 0.514 |
+| **PK_xqQueen** | 0.478 | 0.499 | 0.503 | 0.495 | 0.475 | 0.500 | 0.438 | 0.509 | 0.495 |
+| **noQ_noPromo** | 0.513 | 0.498 | 0.534 | 0.509 | 0.518 | 0.562 | 0.500 | 0.524 | 0.507 |
+| **noQ_PK** | 0.463 | 0.414 | 0.462 | 0.472 | 0.415 | 0.491 | 0.476 | 0.500 | 0.498 |
+| **noQ_ALL** | 0.501 | 0.450 | 0.484 | 0.491 | 0.486 | 0.505 | 0.493 | 0.502 | 0.500 |
 
-### Agent 排名
+### Agent 排名（Bradley–Terry Elo，均值锚定 1500，500 次 bootstrap 95% CI）
 
-| 排名 | Agent | 平均分 | 训练规则 |
-|------|-------|--------|---------|
-| 1 | **noQ** | 0.531 | 去 Chess Queen |
-| 2 | **noQ_noPromo** | 0.528 | noQ + 禁升变 |
-| 3 | **PK** | 0.514 | 宫 + 蹩脚 |
-| 4 | Default | 0.508 | 标准规则 |
-| 5 | PK_noPromo | 0.499 | PK + 禁升变 |
-| 6 | xqQueen | 0.496 | 给 XQ Queen |
-| 7 | PK_xqQueen | 0.489 | PK + XQ Queen |
-| 8 | noQ_ALL | 0.487 | 所有限制 |
-| 9 | noQ_PK | 0.449 | noQ + PK |
+| 排名 | Agent | Elo | 95% CI | 平均分 | 训练规则 |
+|------|-------|-----|--------|--------|---------|
+| 1 | **noQ_noPromo** | 1520.8 | [1502.5, 1527.3] | 0.521 | noQ + 禁升变 |
+| 2 | **noQ** | 1520.5 | [1503.7, 1529.6] | 0.524 | 去 Chess Queen |
+| 3 | **PK** | 1514.5 | [1494.4, 1521.4] | 0.514 | 宫 + 蹩脚 |
+| 4 | Default | 1503.4 | [1490.0, 1517.9] | 0.506 | 标准规则 |
+| 5 | PK_noPromo | 1502.5 | [1490.3, 1517.7] | 0.507 | PK + 禁升变 |
+| 6 | noQ_ALL | 1488.4 | [1478.4, 1505.5] | 0.489 | noQ + ALL |
+| 7 | xqQueen | 1488.2 | [1480.6, 1505.5] | 0.491 | 给 XQ Queen |
+| 8 | PK_xqQueen | 1486.2 | [1479.5, 1502.2] | 0.487 | PK + XQ Queen |
+| 9 | noQ_PK | 1475.6 | [1467.8, 1487.3] | 0.461 | noQ + PK |
 
-> 9 个 agent 的平均分都落在 0.449–0.531 这窄窄的 0.08 区间。在 default 规则下**没有任何 agent 显著占优**。
+> 平均分区间从 n=100 的 0.449–0.531 收窄到 n=500 的 **0.461–0.524**。Bootstrap CI 跨度约 15–30 Elo，36 对里仍有 32 对 Wilson CI 包含 0.50，说明多数 agent 间差距仍在采样噪声之内。
 
 ### 关键发现
 
-#### 1. 训练时平衡 ≠ default 下迁移强
+#### 1. In-variant 平衡不能预测 default 下的迁移强度
 
-训练时最平衡的变体（PK+xqQueen，in-variant C:X = 1.2×）在 default 规则下的迁移性**不是**最强的（排第 7）。反过来，
-在限制最严的 Chess 变体（noQ、noQ_noPromo）下训练出来的 agent，虽然自对弈高度退化、和棋率很高，但它们在 default 下迁移表现**最好**。一种合理的解释是：受限训练条件迫使网络学到更强的位置感，部分弥补了评估时 Chess Queen 的存在带来的不熟悉。
+训练时最平衡的变体（PK+xqQueen，in-variant C:X = 1.2×）在 default 规则下落到**第 8 名**（avg 0.487）。排名靠前的 noQ、noQ_noPromo 反而是自对弈和棋率 >96% 的退化变体。在我们测试的方案集合里，in-variant 平衡和 default 强度衡量的是 agent 的不同属性。
 
 #### 2. n=100 时的表观 3-cycle，n=500 复测后被推翻
 
-100 局锦标赛在 `PK`、`xqQueen`、`PK_xqQueen` 之间表面上构成了一个闭合的"石头剪刀布"循环：
+初版 100 局锦标赛在 `PK`、`xqQueen`、`PK_xqQueen` 之间表面构成一个"石头剪刀布"循环：
 
 | Edge | 分数 (n=100) | 95% CI (n=100) |
 |------|-------------|----------------|
@@ -270,21 +269,21 @@ PK+xqQueen 在 ~20 轮时达到 1.2× 稳态，之后稳定在 1.0–1.5× 区�
 | xqQueen vs PK_xqQueen | 0.520 | [0.423, 0.615] |
 | PK_xqQueen vs PK | 0.515 | [0.418, 0.611] |
 
-为了判断这个 cycle 是规则空间的真实结构还是 100 局采样噪声，我们对这三对各跑了 500 局复测（相同 seed、side-swapped、T=0.5）：
+对这三对各跑 500 局复测（相同 seed 约定，side-swapped，T=0.5）：
 
 | Edge | 分数 (n=500) | 95% CI (n=500) | 方向 |
 |------|-------------|----------------|------|
-| PK vs xqQueen | 0.508 | [0.464, 0.552] | 保持方向，但 CI 横跨 0.5 |
+| PK vs xqQueen | 0.540 | [0.508, 0.572] | 方向保持，CI 排除 0.5 |
 | xqQueen vs PK_xqQueen | 0.497 | [0.453, 0.541] | 方向翻转，CI 横跨 0.5 |
-| PK_xqQueen vs PK | 0.497 | [0.453, 0.541] | 方向翻转，CI 横跨 0.5 |
+| PK_xqQueen vs PK | 0.495 | [0.453, 0.541] | 方向翻转，CI 横跨 0.5 |
 
-500 局下三条 Wilson 95% CI 都包含 0.5，且其中两条点估值跌到 0.5 以下。**原本的 3-cycle 是小样本采样伪结构**。复测输出在 `runs/cycle_3pair_ci/`。
+n=500 下三条边里有两条翻向，cycle 结构消失，只剩 PK vs xqQueen 显著偏离 0.5。**原本的 3-cycle 是小样本伪结构**。复测输出在 `runs/cycle_3pair_ci/`。
 
 复现命令：`python -m scripts.cycle_3pair_ci --games 250 --workers 12`。
 
-#### 3. 局级多样性
+#### 3. n=500 下的成对显著性
 
-`temperature=0.5` 的动作采样让锦标赛产生 19.4% 和棋 + 80.6% 决定性比赛（78.6% checkmate、1.3% threefold、18.1% max-plies）。每个 (pair, color) 桶内平均有 38/50 个独立的 (outcome, ply-count) 组合，说明 100 局每对的样本确实是策略分布的独立抽样，不是确定性复制。
+按 Wilson 95% CI，36 对里有 4 对 CI 排除 0.50：noQ vs noQ_PK (0.586)、PK_noPromo vs noQ_PK (0.585)、noQ_noPromo vs PK_xqQueen (0.562)、noQ vs noQ_ALL (0.550)。这 4 对在 n=100 时 CI 都包含 0.50，多出来的分辨率完全来自更大的 N。详见 `runs/cross_variant_tournament/analysis_500/pairwise_significance.csv`。
 
 ---
 
@@ -318,9 +317,9 @@ python -m scripts.run_all
 python -m scripts.dashboard
 # 然后浏览器打开 runs/progress.html（每 30 秒自动刷新）
 
-# 9 个 best_model.pt 的跨变体锦标赛
+# 9 个 best_model.pt 的跨变体锦标赛（n=500 设置）
 python -m scripts.cross_variant_tournament \
-  --games 50 --sims 50 --workers 4 --temperature 0.5 --seed 42
+  --games 250 --sims 50 --workers 6 --temperature 0.5 --seed 42
 ```
 
 ---
@@ -329,9 +328,10 @@ python -m scripts.cross_variant_tournament \
 
 - [x] AB D2 规则改革扫描（23 变体）
 - [x] AZ 9 变体训练（每个 50 轮 × 100 局 × 50 sims × 150 ply）
-- [x] 跨变体锦标赛（3600 局，温度采样，确定性种子）
+- [x] 跨变体锦标赛（n=500，共 17,969 局，温度采样，确定性种子）
+- [x] Bradley–Terry Elo + bootstrap CI、per-side breakdown、pairwise significance、decisive rate、game-length 分析
 - [x] 因子分析（Queen × PK）
 - [x] 非传递循环检测（n=100 时出现，n=500 复测后被推翻）
 - [x] 500 局 cycle 复测 + Wilson 95% CI（`scripts/cycle_3pair_ci.py`）
 - [x] 全部图表从数据重新生成（`course_project/plot_figures.R`、`course_project/plot_cycle_replay.py`）
-- [x] 课程最终报告改写
+- [x] 课程最终报告改写（n=500，通过 side-of-play 和 in-variant-vs-transfer 分析闭环 RQ3）
