@@ -1,369 +1,268 @@
-#!/usr/bin/env python3
-"""Hybrid Chess — Game Server
-
-Zero‐dependency HTTP server (Python stdlib only).
-Serves the web UI and exposes a REST API for interactive play.
-
-Usage:
-    python -m hybrid.server                    # http://localhost:8000
-    python -m hybrid.server --port 9000        # custom port
-    python -m hybrid.server --no-browser       # don't auto-open
-"""
-
+"""Single-game local HTTP server for Hybrid Chess (Python standard library)."""
 from __future__ import annotations
-
 import argparse
 import json
-import os
-import sys
 import threading
+import uuid
 import webbrowser
 from http.server import HTTPServer, SimpleHTTPRequestHandler
 from pathlib import Path
-from typing import Any, Dict, List, Optional
-
-# ── project imports ──
-ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(ROOT))
-
-from hybrid.core.board import Board, initial_board
-from hybrid.core.env import HybridChessEnv, GameState
-from hybrid.core.types import Side, PieceKind, Move, Piece
-from hybrid.core.rules import generate_legal_moves
+from urllib.parse import urlsplit
+from hybrid.core.env import HybridChessEnv
+from hybrid.core.types import Side, PieceKind, Move
+from hybrid.core.rules import terminal_info, is_in_check, TerminalStatus
 from hybrid.core.render import render_board
+from hybrid.web_variants import bilingual, catalog, parse_variant, preview
 
-
-# ═══════════════════════════════════════════════
-# Agent factory
-# ═══════════════════════════════════════════════
-
+ROOT = Path(__file__).resolve().parent.parent
 AVAILABLE_AGENTS = [
-    {"id": "random",  "label": "Random"},
-    {"id": "greedy",  "label": "Greedy"},
-    {"id": "ab_d1",   "label": "AlphaBeta d=1"},
-    {"id": "ab_d2",   "label": "AlphaBeta d=2"},
-    {"id": "ab_d4",   "label": "AlphaBeta d=4"},
+    {"id": "ab_d1", "label": "Quick", "name": bilingual("快速", "Quick"), "seconds": 1},
+    {"id": "ab_d2", "label": "Standard", "name": bilingual("标准", "Standard"), "seconds": 3},
+    {"id": "ab_d4", "label": "Deep", "name": bilingual("深入", "Deep"), "seconds": 6},
+    {"id": "greedy", "label": "Greedy", "name": bilingual("贪心练习", "Capture practice"), "seconds": 0},
+    {"id": "random", "label": "Random", "name": bilingual("随机练习", "Random practice"), "seconds": 0},
 ]
 
-def create_agent(agent_id: str):
-    """Create an agent instance by its ID string."""
+
+class APIError(ValueError):
+    def __init__(self, code, status=400):
+        super().__init__(code)
+        self.code, self.status = code, status
+
+
+def create_agent(agent_id):
+    if agent_id not in [a["id"] for a in AVAILABLE_AGENTS]:
+        raise APIError("invalid_agent")
     if agent_id == "random":
         from hybrid.agents.random_agent import RandomAgent
         return RandomAgent(seed=None)
-    elif agent_id == "greedy":
+    if agent_id == "greedy":
         from hybrid.agents.greedy_agent import GreedyAgent
         return GreedyAgent()
-    elif agent_id.startswith("ab_d"):
-        depth = int(agent_id.split("d")[1])
-        from hybrid.agents.alphabeta_agent import AlphaBetaAgent, SearchConfig
-        return AlphaBetaAgent(cfg=SearchConfig(depth=depth))
-    else:
-        raise ValueError(f"Unknown agent: {agent_id}")
+    from hybrid.agents.alphabeta_agent import AlphaBetaAgent, SearchConfig
+    depth, seconds = {"ab_d1": (1, 1), "ab_d2": (2, 3), "ab_d4": (4, 6)}[agent_id]
+    return AlphaBetaAgent(SearchConfig(depth=depth, time_limit_seconds=seconds))
 
 
-# ═══════════════════════════════════════════════
-# Game Session
-# ═══════════════════════════════════════════════
+def move_dict(move):
+    return {"fx": move.fx, "fy": move.fy, "tx": move.tx, "ty": move.ty,
+            "promotion": move.promotion.name if move.promotion else None}
+
+
+def reason_code(reason):
+    return {"": "", "Checkmate": "checkmate",
+            "Stalemate (loss for stalemated side)": "stalemate",
+            "Max plies reached": "move_limit", "Threefold repetition": "repetition",
+            "Chess king captured": "royal_captured",
+            "Xiangqi general captured": "royal_captured"}.get(reason, "")
+
 
 class GameSession:
-    """Holds the state of a single game."""
-
-    def __init__(self, human_side: str, ai_agent_id: str, variant: str = "none"):
+    def __init__(self, human_side, ai_agent_id, variant="none"):
+        if human_side not in ("chess", "xiangqi"):
+            raise APIError("invalid_side")
+        self.variant = parse_variant(variant)
         self.human_side = Side.CHESS if human_side == "chess" else Side.XIANGQI
         self.ai_side = self.human_side.opponent()
         self.ai_agent = create_agent(ai_agent_id)
-        self.variant = variant
-
-        self.env = HybridChessEnv(max_plies=400, use_cpp=False)
+        self.ai_agent_id = ai_agent_id
+        self.env = HybridChessEnv(variant=self.variant)
         self.env.reset()
+        self.history = [self.env.state.clone()]
+        self.move_history = []
+        self.resigned = False
+        self.session_id = uuid.uuid4().hex
+        self.revision = 0
 
-        # Apply variant by mutating the freshly-reset board in place rather
-        # than rebuilding through VariantConfig. The web UI only supports the
-        # two demo variants below and the agents loaded here were not trained
-        # under those flags, so we just hand the network a different opening
-        # position and accept that any further variant-aware logic (rule
-        # adjustments inside generate_legal_moves, terminal_info, etc.) will
-        # not fire for this session. This is a demo path, not training.
-        if variant == "no_queen":
-            self._apply_no_queen()
-        elif variant == "extra_cannon":
-            self._apply_extra_cannon()
+    def _info(self):
+        self.env._set_active_variant()
+        s = self.env.state
+        return terminal_info(s.board, s.side_to_move, s.repetition, s.ply, self.env.max_plies)
 
-        self.history: List[GameState] = [self._clone_state()]
-        self.move_history: List[Dict] = []
-
-    def _apply_no_queen(self):
-        """Remove the Chess Queen from starting position."""
-        board = self.env.state.board
-        for x in range(9):
-            for y in range(10):
-                p = board.get(x, y)
-                if p and p.kind == PieceKind.QUEEN and p.side == Side.CHESS:
-                    board.set(x, y, None)
-
-    def _apply_extra_cannon(self):
-        """Add an extra Cannon for Xiangqi side at (4, 7)."""
-        board = self.env.state.board
-        if board.get(4, 7) is None:
-            board.set(4, 7, Piece(PieceKind.CANNON, Side.XIANGQI))
-
-    def _clone_state(self):
-        return GameState(
-            board=self.env.state.board.clone(),
-            side_to_move=self.env.state.side_to_move,
-            ply=self.env.state.ply,
-            repetition=dict(self.env.state.repetition),
-        )
-
-    def get_state_dict(self) -> Dict[str, Any]:
-        """Return current state as a JSON-friendly dict."""
+    def get_state_dict(self):
+        info = self._info()
         state = self.env.state
-        legal = self.env.legal_moves()
-        board_ascii = render_board(state.board)
-
+        done = self.resigned or info.status != TerminalStatus.ONGOING
+        winner = self.ai_side if self.resigned else info.winner
+        result = f"{winner.name.lower()}_win" if winner else ("draw" if done else "ongoing")
         return {
-            "board_ascii": board_ascii,
-            "side_to_move": state.side_to_move.name.lower(),
-            "ply": state.ply,
-            "legal_moves": [
-                {
-                    "fx": m.fx, "fy": m.fy,
-                    "tx": m.tx, "ty": m.ty,
-                    "promotion": m.promotion.name if m.promotion else None,
-                }
-                for m in legal
-            ],
-            "game_over": False,
-            "result": "",
-            "reason": "",
+            "session_id": self.session_id, "revision": self.revision,
+            "board_ascii": render_board(state.board),
+            "side_to_move": state.side_to_move.name.lower(), "ply": state.ply,
+            "human_side": self.human_side.name.lower(), "ai_agent": self.ai_agent_id,
+            "variant": self.variant.to_dict(),
+            "legal_moves": [] if done else [move_dict(m) for m in self.env.legal_moves()],
+            "moves": list(self.move_history),
+            "in_check": not done and is_in_check(state.board, state.side_to_move),
+            "game_over": done, "result_code": result,
+            "result": {"chess_win": "Chess wins", "xiangqi_win": "Xiangqi wins",
+                       "draw": "Draw", "ongoing": ""}[result],
+            "reason": "Resignation" if self.resigned else info.reason,
+            "reason_code": "resignation" if self.resigned else reason_code(info.reason),
+            "can_undo": not done and any(m["side"] == self.human_side.name.lower()
+                                         for m in self.move_history),
         }
 
-    def apply_human_move(self, fx: int, fy: int, tx: int, ty: int,
-                          promotion: Optional[str] = None) -> Dict[str, Any]:
-        """Apply a human move and return new state."""
-        promo = None
-        if promotion:
-            promo = PieceKind[promotion.upper()]
+    def check_revision(self, body):
+        if ("session_id" in body or "revision" in body) and (
+            body.get("session_id") != self.session_id or
+            type(body.get("revision")) is not int or body["revision"] != self.revision
+        ):
+            raise APIError("stale_state", 409)
 
-        move = Move(fx, fy, tx, ty, promo)
+    def _require_ongoing(self, side=None):
+        if self.resigned or self._info().status != TerminalStatus.ONGOING:
+            raise APIError("game_over", 409)
+        if side is not None and self.env.state.side_to_move != side:
+            raise APIError("wrong_turn", 409)
 
-        # Validate
-        legal = self.env.legal_moves()
-        if not any(m.fx == fx and m.fy == fy and m.tx == tx and m.ty == ty and
-                   (m.promotion == promo or (m.promotion is None and promo is None))
-                   for m in legal):
-            raise ValueError(f"Illegal move: ({fx},{fy})->({tx},{ty})")
+    def _apply(self, move):
+        side = self.env.state.side_to_move.name.lower()
+        self.env.step(move)
+        record = {**move_dict(move), "side": side,
+                  "notation": f"{'abcdefghi'[move.fx]}{move.fy + 1}-{'abcdefghi'[move.tx]}{move.ty + 1}"}
+        if move.promotion:
+            record["notation"] += "=" + {"QUEEN": "Q", "ROOK": "R", "BISHOP": "B", "KNIGHT": "N"}[move.promotion.name]
+        self.move_history.append(record)
+        self.history.append(self.env.state.clone())
+        self.revision += 1
+        return {**self.get_state_dict(), "move": move_dict(move)}
 
-        state, reward, done, info = self.env.step(move)
-        self.history.append(self._clone_state())
+    def apply_human_move(self, fx, fy, tx, ty, promotion=None):
+        self._require_ongoing(self.human_side)
+        if any(type(c) is not int for c in (fx, fy, tx, ty)) or not (
+            0 <= fx < 9 and 0 <= tx < 9 and 0 <= fy < 10 and 0 <= ty < 10
+        ):
+            raise APIError("invalid_move")
+        if promotion is not None and promotion not in ("QUEEN", "ROOK", "BISHOP", "KNIGHT"):
+            raise APIError("invalid_promotion")
+        move = Move(fx, fy, tx, ty, PieceKind[promotion] if promotion else None)
+        if move not in self.env.legal_moves():
+            raise APIError("illegal_move")
+        return self._apply(move)
 
-        result = self._build_result(done, info)
-        return result
+    def ai_move(self):
+        self._require_ongoing(self.ai_side)
+        move = self.ai_agent.select_move(self.env.state.clone(), self.env.legal_moves())
+        return self._apply(move)
 
-    def ai_move(self) -> Dict[str, Any]:
-        """Let the AI make a move."""
-        legal = self.env.legal_moves()
-        if not legal:
-            return self.get_state_dict()
-
-        move = self.ai_agent.select_move(self.env.state, legal)
-        state, reward, done, info = self.env.step(move)
-        self.history.append(self._clone_state())
-
-        result = self._build_result(done, info)
-        result["move"] = {
-            "fx": move.fx, "fy": move.fy,
-            "tx": move.tx, "ty": move.ty,
-        }
-        return result
-
-    def undo(self) -> Dict[str, Any]:
-        """Undo the last two moves (human + AI)."""
-        undo_count = min(2, len(self.history) - 1)
-        for _ in range(undo_count):
-            self.history.pop()
-
-        # Restore state
-        saved = self.history[-1]
-        self.env.state = GameState(
-            board=saved.board.clone(),
-            side_to_move=saved.side_to_move,
-            ply=saved.ply,
-            repetition=dict(saved.repetition),
-        )
+    def undo(self):
+        self._require_ongoing()
+        indices = [i for i, m in enumerate(self.move_history)
+                   if m["side"] == self.human_side.name.lower()]
+        if not indices:
+            raise APIError("nothing_to_undo", 409)
+        index = indices[-1]
+        self.env.state = self.history[index].clone()
+        self.history = self.history[:index + 1]
+        self.move_history = self.move_history[:index]
+        self.revision += 1
         return self.get_state_dict()
 
-    def resign(self) -> Dict[str, Any]:
-        """Human resigns."""
-        winner = self.ai_side.name
-        return {
-            **self.get_state_dict(),
-            "game_over": True,
-            "result": f"{winner} wins",
-            "reason": "Resignation",
-        }
-
-    def _build_result(self, done: bool, info) -> Dict[str, Any]:
-        result = self.get_state_dict()
-        if done:
-            result["game_over"] = True
-            winner = getattr(info, 'winner', None)
-            reason = getattr(info, 'reason', '')
-            if winner == Side.CHESS:
-                result["result"] = "Chess wins"
-            elif winner == Side.XIANGQI:
-                result["result"] = "Xiangqi wins"
-            else:
-                result["result"] = "Draw"
-            result["reason"] = reason
-        return result
+    def resign(self):
+        self._require_ongoing()
+        self.resigned = True
+        self.revision += 1
+        return self.get_state_dict()
 
 
-# ═══════════════════════════════════════════════
-# HTTP Handler
-# ═══════════════════════════════════════════════
+current_session = None
 
-# Global session (single-player for simplicity)
-current_session: Optional[GameSession] = None
 
 class HybridChessHandler(SimpleHTTPRequestHandler):
-    """Serves static files from ui/ and handles API requests."""
-
     def __init__(self, *args, **kwargs):
-        self.ui_dir = str(ROOT / "ui")
-        super().__init__(*args, directory=self.ui_dir, **kwargs)
+        super().__init__(*args, directory=str(ROOT / "ui"), **kwargs)
 
     def do_GET(self):
-        if self.path == '/api/agents':
+        path = urlsplit(self.path).path
+        if path == "/api/agents":
             self._json_response({"agents": AVAILABLE_AGENTS})
-        elif self.path == '/api/state':
+        elif path == "/api/variants":
+            self._json_response(catalog())
+        elif path == "/api/state":
             if current_session:
                 self._json_response(current_session.get_state_dict())
             else:
-                self._json_response({"error": "No active game"}, 404)
+                self._json_response({"error": "no_game"}, 404)
+        elif path.startswith("/api/"):
+            self._json_response({"error": "not_found"}, 404)
         else:
             super().do_GET()
 
     def do_POST(self):
         global current_session
-
-        body = self._read_body()
-
-        if self.path == '/api/new':
-            try:
-                current_session = GameSession(
-                    human_side=body.get("human_side", "chess"),
-                    ai_agent_id=body.get("ai_agent", "ab_d1"),
-                    variant=body.get("variant", "none"),
-                )
-                self._json_response(current_session.get_state_dict())
-            except Exception as e:
-                self._json_response({"error": str(e)}, 500)
-
-        elif self.path == '/api/move':
-            if not current_session:
-                self._json_response({"error": "No active game"}, 400)
-                return
-            try:
-                result = current_session.apply_human_move(
-                    fx=body["fx"], fy=body["fy"],
-                    tx=body["tx"], ty=body["ty"],
-                    promotion=body.get("promotion"),
-                )
-                self._json_response(result)
-            except Exception as e:
-                self._json_response({"error": str(e)}, 400)
-
-        elif self.path == '/api/ai_move':
-            if not current_session:
-                self._json_response({"error": "No active game"}, 400)
-                return
-            try:
-                result = current_session.ai_move()
-                self._json_response(result)
-            except Exception as e:
-                self._json_response({"error": str(e)}, 500)
-
-        elif self.path == '/api/undo':
-            if not current_session:
-                self._json_response({"error": "No active game"}, 400)
-                return
-            try:
-                result = current_session.undo()
-                self._json_response(result)
-            except Exception as e:
-                self._json_response({"error": str(e)}, 500)
-
-        elif self.path == '/api/resign':
-            if not current_session:
-                self._json_response({"error": "No active game"}, 400)
-                return
-            result = current_session.resign()
+        try:
+            body = self._read_body()
+            path = urlsplit(self.path).path
+            if path == "/api/preview":
+                result = preview(body.get("variant", "none"))
+            elif path == "/api/new":
+                if current_session:
+                    current_session.check_revision(body)
+                candidate = GameSession(body.get("human_side", "chess"),
+                                        body.get("ai_agent", "ab_d1"), body.get("variant", "none"))
+                current_session = candidate
+                result = candidate.get_state_dict()
+            elif path in ("/api/move", "/api/ai_move", "/api/undo", "/api/resign"):
+                if current_session is None:
+                    raise APIError("no_game", 404)
+                current_session.check_revision(body)
+                if path == "/api/move":
+                    if not all(k in body for k in ("fx", "fy", "tx", "ty")):
+                        raise APIError("invalid_move")
+                    result = current_session.apply_human_move(
+                        body["fx"], body["fy"], body["tx"], body["ty"], body.get("promotion"))
+                else:
+                    result = getattr(current_session, path.rsplit("/", 1)[1])()
+            else:
+                raise APIError("not_found", 404)
             self._json_response(result)
+        except APIError as exc:
+            self._json_response({"error": exc.code}, exc.status)
+        except (ValueError, TypeError) as exc:
+            code = "invalid_variant" if str(exc) == "invalid_variant" else "invalid_request"
+            self._json_response({"error": code}, 400)
+        except Exception:
+            import traceback
+            traceback.print_exc()
+            self._json_response({"error": "server_error"}, 500)
 
-        else:
-            self._json_response({"error": "Not found"}, 404)
+    def _read_body(self):
+        length = int(self.headers.get("Content-Length", 0))
+        if not 0 <= length <= 65536:
+            raise APIError("invalid_request")
+        body = json.loads(self.rfile.read(length).decode("utf-8")) if length else {}
+        if not isinstance(body, dict):
+            raise APIError("invalid_request")
+        return body
 
-    def _read_body(self) -> dict:
-        length = int(self.headers.get('Content-Length', 0))
-        if length == 0:
-            return {}
-        raw = self.rfile.read(length)
-        return json.loads(raw.decode('utf-8'))
-
-    def _json_response(self, data: dict, status: int = 200):
-        body = json.dumps(data, ensure_ascii=False).encode('utf-8')
+    def _json_response(self, data, status=200):
+        body = json.dumps(data, ensure_ascii=False).encode("utf-8")
         self.send_response(status)
-        self.send_header('Content-Type', 'application/json; charset=utf-8')
-        self.send_header('Content-Length', str(len(body)))
-        self.send_header('Access-Control-Allow-Origin', '*')
+        self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Cache-Control", "no-store")
         self.end_headers()
         self.wfile.write(body)
 
-    def do_OPTIONS(self):
-        self.send_response(200)
-        self.send_header('Access-Control-Allow-Origin', '*')
-        self.send_header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
-        self.send_header('Access-Control-Allow-Headers', 'Content-Type')
-        self.end_headers()
-
-    def log_message(self, format, *args):
-        msg = str(args[0]) if args else ''
-        if '/api/' in msg:
-            sys.stderr.write(f"  [API] {msg}\n")
-
-
-# ═══════════════════════════════════════════════
-# Main
-# ═══════════════════════════════════════════════
 
 def main():
-    parser = argparse.ArgumentParser(description="Hybrid Chess Game Server")
-    parser.add_argument("--port", type=int, default=8000, help="Port (default: 8000)")
-    parser.add_argument("--host", type=str, default="127.0.0.1", help="Host (default: 127.0.0.1)")
-    parser.add_argument("--no-browser", action="store_true", help="Don't open browser")
+    parser = argparse.ArgumentParser(description="Hybrid Chess game server")
+    parser.add_argument("--port", type=int, default=8000)
+    parser.add_argument("--host", default="127.0.0.1")
+    parser.add_argument("--no-browser", action="store_true")
     args = parser.parse_args()
-
     server = HTTPServer((args.host, args.port), HybridChessHandler)
     url = f"http://{args.host}:{args.port}"
-
-    print()
-    print("  ╔══════════════════════════════════════╗")
-    print("  ║       Hybrid Chess Server            ║")
-    print("  ╠══════════════════════════════════════╣")
-    print(f"  ║  URL: {url:<30s} ║")
-    print("  ║  Press Ctrl+C to stop               ║")
-    print("  ╚══════════════════════════════════════╝")
-    print()
-
+    print(f"Hybrid Chess: {url}\nPress Ctrl+C to stop.", flush=True)
     if not args.no_browser:
         threading.Timer(0.5, lambda: webbrowser.open(url)).start()
-
     try:
         server.serve_forever()
     except KeyboardInterrupt:
-        print("\n  Server stopped.")
-        server.shutdown()
+        pass
+    finally:
+        server.server_close()
 
 
 if __name__ == "__main__":

@@ -40,6 +40,24 @@ pip install pybind11 && .\cpp\build.ps1     # Windows
 
 ## Usage
 
+### Play
+
+```bash
+python -m hybrid server
+```
+
+The local page opens at `http://127.0.0.1:8000`. Choose one of six presets
+or combine custom rules, preview the opening, then play as either army.
+The interface supports Chinese and English, legal-move hints, promotion
+choices, undo, and restoring the current game after a page refresh.
+
+Quick, Standard, and Deep AI use Python Alpha-Beta with approximately
+1, 3, and 6 seconds per move; completed search depth depends on the position.
+Random and capture-practice opponents are also available. Web play needs
+neither a compiled C++ engine nor model weights. The server holds one shared
+game in memory; stopping it clears the game. JSON/JSONL recordings remain
+available through the secondary Replays page.
+
 ### Train
 
 ```bash

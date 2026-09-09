@@ -12,6 +12,7 @@ venv/
 
 # Pytest
 .pytest_cache/
+tests/ui/node_modules/
 
 # Model checkpoints & replay data
 *.pt

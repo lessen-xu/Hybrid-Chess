@@ -1,94 +1,119 @@
-"""Alpha-Beta search agent (Negamax variant) with hand-crafted evaluation."""
-
+"""Alpha-beta negamax with optional bounded search for local web play."""
 from __future__ import annotations
 from dataclasses import dataclass, field
-from typing import List, Optional, Tuple
-
+from time import perf_counter
+from typing import List, Optional
 from .base import Agent
 from .eval import evaluate, EvalWeights
 from hybrid.core.env import GameState
 from hybrid.core.types import Move, Side
-from hybrid.core.rules import apply_move, generate_legal_moves, is_in_check, terminal_info, TerminalStatus
-from hybrid.core.config import MAX_PLIES
+from hybrid.core.rules import (apply_move, generate_legal_moves, is_in_check,
+                               terminal_info, TerminalStatus, board_hash)
+from hybrid.core.config import MAX_PLIES, ENABLE_THREEFOLD_REPETITION_DRAW
 
 
 @dataclass
 class SearchConfig:
     depth: int = 3
     eval_weights: EvalWeights = field(default_factory=EvalWeights)
+    time_limit_seconds: Optional[float] = None
+    max_plies: int = MAX_PLIES
+
+    def __post_init__(self):
+        if self.depth < 1:
+            raise ValueError("depth must be positive")
+        if self.time_limit_seconds is not None and self.time_limit_seconds <= 0:
+            raise ValueError("time_limit_seconds must be positive")
+
+
+class _SearchTimeout(Exception):
+    pass
 
 
 class AlphaBetaAgent(Agent):
     name = "alphabeta"
 
-    def __init__(self, cfg: SearchConfig = SearchConfig()):
-        self.cfg = cfg
+    def __init__(self, cfg: Optional[SearchConfig] = None):
+        self.cfg = cfg or SearchConfig()
+        self._deadline = None
+        self.last_completed_depth = 0
+
+    def _check_time(self):
+        if self._deadline is not None and perf_counter() >= self._deadline:
+            raise _SearchTimeout
+
+    def _child(self, state: GameState, mv: Move) -> GameState:
+        board = apply_move(state.board, mv)
+        side = state.side_to_move.opponent()
+        repetition = dict(state.repetition)
+        if ENABLE_THREEFOLD_REPETITION_DRAW:
+            key = board_hash(board, side)
+            repetition[key] = repetition.get(key, 0) + 1
+        return GameState(board, side, state.ply + 1, repetition)
 
     def select_move(self, state: GameState, legal_moves: List[Move]) -> Move:
-        side = state.side_to_move
-        best_mv = legal_moves[0]
-        best_val = -1e18
+        if not legal_moves:
+            raise ValueError("No legal moves")
+        best_move = legal_moves[0]
+        self.last_completed_depth = 0
+        limit = self.cfg.time_limit_seconds
+        self._deadline = perf_counter() + limit if limit is not None else None
+        depths = range(1, self.cfg.depth + 1) if limit is not None else [self.cfg.depth]
+        try:
+            ordered = self._ordered_moves(state, legal_moves)
+            for depth in depths:
+                alpha, beta = -1e18, 1e18
+                candidate, best_value = ordered[0], -1e18
+                for mv in ordered:
+                    self._check_time()
+                    child = self._child(state, mv)
+                    value = -self._negamax(child, depth - 1, -beta, -alpha,
+                                           child.side_to_move)
+                    self._check_time()
+                    if value > best_value:
+                        candidate, best_value = mv, value
+                    alpha = max(alpha, value)
+                best_move = candidate
+                self.last_completed_depth = depth
+                ordered = [candidate] + [m for m in ordered if m != candidate]
+        except _SearchTimeout:
+            pass
+        finally:
+            self._deadline = None
+        return best_move
 
-        # Move ordering: captures and checks first
-        ordered = sorted(legal_moves, key=lambda m: self._move_order_key(state, m), reverse=True)
-
-        alpha, beta = -1e18, 1e18
-        for mv in ordered:
-            nb = apply_move(state.board, mv)
-            child = GameState(board=nb, side_to_move=side.opponent(), ply=state.ply+1, repetition=state.repetition)
-            v = -self._negamax(child, self.cfg.depth - 1, -beta, -alpha, side.opponent())
-            if v > best_val:
-                best_val = v
-                best_mv = mv
-            alpha = max(alpha, v)
-
-        return best_mv
-
-    def _negamax(self, state: GameState, depth: int, alpha: float, beta: float, perspective: Side) -> float:
-        """Negamax: returns value from perspective's point of view."""
-        info = terminal_info(state.board, state.side_to_move, state.repetition, state.ply, MAX_PLIES)
+    def _negamax(self, state: GameState, depth: int, alpha: float,
+                 beta: float, perspective: Side) -> float:
+        """Each node is valued for its side to move; each edge flips sign."""
+        self._check_time()
+        info = terminal_info(state.board, state.side_to_move, state.repetition,
+                             state.ply, self.cfg.max_plies)
         if info.status != TerminalStatus.ONGOING:
             if info.status == TerminalStatus.DRAW:
                 return 0.0
-            # Subtracting ply from the mate score nudges the search toward
-            # mate-in-1 over mate-in-3 (winning side) and toward longer
-            # surviving lines over immediate loss (losing side). This does not
-            # change which moves are correct, only which equally-winning move
-            # the engine picks first.
-            mate_score = 1e6 - state.ply
-            return mate_score if info.winner == perspective else -mate_score
-
+            score = 1e6 - state.ply
+            return score if info.winner == perspective else -score
         if depth <= 0:
-            return evaluate(state, perspective, self.cfg.eval_weights)
-
-        moves = generate_legal_moves(state.board, state.side_to_move)
-        if not moves:
-            return evaluate(state, perspective, self.cfg.eval_weights)
-
-        ordered = sorted(moves, key=lambda m: self._move_order_key(state, m), reverse=True)
-
+            value = evaluate(state, perspective, self.cfg.eval_weights)
+            self._check_time()
+            return value
         best = -1e18
-        for mv in ordered:
-            nb = apply_move(state.board, mv)
-            child = GameState(board=nb, side_to_move=state.side_to_move.opponent(), ply=state.ply+1, repetition=state.repetition)
-            v = -self._negamax(child, depth - 1, -beta, -alpha, perspective)
-            best = max(best, v)
-            alpha = max(alpha, v)
+        moves = generate_legal_moves(state.board, state.side_to_move)
+        for mv in self._ordered_moves(state, moves):
+            child = self._child(state, mv)
+            value = -self._negamax(child, depth - 1, -beta, -alpha,
+                                   perspective.opponent())
+            best = max(best, value)
+            alpha = max(alpha, value)
             if alpha >= beta:
                 break
         return best
 
-    def _move_order_key(self, state: GameState, mv: Move) -> float:
-        """Sort key for move ordering. Captures first, then checks.
+    def _ordered_moves(self, state, moves):
+        return sorted(moves, key=lambda m: self._move_order_key(state, m), reverse=True)
 
-        The 10.0 and 2.0 are only relative weights; they never appear in the
-        returned search value, they only decide which moves alpha-beta visits
-        first. Better-looking moves earlier produce more cutoffs, which is the
-        whole point.
-        """
-        b = state.board
-        t = b.get(mv.tx, mv.ty)
-        capture_bonus = 10.0 if t is not None else 0.0
-        nb = apply_move(b, mv)
-        check_bonus = 2.0 if is_in_check(nb, state.side_to_move.opponent()) else 0.0
-        return capture_bonus + check_bonus
+    def _move_order_key(self, state: GameState, mv: Move) -> float:
+        self._check_time()
+        capture = 10.0 if state.board.get(mv.tx, mv.ty) is not None else 0.0
+        board = apply_move(state.board, mv)
+        return capture + (2.0 if is_in_check(board, state.side_to_move.opponent()) else 0.0)

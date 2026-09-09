@@ -1,86 +1,126 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Game Replay — Hybrid Chess</title>
-  <meta name="description" content="Load and analyze Hybrid Chess game replays. Step through moves, view board states, and study AI strategies.">
-  <link rel="stylesheet" href="../shared/base.css">
-  <link rel="stylesheet" href="style.css">
-</head>
-<body>
-  <header class="page-header">
-    <a href="../" class="back-link">← Home</a>
-    <h1>📊 Game Replay</h1>
-    <p class="subtitle">Load game files and analyze move-by-move</p>
-  </header>
-
-  <main class="replay-layout">
-    <!-- Left Panel: Piece Legends -->
-    <aside class="panel panel-left">
-      <div class="card legend-card">
-        <h3><span class="badge badge-chess">●</span> Chess (Bottom)</h3>
-        <div id="chessLegend" class="legend-list"></div>
-      </div>
-      <div class="card legend-card">
-        <h3><span class="badge badge-xiangqi">●</span> Xiangqi (Top)</h3>
-        <div id="xiangqiLegend" class="legend-list"></div>
-      </div>
-    </aside>
-
-    <!-- Center: Board -->
-    <div class="board-center">
-      <div class="board-frame" id="boardFrame">
-        <svg id="boardSvg" xmlns="http://www.w3.org/2000/svg"></svg>
-      </div>
-
-      <!-- Controls -->
-      <div class="controls-bar">
-        <button class="btn btn-icon" id="btnFirst" title="First (Home)">⏮</button>
-        <button class="btn btn-icon" id="btnPrev" title="Previous (←)">◀◀</button>
-        <div class="step-display">
-          <span class="dot"></span>
-          <span id="stepLabel">0 / 0</span>
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Hybrid Chess · 回放</title>
+    <meta
+      name="description"
+      content="Replay Hybrid Chess recordings, one move at a time."
+    />
+    <link rel="stylesheet" href="../shared/base.css" />
+    <link rel="stylesheet" href="style.css" />
+    <script defer src="../shared/i18n.js"></script>
+    <script defer src="../shared/board-renderer.js"></script>
+    <script defer src="../shared/replay-format.js"></script>
+    <script defer src="replay.js"></script>
+  </head>
+  <body>
+    <header class="site-header">
+      <a class="brand" href="../"
+        ><span class="brand-mark" aria-hidden="true">♔</span>Hybrid Chess</a
+      >
+      <nav class="nav">
+        <a href="../play/" data-i18n="play">对弈</a
+        ><span class="active" data-i18n="replay">回放</span
+        ><button class="language-button" data-language>EN</button>
+      </nav>
+    </header>
+    <main class="page">
+      <div class="page-intro">
+        <div>
+          <p class="eyebrow" data-i18n="replay">回放</p>
+          <h1 data-i18n="replayTitle">重温每一步。</h1>
         </div>
-        <button class="btn btn-icon" id="btnNext" title="Next (→)">▶▶</button>
-        <button class="btn btn-icon" id="btnLast" title="Last (End)">⏭</button>
-        <button class="btn btn-icon" id="btnAuto" title="Auto-play (Space)">▶</button>
+        <p class="page-subtitle" data-i18n="replaySubtitle">
+          载入棋谱，慢慢看清一局棋。
+        </p>
       </div>
-
-      <input type="range" id="stepSlider" min="0" max="0" value="0" class="step-slider">
-    </div>
-
-    <!-- Right Panel: Game Info -->
-    <aside class="panel panel-right">
-      <div class="card">
-        <h3>Game Info</h3>
-        <div class="info-grid">
-          <span class="info-label">Status</span><span id="infoStatus" class="info-value">—</span>
-          <span class="info-label">Result</span><span id="infoResult" class="info-value">—</span>
-          <span class="info-label">Plies</span><span id="infoPlies" class="info-value">—</span>
-          <span class="info-label">Reason</span><span id="infoReason" class="info-value">—</span>
-        </div>
+      <div class="notice" id="errorNotice" role="alert" hidden>
+        <span id="errorText"></span>
       </div>
-
-      <div class="card">
-        <h3>Moves</h3>
-        <div id="moveList" class="move-list">
-          <p class="text-dim">Load a game to see moves</p>
-        </div>
+      <div class="replay-layout">
+        <section class="replay-board">
+          <div class="replay-board-caption">
+            <span id="boardCaption" data-i18n="preview">开局预览</span
+            ><button class="text-button" id="btnFlip" data-i18n="flip">
+              翻转棋盘
+            </button>
+          </div>
+          <div class="board-frame">
+            <svg
+              id="boardSvg"
+              xmlns="http://www.w3.org/2000/svg"
+              role="img"
+              aria-label="Hybrid Chess"
+            ></svg>
+          </div>
+          <div class="replay-controls">
+            <button class="btn btn-icon" id="btnFirst" data-i18n-label="first">
+              |‹</button
+            ><button
+              class="btn btn-icon"
+              id="btnPrev"
+              data-i18n-label="previous"
+            >
+              ‹</button
+            ><span id="stepLabel"></span
+            ><button class="btn btn-icon" id="btnNext" data-i18n-label="next">
+              ›</button
+            ><button class="btn btn-icon" id="btnLast" data-i18n-label="last">
+              ›|</button
+            ><button
+              class="btn btn-icon"
+              id="btnAuto"
+              data-i18n-label="autoPlay"
+            >
+              ▷
+            </button>
+          </div>
+          <input
+            type="range"
+            id="stepSlider"
+            min="0"
+            max="0"
+            value="0"
+            data-i18n-label="moves"
+          />
+        </section>
+        <aside class="replay-sidebar">
+          <h2 data-i18n="openReplay">打开棋谱</h2>
+          <p class="muted small" data-i18n="replayEmptyHelp">
+            支持项目导出的单局或多局记录。
+          </p>
+          <button
+            class="btn btn-primary btn-wide file-button"
+            id="btnOpenReplay"
+            data-i18n="openReplay"
+          >
+            打开棋谱</button
+          ><input type="file" id="fileInput" accept=".json,.jsonl" hidden />
+          <p class="file-name small muted" id="fileName"></p>
+          <div id="gameSelectGroup" hidden>
+            <label class="label" for="gameSelect" data-i18n="gameSelect"
+              >选择对局</label
+            ><select class="select-styled" id="gameSelect"></select>
+          </div>
+          <div class="section-line">
+            <span class="eyebrow" data-i18n="replayResult">记录结果</span>
+            <h3 id="infoResult">—</h3>
+            <p class="small muted" id="infoReason"></p>
+            <p class="small muted" id="infoVariant"></p>
+          </div>
+          <div class="section-line">
+            <h3 class="moves-heading" data-i18n="moves">棋谱</h3>
+            <div id="moveList" class="replay-moves"></div>
+          </div>
+        </aside>
       </div>
-
-      <div class="card">
-        <h3>Load Game</h3>
-        <label class="btn btn-primary" style="width:100%;justify-content:center" for="fileInput">
-          📂 Open JSON
-        </label>
-        <input type="file" id="fileInput" accept=".json,.jsonl" style="display:none">
-        <select id="gameSelect" class="select-styled" style="width:100%;margin-top:10px;display:none"></select>
-      </div>
-    </aside>
-  </main>
-
-  <script src="../shared/board-renderer.js"></script>
-  <script src="replay.js"></script>
-</body>
+      <footer class="site-footer">
+        <a href="../play/" data-i18n="play">对弈</a
+        ><span data-i18n="localOnly">本地对弈 · 无需账号</span>
+      </footer>
+      <p class="sr-only" id="replayLive" aria-live="polite"></p>
+    </main>
+  </body>
 </html>

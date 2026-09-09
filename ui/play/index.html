@@ -1,151 +1,255 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Play — Hybrid Chess</title>
-  <meta name="description" content="Play Hybrid Chess interactively — choose your side, pick an AI opponent, and experience International Chess vs Chinese Chess.">
-  <link rel="stylesheet" href="../shared/base.css">
-  <link rel="stylesheet" href="style.css">
-</head>
-<body>
-  <header class="page-header">
-    <a href="../" class="back-link">← Home</a>
-    <h1>♟ Play Hybrid Chess</h1>
-    <p class="subtitle">Choose your side and challenge the AI</p>
-  </header>
-
-  <main class="play-layout">
-    <!-- Left: Setup Panel -->
-    <aside class="panel panel-setup">
-      <div class="card">
-        <h3>⚙️ Game Setup</h3>
-
-        <div class="setup-group">
-          <label class="setup-label">Play as</label>
-          <div class="side-picker">
-            <button class="side-btn active" data-side="chess" id="sideChess">
-              <span class="side-icon">♔</span>
-              <span>Chess</span>
-            </button>
-            <button class="side-btn" data-side="xiangqi" id="sideXiangqi">
-              <span class="side-icon xq-icon">將</span>
-              <span>Xiangqi</span>
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      name="description"
+      content="Play Chess against Xiangqi on one board. Explore original and custom Hybrid Chess rules."
+    />
+    <title>Hybrid Chess · 对弈</title>
+    <link
+      rel="icon"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 40 40'%3E%3Ctext y='32' font-size='34'%3E♔%3C/text%3E%3C/svg%3E"
+    />
+    <link rel="stylesheet" href="../shared/base.css" />
+    <link rel="stylesheet" href="style.css" />
+    <script defer src="../shared/i18n.js"></script>
+    <script defer src="../shared/board-renderer.js"></script>
+    <script defer src="play.js"></script>
+  </head>
+  <body>
+    <header class="site-header">
+      <a class="brand" href="../"
+        ><span class="brand-mark" aria-hidden="true">♔</span>Hybrid Chess</a
+      >
+      <nav class="nav">
+        <button class="nav-link" id="btnHelp" data-i18n="rulesHelp">
+          规则指南
+        </button>
+        <a href="../replay/" data-i18n="replay">回放</a>
+        <button class="language-button" data-language>EN</button>
+      </nav>
+    </header>
+    <main class="page">
+      <div class="page-intro">
+        <div>
+          <p class="eyebrow" data-i18n="playSubtitle">
+            国际象棋 × 中国象棋 · 9 × 10
+          </p>
+          <h1 data-i18n="playTitle">选择规则，落子开局。</h1>
+        </div>
+        <p class="page-subtitle" data-i18n="tagline">两种棋艺，一张棋盘。</p>
+      </div>
+      <div class="notice" id="errorNotice" role="alert" hidden>
+        <span id="errorText"></span
+        ><button class="btn" id="btnRetry" data-i18n="retry">重试</button>
+      </div>
+      <div class="play-layout">
+        <section class="board-column">
+          <div class="player-strip top">
+            <div
+              class="player-avatar xiangqi"
+              id="avatarTop"
+              aria-hidden="true"
+            >
+              将
+            </div>
+            <div>
+              <div class="player-name" id="playerTopName"></div>
+              <div class="player-detail" id="playerTopDetail"></div>
+            </div>
+            <div class="player-status" id="playerTopStatus"></div>
+          </div>
+          <div class="board-frame">
+            <svg
+              id="boardSvg"
+              xmlns="http://www.w3.org/2000/svg"
+              tabindex="0"
+              role="grid"
+              data-i18n-label="board"
+            ></svg>
+          </div>
+          <div class="player-strip bottom">
+            <div class="player-avatar" id="avatarBottom" aria-hidden="true">
+              ♔
+            </div>
+            <div>
+              <div class="player-name" id="playerBottomName"></div>
+              <div class="player-detail" id="playerBottomDetail"></div>
+            </div>
+            <div class="player-status" id="playerBottomStatus"></div>
+          </div>
+          <div class="board-toolbar">
+            <div class="board-actions">
+              <button class="btn" id="btnUndo" data-i18n="undo" disabled>
+                悔棋</button
+              ><button class="btn" id="btnFlip" data-i18n="flip">
+                翻转棋盘</button
+              ><button
+                class="btn btn-danger"
+                id="btnResign"
+                data-i18n="resign"
+                disabled
+              >
+                认输
+              </button>
+            </div>
+            <span class="ply-label" id="plyLabel"></span>
+          </div>
+          <div class="piece-help">
+            <strong id="pieceHelpTitle"></strong>
+            <p id="pieceHelpText"></p>
+          </div>
+          <p class="sr-only" id="liveStatus" aria-live="polite"></p>
+        </section>
+        <aside class="sidebar">
+          <div class="sidebar-heading">
+            <h2 id="sidebarTitle" data-i18n="setup">新对局设置</h2>
+            <button
+              class="text-button mobile-setup-toggle"
+              id="btnToggleSetup"
+              aria-expanded="true"
+              data-i18n="custom"
+            >
+              自定义规则</button
+            ><button
+              class="text-button"
+              id="btnNewGame"
+              data-i18n="newGame"
+              hidden
+            >
+              新对局
             </button>
           </div>
-        </div>
-
-        <div class="setup-group">
-          <label class="setup-label">AI Opponent</label>
-          <select id="aiSelect" class="select-styled" style="width:100%">
-            <option value="random">Random</option>
-            <option value="greedy">Greedy</option>
-            <option value="ab_d1" selected>AlphaBeta d=1</option>
-            <option value="ab_d2">AlphaBeta d=2</option>
-            <option value="ab_d4">AlphaBeta d=4</option>
-          </select>
-        </div>
-
-        <div class="setup-group">
-          <label class="setup-label">Rule Variant</label>
-          <select id="variantSelect" class="select-styled" style="width:100%">
-            <option value="none">Standard</option>
-            <option value="no_queen">No Queen</option>
-            <option value="extra_cannon">Extra Cannon</option>
-          </select>
-        </div>
-
-        <button class="btn btn-primary" id="btnNewGame" style="width:100%;margin-top:12px">
-          🎮 New Game
+          <div id="setupPanel">
+            <div class="step-heading">
+              <span class="step-number">01</span
+              ><span class="label" data-i18n="preset">选择规则</span>
+            </div>
+            <div id="presets" class="presets"></div>
+            <p id="presetDescription" class="preset-description"></p>
+            <details class="custom-settings" id="customDetails">
+              <summary data-i18n="custom">自定义规则</summary>
+              <div id="customRules"></div>
+            </details>
+            <div class="step-heading">
+              <span class="step-number">02</span
+              ><span class="label" data-i18n="yourSide">选择阵营</span>
+            </div>
+            <div class="side-picker">
+              <button
+                class="side-choice active"
+                data-side="chess"
+                aria-pressed="true"
+              >
+                <span class="side-symbol" aria-hidden="true">♔</span
+                ><span data-i18n="chess">国际象棋</span>
+              </button>
+              <button
+                class="side-choice"
+                data-side="xiangqi"
+                aria-pressed="false"
+              >
+                <span class="side-symbol xiangqi" aria-hidden="true">将</span
+                ><span data-i18n="xiangqi">中国象棋</span>
+              </button>
+            </div>
+            <p class="setup-hint" data-i18n="chessFirst">
+              国际象棋先行。选择象棋时，AI 会先走。
+            </p>
+            <div class="opponent-field">
+              <label class="label" for="aiSelect" data-i18n="opponent"
+                >AI 对手</label
+              ><select class="select-styled" id="aiSelect"></select>
+              <p class="setup-hint" id="aiHint"></p>
+            </div>
+            <button
+              class="btn btn-primary btn-wide start-button"
+              id="btnStart"
+              disabled
+            >
+              <span data-i18n="start">开始对弈</span
+              ><span class="arrow" aria-hidden="true">→</span>
+            </button>
+            <button
+              class="text-button cancel-setup"
+              id="btnCancelSetup"
+              data-i18n="cancelSetup"
+              hidden
+            >
+              返回当前对局
+            </button>
+          </div>
+          <div id="sessionPanel" hidden>
+            <div id="resultPanel" class="result-panel" hidden>
+              <span class="eyebrow" data-i18n="gameOver">对局结束</span>
+              <h3 id="resultTitle"></h3>
+              <p id="resultReason"></p>
+              <div class="result-actions">
+                <button class="btn btn-primary" id="btnAgain" data-i18n="again">
+                  再来一局</button
+                ><button
+                  class="btn"
+                  id="btnChangeRules"
+                  data-i18n="changeRules"
+                >
+                  更换规则
+                </button>
+              </div>
+            </div>
+            <p class="eyebrow" data-i18n="currentRules">本局规则</p>
+            <h3 class="session-rule-name" id="sessionRuleName"></h3>
+            <p class="session-description" id="sessionRuleDescription"></p>
+            <div class="rule-tags" id="ruleTags"></div>
+            <div class="section-line">
+              <div class="history-heading">
+                <h3 data-i18n="moves">棋谱</h3>
+                <span class="small muted" id="historyCount"></span>
+              </div>
+              <div class="move-history" id="moveHistory"></div>
+            </div>
+          </div>
+        </aside>
+      </div>
+      <footer class="site-footer">
+        <span data-i18n="localOnly">本地对弈 · 无需账号</span
+        ><a href="https://github.com/lessen-xu/Hybrid-Chess">GitHub ↗</a>
+      </footer>
+    </main>
+    <dialog id="confirmDialog" aria-labelledby="confirmTitle">
+      <h2 id="confirmTitle"></h2>
+      <p id="confirmBody"></p>
+      <div class="dialog-actions">
+        <button class="btn" id="confirmCancel" data-i18n="cancel">取消</button
+        ><button class="btn btn-primary" id="confirmAccept" data-i18n="confirm">
+          确认
         </button>
       </div>
-
-      <!-- Game Status -->
-      <div class="card" id="statusCard">
-        <h3>📋 Status</h3>
-        <div class="status-info">
-          <div class="status-row">
-            <span class="status-key">Turn</span>
-            <span class="status-val" id="statusTurn">—</span>
-          </div>
-          <div class="status-row">
-            <span class="status-key">Ply</span>
-            <span class="status-val" id="statusPly">0</span>
-          </div>
-          <div class="status-row">
-            <span class="status-key">State</span>
-            <span class="status-val" id="statusState">Not started</span>
-          </div>
-          <div class="status-row">
-            <span class="status-key">Your side</span>
-            <span class="status-val" id="statusYourSide">—</span>
-          </div>
-        </div>
+    </dialog>
+    <dialog id="promotionDialog" aria-labelledby="promotionTitle">
+      <h2 id="promotionTitle" data-i18n="promotion">选择升变棋子</h2>
+      <p data-i18n="promotionBody">这些是本局规则允许的升变。</p>
+      <div class="promotion-options" id="promotionOptions"></div>
+      <div class="dialog-actions">
+        <button class="btn" id="promotionCancel" data-i18n="cancel">
+          取消
+        </button>
       </div>
-
-      <!-- Controls -->
-      <div class="card">
-        <h3>🎛️ Controls</h3>
-        <div class="ctrl-buttons">
-          <button class="btn" id="btnUndo" disabled>↩ Undo</button>
-          <button class="btn" id="btnResign" disabled>🏳 Resign</button>
-          <button class="btn" id="btnFlip">🔄 Flip Board</button>
-        </div>
+    </dialog>
+    <dialog id="helpDialog" aria-labelledby="helpTitle">
+      <div class="dialog-heading">
+        <h2 id="helpTitle" data-i18n="rulesHelp">规则指南</h2>
+        <button class="btn btn-icon" id="helpClose" data-i18n-label="close">
+          ×
+        </button>
       </div>
-    </aside>
-
-    <!-- Center: Board -->
-    <div class="board-center">
-      <!-- Top player label -->
-      <div class="player-label" id="playerTop">
-        <span class="player-name" id="playerTopName">Xiangqi (AI)</span>
-        <span class="player-badge" id="playerTopBadge"></span>
+      <div class="guide-copy">
+        <p data-i18n="guideIntro"></p>
+        <p data-i18n="guideEnding"></p>
+        <p data-i18n="guideVariant"></p>
       </div>
-
-      <div class="board-frame" id="boardFrame">
-        <svg id="boardSvg" xmlns="http://www.w3.org/2000/svg"></svg>
-      </div>
-
-      <!-- Bottom player label -->
-      <div class="player-label" id="playerBottom">
-        <span class="player-name" id="playerBottomName">Chess (You)</span>
-        <span class="player-badge" id="playerBottomBadge"></span>
-      </div>
-
-      <!-- Message overlay -->
-      <div class="game-message" id="gameMessage" style="display:none">
-        <span class="msg-text" id="msgText"></span>
-      </div>
-    </div>
-
-    <!-- Right: Move History -->
-    <aside class="panel panel-history">
-      <div class="card">
-        <h3>📜 Move History</h3>
-        <div id="moveHistory" class="move-history">
-          <p class="text-dim">Start a game to see moves</p>
-        </div>
-      </div>
-
-      <div class="card">
-        <h3>💡 How to Play</h3>
-        <ul class="help-list">
-          <li>Click a piece to select it</li>
-          <li>Green dots = legal moves</li>
-          <li>Red dots = captures</li>
-          <li>Click a dot to move</li>
-          <li>AI responds automatically</li>
-        </ul>
-      </div>
-    </aside>
-  </main>
-
-  <div class="server-notice" id="serverNotice">
-    <span>⚠️ Server not connected.</span>
-    <span>Run <code>python -m hybrid.server</code> then refresh.</span>
-  </div>
-
-  <script src="../shared/board-renderer.js"></script>
-  <script src="play.js"></script>
-</body>
+      <div class="guide-pieces" id="guidePieces"></div>
+    </dialog>
+  </body>
 </html>

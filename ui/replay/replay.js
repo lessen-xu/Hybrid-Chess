@@ -1,278 +1,231 @@
-/**
- * Hybrid Chess — Replay Page Logic
- *
- * Loads JSON/JSONL game files, provides step-through controls,
- * move list navigation, and auto-play functionality.
- */
-
-const BR = window.BoardRenderer;
-const svg = document.getElementById('boardSvg');
-const opts = BR.defaultOpts();
-
-/* ── state ── */
-let games = [];
-let currentGameIdx = 0;
-let currentStep = 0;
-let autoTimer = null;
-
-/* ── init ── */
-function init() {
-  BR.drawBoard(svg, opts);
-  BR.drawCoordLabels(svg, opts);
-  BR.drawPieces(svg, initialBoard(), opts);
-  buildLegends();
-  bindControls();
-}
-
-/* ── default initial board ASCII ── */
-function initialBoard() {
-  return [
-    '10 c h e a g a e h c',
-    ' 9 . . . . . . . . .',
-    ' 8 . n . . . . . n .',
-    ' 7 s . s . s . s . s',
-    ' 6 . . . . . . . . .',
-    ' 5 . . . . . . . . .',
-    ' 4 . . . . . . . . .',
-    ' 3 . . . . . . . . .',
-    ' 2 P P P P P P P P P',
-    ' 1 R N B Q K B N R .',
-    '    a b c d e f g h i',
-  ].join('\n');
-}
-
-/* ── legends ── */
-function buildLegends() {
-  const chessEl = document.getElementById('chessLegend');
-  const xiangqiEl = document.getElementById('xiangqiLegend');
-
-  const chessData = [
-    { icon: '♔', name: 'King', desc: 'All 8 dirs, 1 step' },
-    { icon: '♕', name: 'Queen', desc: 'Orth + diag slide' },
-    { icon: '♖', name: 'Rook', desc: 'Orth slide' },
-    { icon: '♗', name: 'Bishop', desc: 'Diag slide' },
-    { icon: '♘', name: 'Knight', desc: 'L-shape, no block' },
-    { icon: '♙', name: 'Pawn', desc: 'Forward, promotes at y≥9' },
-  ];
-  const xiangqiData = [
-    { ch: '將', name: 'General', desc: 'Orth 1-step, palace' },
-    { ch: '士', name: 'Advisor', desc: 'Diag 1-step, palace' },
-    { ch: '象', name: 'Elephant', desc: 'Diag 2-step, eye block' },
-    { ch: '馬', name: 'Horse', desc: 'L-shape, leg block' },
-    { ch: '車', name: 'Chariot', desc: 'Orth slide' },
-    { ch: '砲', name: 'Cannon', desc: 'Screen jump capture' },
-    { ch: '卒', name: 'Soldier', desc: 'Forward, +sideways after river' },
-  ];
-
-  chessEl.innerHTML = chessData.map(p => `
-    <div class="legend-item">
-      <div class="legend-piece chess">${p.icon}</div>
-      <div class="legend-info">
-        <div class="name">${p.name}</div>
-        <div class="desc">${p.desc}</div>
-      </div>
-    </div>
-  `).join('');
-
-  xiangqiEl.innerHTML = xiangqiData.map(p => `
-    <div class="legend-item">
-      <div class="legend-piece xiangqi">${p.ch}</div>
-      <div class="legend-info">
-        <div class="name">${p.name}</div>
-        <div class="desc">${p.desc}</div>
-      </div>
-    </div>
-  `).join('');
-}
-
-/* ── load game data ── */
-function loadGameData(data) {
-  if (Array.isArray(data)) {
-    games = data;
-  } else {
-    games = [data];
+(() => {
+  const I = window.HybridI18n,
+    BR = window.BoardRenderer,
+    F = window.HybridReplayFormat,
+    $ = (id) => document.getElementById(id),
+    t = I.t;
+  let games = [],
+    gameIndex = 0,
+    step = 0,
+    timer = null,
+    flipped = false,
+    initial = "",
+    errorCode = "",
+    fileSequence = 0;
+  const game = () => games[gameIndex],
+    total = () => Math.max(0, (game()?.states_ascii.length || 1) - 1);
+  function element(tag, className = "", value = "") {
+    const el = document.createElement(tag);
+    el.className = className;
+    el.textContent = value;
+    return el;
   }
-  currentGameIdx = 0;
-  showGame(0);
-  updateGameSelect();
-}
-
-function showGame(idx) {
-  currentGameIdx = idx;
-  currentStep = 0;
-  const g = games[idx];
-  if (!g || !g.states_ascii) return;
-
-  /* update info */
-  document.getElementById('infoStatus').textContent = 'Loaded';
-  document.getElementById('infoResult').textContent = g.result || '—';
-  document.getElementById('infoPlies').textContent = g.meta?.plies ?? g.moves?.length ?? '—';
-  document.getElementById('infoReason').textContent = g.meta?.reason || '—';
-
-  /* slider */
-  const slider = document.getElementById('stepSlider');
-  slider.max = g.states_ascii.length - 1;
-  slider.value = 0;
-
-  /* move list */
-  buildMoveList(g.moves || []);
-  renderStep(0);
-}
-
-function renderStep(step) {
-  const g = games[currentGameIdx];
-  if (!g || !g.states_ascii) return;
-  step = Math.max(0, Math.min(step, g.states_ascii.length - 1));
-  currentStep = step;
-
-  BR.drawPieces(svg, g.states_ascii[step], opts);
-  BR.clearHighlights(svg);
-
-  /* highlight last move */
-  if (step > 0 && g.moves && g.moves[step - 1]) {
-    const mv = parseMove(g.moves[step - 1]);
-    if (mv) BR.highlightMove(svg, mv.from, mv.to, opts);
+  function variant() {
+    const v = game()?.variant || game()?.meta?.variant;
+    return v && typeof v === "object" && !Array.isArray(v) ? v : {};
   }
-
-  document.getElementById('stepLabel').textContent = `${step} / ${g.states_ascii.length - 1}`;
-  document.getElementById('stepSlider').value = step;
-
-  /* update move list active */
-  document.querySelectorAll('.move-item').forEach((el, i) => {
-    el.classList.toggle('active', i === step - 1);
-  });
-}
-
-function parseMove(notation) {
-  const m = notation.match(/^([a-i])(\d+)-([a-i])(\d+)/);
-  if (!m) return null;
-  return {
-    from: { x: m[1].charCodeAt(0) - 97, y: parseInt(m[2]) - 1 },
-    to:   { x: m[3].charCodeAt(0) - 97, y: parseInt(m[4]) - 1 },
-  };
-}
-
-/* ── move list ── */
-function buildMoveList(moves) {
-  const el = document.getElementById('moveList');
-  if (!moves.length) {
-    el.innerHTML = '<p class="text-dim">No moves</p>';
-    return;
+  function resultLabel(g) {
+    if (
+      ["chess_win", "xiangqi_win", "draw", "ongoing"].includes(g?.result_code)
+    )
+      return t(g.result_code);
+    const value = g?.result || "";
+    if (/^Chess wins/i.test(value)) return t("chess_win");
+    if (/^Xiangqi wins/i.test(value)) return t("xiangqi_win");
+    if (/^(Draw|1\/2-1\/2)$/i.test(value)) return t("draw");
+    return value || "—";
   }
-  el.innerHTML = moves.map((mv, i) => `
-    <div class="move-item" data-step="${i + 1}">
-      <span class="ply">${i + 1}.</span>
-      <span class="notation">${escHtml(mv)}</span>
-    </div>
-  `).join('');
-
-  el.querySelectorAll('.move-item').forEach(item => {
-    item.addEventListener('click', () => renderStep(parseInt(item.dataset.step)));
-  });
-}
-
-/* ── controls ── */
-function bindControls() {
-  document.getElementById('btnFirst').addEventListener('click', () => renderStep(0));
-  document.getElementById('btnPrev').addEventListener('click', () => renderStep(currentStep - 1));
-  document.getElementById('btnNext').addEventListener('click', () => renderStep(currentStep + 1));
-  document.getElementById('btnLast').addEventListener('click', () => {
-    const g = games[currentGameIdx];
-    if (g) renderStep(g.states_ascii.length - 1);
-  });
-
-  document.getElementById('btnAuto').addEventListener('click', toggleAutoPlay);
-
-  document.getElementById('stepSlider').addEventListener('input', e => {
-    renderStep(parseInt(e.target.value));
-  });
-
-  document.getElementById('fileInput').addEventListener('change', handleFileLoad);
-
-  document.getElementById('gameSelect').addEventListener('change', e => {
-    showGame(parseInt(e.target.value));
-  });
-
-  /* keyboard */
-  document.addEventListener('keydown', e => {
-    if (e.key === 'ArrowLeft')  { renderStep(currentStep - 1); e.preventDefault(); }
-    if (e.key === 'ArrowRight') { renderStep(currentStep + 1); e.preventDefault(); }
-    if (e.key === 'Home')       { renderStep(0); e.preventDefault(); }
-    if (e.key === 'End')        {
-      const g = games[currentGameIdx];
-      if (g) renderStep(g.states_ascii.length - 1);
-      e.preventDefault();
+  function reasonLabel(g) {
+    const key =
+      g?.reason_code ||
+      {
+        Checkmate: "checkmate",
+        "Stalemate (loss for stalemated side)": "stalemate",
+        "Max plies reached": "move_limit",
+        "Threefold repetition": "repetition",
+        "Chess king captured": "royal_captured",
+        "Xiangqi general captured": "royal_captured",
+        Resignation: "resignation",
+      }[g?.meta?.reason];
+    return key ? t(key) : g?.meta?.reason || "";
+  }
+  function render() {
+    I.apply();
+    document.title = "Hybrid Chess · " + t("replay");
+    $("errorNotice").hidden = !errorCode;
+    $("errorText").textContent = errorCode ? t(errorCode) : "";
+    const o = { ...BR.defaultOpts(), flipped, variant: variant() };
+    BR.drawBoard($("boardSvg"), o);
+    BR.drawCoordLabels($("boardSvg"), o);
+    BR.clearHighlights($("boardSvg"));
+    BR.drawPieces($("boardSvg"), game()?.states_ascii[step] || initial, o);
+    const last = step > 0 ? F.parseMove(game()?.moves?.[step - 1]) : null;
+    if (last) BR.highlightMove($("boardSvg"), last.from, last.to, o);
+    $("stepLabel").textContent = t("position", { step, total: total() });
+    $("boardSvg").setAttribute(
+      "aria-label",
+      t("replay") + " · " + t("position", { step, total: total() }),
+    );
+    $("boardCaption").textContent = t(games.length ? "loaded" : "preview");
+    $("stepSlider").max = total();
+    $("stepSlider").value = step;
+    $("stepSlider").disabled = !games.length;
+    $("btnFirst").disabled = $("btnPrev").disabled =
+      !games.length || step === 0;
+    $("btnNext").disabled = $("btnLast").disabled =
+      !games.length || step >= total();
+    $("btnAuto").disabled = !games.length || total() === 0;
+    $("btnAuto").textContent = timer ? "Ⅱ" : "▷";
+    $("btnAuto").setAttribute("aria-label", t(timer ? "pause" : "autoPlay"));
+    $("btnAuto").title = t(timer ? "pause" : "autoPlay");
+    $("infoResult").textContent = resultLabel(game());
+    $("infoReason").textContent = reasonLabel(game());
+    $("infoVariant").textContent =
+      games.length && !Object.keys(variant()).length ? t("legacyRules") : "";
+    $("gameSelectGroup").hidden = games.length < 2;
+    $("gameSelect").replaceChildren(
+      ...games.map((g, i) => {
+        const option = element(
+          "option",
+          "",
+          t("gameNumber", { number: i + 1 }) + " · " + resultLabel(g),
+        );
+        option.value = i;
+        return option;
+      }),
+    );
+    $("gameSelect").value = gameIndex;
+    $("moveList").replaceChildren();
+    const moves = game()?.moves || [];
+    if (!moves.length)
+      $("moveList").append(
+        element(
+          "p",
+          "empty-recording",
+          t(games.length ? "noRecordedMoves" : "replayEmpty"),
+        ),
+      );
+    moves.forEach((move, index) => {
+      const button = element(
+        "button",
+        "replay-move" + (index === step - 1 ? " active" : ""),
+      );
+      button.append(
+        element("span", "number", String(index + 1) + "."),
+        element("span", "", move),
+      );
+      button.disabled = index >= total();
+      button.setAttribute(
+        "aria-current",
+        index === step - 1 ? "step" : "false",
+      );
+      button.addEventListener("click", () => go(index + 1));
+      $("moveList").append(button);
+    });
+    const live = t("position", { step, total: total() });
+    if ($("replayLive").textContent !== live)
+      $("replayLive").textContent = live;
+  }
+  function stop() {
+    if (timer) clearInterval(timer);
+    timer = null;
+  }
+  function go(value, manual = true) {
+    if (manual) stop();
+    step = Math.max(0, Math.min(total(), value));
+    render();
+    $("moveList")
+      .querySelector(".active")
+      ?.scrollIntoView({ block: "nearest" });
+  }
+  function toggle() {
+    if (timer) {
+      stop();
+      render();
+      return;
     }
-    if (e.key === ' ') { toggleAutoPlay(); e.preventDefault(); }
-  });
-}
-
-function toggleAutoPlay() {
-  const btn = document.getElementById('btnAuto');
-  if (autoTimer) {
-    clearInterval(autoTimer);
-    autoTimer = null;
-    btn.textContent = '▶';
-  } else {
-    btn.textContent = '⏸';
-    autoTimer = setInterval(() => {
-      const g = games[currentGameIdx];
-      if (!g) return;
-      if (currentStep >= g.states_ascii.length - 1) {
-        clearInterval(autoTimer);
-        autoTimer = null;
-        btn.textContent = '▶';
-        return;
-      }
-      renderStep(currentStep + 1);
-    }, 600);
+    if (!games.length || !total()) return;
+    if (step >= total()) step = 0;
+    timer = setInterval(() => {
+      step = Math.min(total(), step + 1);
+      if (step >= total()) stop();
+      render();
+    }, 700);
+    render();
   }
-}
-
-/* ── file loading ── */
-function handleFileLoad(e) {
-  const file = e.target.files[0];
-  if (!file) return;
-  const reader = new FileReader();
-  reader.onload = () => {
+  $("btnFirst").addEventListener("click", () => go(0));
+  $("btnPrev").addEventListener("click", () => go(step - 1));
+  $("btnNext").addEventListener("click", () => go(step + 1));
+  $("btnLast").addEventListener("click", () => go(total()));
+  $("btnAuto").addEventListener("click", toggle);
+  $("btnFlip").addEventListener("click", () => {
+    flipped = !flipped;
+    render();
+  });
+  $("stepSlider").addEventListener("input", (event) =>
+    go(Number(event.target.value)),
+  );
+  $("gameSelect").addEventListener("change", (event) => {
+    stop();
+    gameIndex = Number(event.target.value);
+    step = 0;
+    render();
+  });
+  $("btnOpenReplay").addEventListener("click", () => $("fileInput").click());
+  $("fileInput").addEventListener("change", async (event) => {
+    const file = event.target.files[0];
+    if (!file) return;
+    stop();
+    const sequence = ++fileSequence;
     try {
-      const text = reader.result.trim();
-      let data;
-      if (text.startsWith('[')) {
-        data = JSON.parse(text);
-      } else if (text.startsWith('{')) {
-        /* could be single JSON or JSONL */
-        if (text.includes('\n{')) {
-          data = text.split('\n').filter(l => l.trim()).map(l => JSON.parse(l));
-        } else {
-          data = JSON.parse(text);
-        }
-      } else {
-        data = text.split('\n').filter(l => l.trim()).map(l => JSON.parse(l));
-      }
-      loadGameData(data);
-    } catch (err) {
-      alert('Failed to parse file: ' + err.message);
+      if (file.size > 20 * 1024 * 1024) throw new Error("fileTooLarge");
+      const parsed = F.parse(await file.text());
+      if (sequence !== fileSequence) return;
+      games = parsed;
+      gameIndex = 0;
+      step = 0;
+      errorCode = "";
+      $("fileName").textContent = file.name;
+    } catch (error) {
+      if (sequence !== fileSequence) return;
+      errorCode =
+        error.message === "fileTooLarge" ? "fileTooLarge" : "replayBad";
     }
-  };
-  reader.readAsText(file);
-}
-
-function updateGameSelect() {
-  const sel = document.getElementById('gameSelect');
-  if (games.length <= 1) {
-    sel.style.display = 'none';
-    return;
-  }
-  sel.style.display = 'block';
-  sel.innerHTML = games.map((g, i) =>
-    `<option value="${i}">Game ${i + 1} — ${g.result || '?'}</option>`
-  ).join('');
-}
-
-function escHtml(s) {
-  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-}
-
-/* ── boot ── */
-init();
+    event.target.value = "";
+    render();
+  });
+  document.addEventListener("keydown", (event) => {
+    if (event.target.closest("input,select,button,a,summary") || !games.length)
+      return;
+    const actions = {
+      ArrowLeft: () => go(step - 1),
+      ArrowRight: () => go(step + 1),
+      Home: () => go(0),
+      End: () => go(total()),
+      " ": toggle,
+    };
+    if (actions[event.key]) {
+      event.preventDefault();
+      actions[event.key]();
+    }
+  });
+  document.addEventListener("languagechange", render);
+  document.addEventListener("visibilitychange", () => {
+    if (document.hidden) {
+      stop();
+      render();
+    }
+  });
+  render();
+  fetch("/api/preview", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ variant: "none" }),
+  })
+    .then((r) => (r.ok ? r.json() : null))
+    .then((data) => {
+      initial = data?.board_ascii || "";
+      if (!games.length) render();
+    })
+    .catch(() => {});
+})();

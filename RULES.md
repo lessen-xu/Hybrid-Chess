@@ -63,7 +63,7 @@ Controlled via `hybrid/core/config.py` or the `--ablation` CLI flag:
 | Flag | Effect |
 |------|--------|
 | `no_queen` | Remove Chess Queen |
-| `no_bishop` | Remove Chess Bishops |
+| `no_bishop` | Remove the left Chess Bishop at c1 |
 | `one_rook` | Remove one Chess Rook |
 | `remove_pawn` | Remove Chess 9th-file Pawn |
 | `extra_cannon` | Add 3rd Cannon for Xiangqi at (4,7) |
