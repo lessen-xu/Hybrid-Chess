@@ -115,9 +115,10 @@ both. Resuming with a different seed requires a new evaluation output directory.
 Reports include army-specific scores, W/D/L, move latency and conservative 95%
 Hoeffding intervals over complete opening-pair mean scores. Twenty games per group
 are a screening sample. Partial runs report expected/completed counts explicitly.
-Evaluation JSON games can be imported into the replay viewer. Custom rule strength
-must be assessed separately; training on random combinations does not establish
-strength on every possible combination.
+The first opening pair in each group includes board snapshots and can be imported
+into the replay viewer. Other game files retain moves and results for analysis.
+Custom rule strength must be assessed separately; training on random combinations
+does not establish strength on every possible combination.
 
 `--variants configs/heldout-variants.json --games 2` evaluates six deliberately
 unseen combinations as a small stress test (36 games). Each differs from the
