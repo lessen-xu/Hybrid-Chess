@@ -422,4 +422,8 @@ test("replay loads old JSONL, steps, switches language and rejects broken data",
   d.getElementById("btnAuto").click();
   await wait(() => d.getElementById("stepSlider").value === "1");
   assert.equal(d.getElementById("btnAuto").textContent, "▷");
+  await load(JSON.stringify({ ...game, result: "chess_win" }));
+  assert.equal(d.getElementById("infoResult").textContent, window.HybridI18n.t("chess_win"));
+  d.querySelector("[data-language]").click();
+  assert.equal(d.getElementById("infoResult").textContent, window.HybridI18n.t("chess_win"));
 });

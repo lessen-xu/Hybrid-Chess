@@ -22,6 +22,8 @@ def cmd_server(args):
         argv += ["--host", args.host]
     if args.no_browser:
         argv += ["--no-browser"]
+    if args.model:
+        argv += ["--model", args.model]
     sys.argv = argv
     server_main()
 
@@ -109,6 +111,7 @@ def build_parser():
     p_server.add_argument("--port", type=int, default=8000)
     p_server.add_argument("--host", type=str, default="127.0.0.1")
     p_server.add_argument("--no-browser", action="store_true")
+    p_server.add_argument("--model", help="Optional rule-aware model (.pt)")
 
     # ── train ──
     p_train = sub.add_parser("train", help="Run AlphaZero training")

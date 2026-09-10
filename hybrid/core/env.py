@@ -18,6 +18,8 @@ class GameState:
     side_to_move: Side
     ply: int = 0  # half-move count
     repetition: Dict[str, int] = field(default_factory=dict)
+    variant: VariantConfig = DEFAULT_VARIANT
+    max_plies: int = MAX_PLIES
 
     def clone(self) -> "GameState":
         return GameState(
@@ -25,6 +27,8 @@ class GameState:
             side_to_move=self.side_to_move,
             ply=self.ply,
             repetition=dict(self.repetition),
+            variant=self.variant,
+            max_plies=self.max_plies,
         )
 
 
@@ -151,6 +155,7 @@ class HybridChessEnv:
         if max_plies <= 0:
             raise ValueError("max_plies must be > 0")
         self.max_plies = max_plies
+
         self.use_cpp = use_cpp
         self.variant = variant
         self.state: Optional[GameState] = None
@@ -183,12 +188,13 @@ class HybridChessEnv:
             flags.no_promotion = self.variant.no_promotion
             flags.chess_palace = self.variant.chess_palace
             flags.knight_block = self.variant.knight_block
+            flags.flying_general = self.variant.flying_general
             set_rule_flags(flags)
 
     def reset(self) -> GameState:
         self._set_active_variant()
         b = initial_board(variant=self.variant)
-        s = GameState(board=b, side_to_move=Side.CHESS, ply=0, repetition={})
+        s = GameState(board=b, side_to_move=Side.CHESS, variant=self.variant, max_plies=self.max_plies)
         if ENABLE_THREEFOLD_REPETITION_DRAW:
             key = board_hash(s.board, s.side_to_move)
             s.repetition[key] = s.repetition.get(key, 0) + 1
@@ -202,7 +208,7 @@ class HybridChessEnv:
     def reset_from_board(self, board: Board, side_to_move: Side) -> GameState:
         """Reset to a custom board position (for endgame curriculum learning)."""
         self._set_active_variant()
-        s = GameState(board=board.clone(), side_to_move=side_to_move, ply=0, repetition={})
+        s = GameState(board=board.clone(), side_to_move=side_to_move, variant=self.variant, max_plies=self.max_plies)
         if ENABLE_THREEFOLD_REPETITION_DRAW:
             key = board_hash(s.board, s.side_to_move)
             s.repetition[key] = s.repetition.get(key, 0) + 1
@@ -224,6 +230,7 @@ class HybridChessEnv:
 
     def legal_moves(self) -> List[Move]:
         assert self.state is not None
+        self._set_active_variant()
         if self.use_cpp:
             cpp_moves = _cpp_module.gen_legal(self._cpp_board, self._cpp_side)
             return [_cpp_to_py_move(cm) for cm in cpp_moves]
@@ -236,6 +243,7 @@ class HybridChessEnv:
         Reward is from the *moving* side's perspective (+1 win, -1 loss, 0 draw/ongoing).
         """
         assert self.state is not None
+        self._set_active_variant()
         s = self.state
 
         if self.use_cpp:
@@ -248,7 +256,9 @@ class HybridChessEnv:
 
         nb = apply_move(s.board, mv)
         next_side = s.side_to_move.opponent()
-        next_state = GameState(board=nb, side_to_move=next_side, ply=s.ply + 1, repetition=dict(s.repetition))
+        next_state = GameState(board=nb, side_to_move=next_side, ply=s.ply + 1,
+                              repetition=dict(s.repetition), variant=self.variant,
+                              max_plies=self.max_plies)
 
         if ENABLE_THREEFOLD_REPETITION_DRAW:
             key = board_hash(next_state.board, next_state.side_to_move)
@@ -304,6 +314,8 @@ class HybridChessEnv:
             side_to_move=next_py_side,
             ply=s.ply + 1,
             repetition=dict(s.repetition),
+            variant=self.variant,
+            max_plies=self.max_plies,
         )
 
         # Repetition tracking using C++ hash

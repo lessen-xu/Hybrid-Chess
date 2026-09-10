@@ -49,7 +49,7 @@ class AlphaBetaAgent(Agent):
         if ENABLE_THREEFOLD_REPETITION_DRAW:
             key = board_hash(board, side)
             repetition[key] = repetition.get(key, 0) + 1
-        return GameState(board, side, state.ply + 1, repetition)
+        return GameState(board, side, state.ply + 1, repetition, state.variant, state.max_plies)
 
     def select_move(self, state: GameState, legal_moves: List[Move]) -> Move:
         if not legal_moves:

@@ -240,10 +240,9 @@ def self_play_game(
         state_np = encode_state(state).numpy().astype(np.uint8)
         indices = []
         probs = []
-        for mv, prob in pi_dict.items():
-            if prob > 0:
-                indices.append(move_to_action_index(mv))
-                probs.append(prob)
+        for mv in legal_moves:
+            indices.append(move_to_action_index(mv))
+            probs.append(pi_dict.get(mv, 0.0))
 
         example = Example(
             state=state_np,

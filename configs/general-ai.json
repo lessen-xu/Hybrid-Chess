@@ -1,0 +1,23 @@
+{
+  "seed": 20260910,
+  "channels": 96,
+  "res_blocks": 4,
+  "max_plies": 400,
+  "teacher_samples": 50000,
+  "teacher_seconds": 0.25,
+  "teacher_wall_seconds": 7200,
+  "supervised_epochs": 10,
+  "supervised_lr": 0.001,
+  "patience": 2,
+  "batch_size": 256,
+  "weight_decay": 0.0001,
+  "games_per_iteration": 128,
+  "initial_simulations": 64,
+  "simulations": 128,
+  "initial_iterations": 5,
+  "replay_capacity": 100000,
+  "selfplay_lr": 0.0003,
+  "checkpoint_seconds": 600,
+  "workers": 14,
+  "use_cpp": true
+}

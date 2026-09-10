@@ -173,7 +173,7 @@
     $("aiSelect").disabled = busy || !connected;
     const opponent = agents.find((a) => a.id === draft.ai_agent);
     $("aiHint").textContent = opponent?.seconds
-      ? t("thinkBudget", { seconds: opponent.seconds })
+      ? t(opponent.id.startsWith("az_") ? "neuralBudget" : "thinkBudget", { seconds: opponent.seconds })
       : t("practiceHint");
     $("btnStart").disabled = busy || !connected || previewPending || !preview;
     $("btnCancelSetup").hidden = !current;

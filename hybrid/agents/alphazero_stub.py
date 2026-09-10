@@ -14,11 +14,12 @@ from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Tuple
 import math
 import random
+import time
 
 from .base import Agent
 from hybrid.core.env import GameState
 from hybrid.core.types import Move, Side
-from hybrid.core.rules import apply_move, generate_legal_moves, terminal_info, TerminalStatus
+from hybrid.core.rules import apply_move, generate_legal_moves, terminal_info, TerminalStatus, board_hash
 from hybrid.core.config import MAX_PLIES
 
 
@@ -40,6 +41,7 @@ class MCTSConfig:
     # --selfplay-max-ply (often 150), eval uses MAX_PLIES (400). If this disagrees
     # with the environment, MCTS may think a position is terminal when it is not.
     max_plies: int = MAX_PLIES
+    time_limit_seconds: Optional[float] = None
 
 
 @dataclass
@@ -107,6 +109,12 @@ class AlphaZeroMiniAgent(Agent):
     def _run_mcts_search(self, state: GameState, legal_moves: List[Move],
                          add_noise: bool = True) -> Node:
         """Run MCTS and return the root node."""
+        if not legal_moves:
+            raise ValueError("No legal moves")
+        self._deadline = (time.perf_counter() + self.cfg.time_limit_seconds
+                          if self.cfg.time_limit_seconds is not None else float("inf"))
+        from hybrid.core.env import HybridChessEnv
+        HybridChessEnv(variant=state.variant, use_cpp=self.use_cpp)._set_active_variant()
         if self.use_cpp:
             return self._run_mcts_search_cpp(state, legal_moves, add_noise)
 
@@ -120,6 +128,8 @@ class AlphaZeroMiniAgent(Agent):
         self._expand(root, priors)
 
         for _ in range(self.cfg.simulations):
+            if time.perf_counter() >= self._deadline:
+                break
             node = root
             path = [node]
 
@@ -193,6 +203,8 @@ class AlphaZeroMiniAgent(Agent):
         total_sims = self.cfg.simulations
 
         while sims_done < total_sims:
+            if time.perf_counter() >= self._deadline:
+                break
             current_k = min(K, total_sims - sims_done)
             leaves_data = []   # (leaf_state, py_moves, path) for the batched NN call
             paths_for_vl = []  # paths that received virtual loss this round
@@ -252,6 +264,8 @@ class AlphaZeroMiniAgent(Agent):
                     side_to_move=node.state.side_to_move,
                     ply=node.state.ply,
                     repetition=node.state.repetition,
+                    variant=node.state.variant,
+                    max_plies=node.state.max_plies,
                 )
                 node.state = leaf_state
                 leaves_data.append((leaf_state, py_moves, path))
@@ -321,6 +335,9 @@ class AlphaZeroMiniAgent(Agent):
         for mv, p in priors.items():
             cpp_mv = cpp.py_to_cpp_move(mv)
             child_cpp_board = module.apply_move(parent_cpp_board, cpp_mv)
+            repetition = dict(node.state.repetition)
+            key = child_cpp_board.board_hash(child_cpp_side)
+            repetition[key] = repetition.get(key, 0) + 1
 
             # Lightweight child state: board is None (deferred sync)
             # We only need side_to_move, ply, and repetition for terminal_info
@@ -328,7 +345,9 @@ class AlphaZeroMiniAgent(Agent):
                 board=None,  # deferred — synced only if this node becomes a leaf
                 side_to_move=child_side_py,
                 ply=node.state.ply + 1,
-                repetition=node.state.repetition,
+                repetition=repetition,
+                variant=node.state.variant,
+                max_plies=node.state.max_plies,
             )
             node.children[mv] = Node(
                 state=child_state,
@@ -341,7 +360,7 @@ class AlphaZeroMiniAgent(Agent):
 
     def select_move(self, state: GameState, legal_moves: List[Move]) -> Move:
         """Return the most-visited move after MCTS."""
-        root = self._run_mcts_search(state, legal_moves)
+        root = self._run_mcts_search(state, legal_moves, add_noise=False)
         best_mv = max(root.children.items(), key=lambda kv: kv[1].N)[0]
         return best_mv
 
@@ -397,16 +416,21 @@ class AlphaZeroMiniAgent(Agent):
     def _expand(self, node: Node, priors: Dict[Move, float]) -> None:
         for mv, p in priors.items():
             nb = apply_move(node.state.board, mv)
-            child_state = GameState(board=nb, side_to_move=node.state.side_to_move.opponent(), ply=node.state.ply+1, repetition=node.state.repetition)
+            side = node.state.side_to_move.opponent()
+            repetition = dict(node.state.repetition)
+            key = board_hash(nb, side)
+            repetition[key] = repetition.get(key, 0) + 1
+            child_state = GameState(nb, side, node.state.ply + 1, repetition,
+                                    node.state.variant, node.state.max_plies)
             node.children[mv] = Node(state=child_state, prior=float(p), parent=node)
 
     def _select_child(self, node: Node) -> Tuple[Move, Node]:
         """PUCT selection, with virtual loss baked into the Q estimate.
 
-        For every in-flight visit we pretend that visit returned a loss for the
-        side to move at the child. That makes ``effective_W = W - VL`` and
-        ``effective_N = N + VL``, which lowers the apparent Q on a path another
-        walker has already taken in this round. Combined with the U term
+        For every in-flight visit we pretend that visit returned a win for the
+        side to move at the child. That makes ``effective_W = W + VL`` and
+        ``effective_N = N + VL``, which raises the child's apparent Q and lowers
+        its negation from the parent's perspective. Combined with the U term
         (``c_puct * prior * sqrt(parent_N) / (1 + child_N)``) this nudges the
         next walker into a different subtree. We then negate Q because the
         child stores Q from the opponent's perspective.
@@ -418,7 +442,7 @@ class AlphaZeroMiniAgent(Agent):
         for mv, ch in node.children.items():
             effective_N = ch.N + ch.virtual_loss
             if effective_N > 0:
-                effective_W = ch.W - ch.virtual_loss
+                effective_W = ch.W + ch.virtual_loss
                 Q = effective_W / effective_N
             else:
                 Q = 0.0
@@ -491,7 +515,8 @@ class TorchPolicyValueModel(PolicyValueModel):
             return {}, 0.0
 
         with torch.no_grad():
-            x = encode_state(state).unsqueeze(0).to(self.device)  # (1, C, 10, 9)
+            from hybrid.rl.general_model import encode_for_model
+            x = encode_for_model(state, self.net).unsqueeze(0).to(self.device)
             policy_planes, value_tensor = self.net(x)
             policy_planes = policy_planes.squeeze(0)  # (92, 10, 9)
             value = value_tensor.item()
@@ -512,8 +537,9 @@ class TorchPolicyValueModel(PolicyValueModel):
             return []
 
         with torch.no_grad():
+            from hybrid.rl.general_model import encode_for_model
             batch = torch.stack(
-                [encode_state(s) for s, _ in inputs]
+                [encode_for_model(s, self.net) for s, _ in inputs]
             ).to(self.device)                              # (K, C, 10, 9)
             policy_batch, value_batch = self.net(batch)    # (K, 92, 10, 9), (K, 1)
 

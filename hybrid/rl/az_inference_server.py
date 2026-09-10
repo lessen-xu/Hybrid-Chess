@@ -55,6 +55,7 @@ class InferenceServer:
 
     def run(self) -> None:
         """Server main loop."""
+        torch.set_num_threads(1)
         dev = torch.device(self.device)
         from hybrid.rl.az_runner import build_net_from_checkpoint
         net = build_net_from_checkpoint(self.model_ckpt_path, device=str(dev))
@@ -81,7 +82,7 @@ class InferenceServer:
         # --- Pre-allocate GPU-resident buffers ---
         gpu_ids = torch.zeros((B_max, BOARD_H, BOARD_W), dtype=torch.int8, device=dev)
         gpu_sides = torch.zeros((B_max,), dtype=torch.int8, device=dev)
-        gpu_states = torch.zeros((B_max, NUM_STATE_CHANNELS, BOARD_H, BOARD_W),
+        gpu_states = torch.zeros((B_max, net.initial_conv.in_channels, BOARD_H, BOARD_W),
                                  dtype=torch.float32, device=dev)
 
         # --- Warmup: force graph capture before first real request ---
@@ -213,6 +214,10 @@ class InferenceServer:
 
         # 3. In-place GPU feature encoding
         encode_batch_gpu(gpu_ids[:total_B], gpu_sides[:total_B], dev, out=gpu_states[:total_B])
+        if getattr(net, "encoding_version", 1) == 2:
+            for wid, K, start_idx in job_info:
+                context = pool.context[wid, :K].to(dev)
+                gpu_states[start_idx:start_idx+K, 15:] = context[:, :, None, None]
 
         # 4. Static-batch AMP forward pass (always full B_max for CUDA Graphs)
         B_max = gpu_states.shape[0]
@@ -297,6 +302,7 @@ class InferenceClient:
         board_ids: np.ndarray,
         side: np.int8,
         legal_action_indices: np.ndarray,
+        context: np.ndarray | None = None,
     ) -> Tuple[np.ndarray, float]:
         """Single-state inference via shared memory.
 
@@ -309,12 +315,15 @@ class InferenceClient:
         # Write to shared memory
         pool.boards[wid, 0].copy_(torch.from_numpy(board_ids))
         pool.sides[wid, 0] = side
+        if context is not None:
+            pool.context[wid, 0].copy_(torch.from_numpy(context))
 
         # Signal server (8-byte tuple)
         pool.events[wid].clear()
         t0 = time.perf_counter()
         self.request_queue.put((wid, 1))
-        pool.events[wid].wait()
+        if not pool.events[wid].wait(timeout=120):
+            raise TimeoutError("Inference server did not respond")
 
         if self.track_latency:
             self.latencies_ms.append((time.perf_counter() - t0) * 1000.0)
@@ -332,6 +341,7 @@ class InferenceClient:
         board_ids_stack: np.ndarray,
         sides_stack: np.ndarray,
         action_indices_list: list,
+        context: np.ndarray | None = None,
     ) -> Tuple[list, np.ndarray]:
         """K-batched inference via shared memory.
 
@@ -345,12 +355,15 @@ class InferenceClient:
         # Write to shared memory
         pool.boards[wid, :K].copy_(torch.from_numpy(board_ids_stack))
         pool.sides[wid, :K].copy_(torch.from_numpy(sides_stack))
+        if context is not None:
+            pool.context[wid, :K].copy_(torch.from_numpy(context))
 
         # Signal server
         pool.events[wid].clear()
         t0 = time.perf_counter()
         self.request_queue.put((wid, K))
-        pool.events[wid].wait()
+        if not pool.events[wid].wait(timeout=120):
+            raise TimeoutError("Inference server did not respond")
 
         if self.track_latency:
             self.latencies_ms.append((time.perf_counter() - t0) * 1000.0)

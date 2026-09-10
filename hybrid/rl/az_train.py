@@ -26,13 +26,15 @@ def train_one_epoch(
     batch_size: int = 256,
     max_steps: int = 0,
     grad_clip: float = 1.0,
+    rng: np.random.Generator | None = None,
 ) -> dict:
     """Train one epoch over the replay buffer.
 
     Returns dict with 'policy_loss', 'value_loss', 'total_loss', 'steps'.
     """
     net.train()
-    rng = np.random.default_rng()
+    if rng is None:
+        rng = np.random.default_rng()
 
     if max_steps <= 0:
         max_steps = max(1, len(buffer) // batch_size)

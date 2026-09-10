@@ -67,6 +67,7 @@ struct Move {
 // RuleFlags — variant config passed from Python to C++ engine
 // ---------------------------------------------------------------------------
 struct RuleFlags {
+    bool flying_general = true;
     bool no_queen_promotion = false;  // Pawn promotes to R/B/N only (no Queen)
     bool no_promotion = false;        // Completely disable pawn promotion
     bool chess_palace = false;        // Confine Chess King to 3x3 palace (x=3-5, y=0-2)

@@ -1,0 +1,8 @@
+[
+  {"id": "custom_01", "variant": {"no_queen": true, "no_bishop": true, "one_rook": true, "remove_extra_pawn": true, "xq_queen": true, "extra_cannon": true, "extra_soldier": true}},
+  {"id": "custom_02", "variant": {"no_queen": true, "no_bishop": true, "remove_extra_pawn": true, "xq_queen": true, "extra_cannon": true, "chess_palace": true, "knight_block": true}},
+  {"id": "custom_03", "variant": {"one_rook": true, "no_bishop": true, "remove_extra_pawn": true, "extra_soldier": true, "chess_palace": true, "knight_block": true, "no_promotion": true}},
+  {"id": "custom_04", "variant": {"no_queen": true, "one_rook": true, "xq_queen": true, "extra_cannon": true, "extra_soldier": true, "no_queen_promotion": true, "flying_general": false}},
+  {"id": "custom_05", "variant": {"no_bishop": true, "one_rook": true, "remove_extra_pawn": true, "chess_palace": true, "knight_block": true, "no_promotion": true, "flying_general": false}},
+  {"id": "custom_06", "variant": {"no_queen": true, "no_bishop": true, "one_rook": true, "extra_cannon": true, "extra_soldier": true, "xq_queen": true, "no_queen_promotion": true}}
+]

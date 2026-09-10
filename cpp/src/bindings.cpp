@@ -127,7 +127,8 @@ PYBIND11_MODULE(hybrid_cpp_engine, m) {
         .def_readwrite("no_queen_promotion", &RuleFlags::no_queen_promotion)
         .def_readwrite("no_promotion", &RuleFlags::no_promotion)
         .def_readwrite("chess_palace", &RuleFlags::chess_palace)
-        .def_readwrite("knight_block", &RuleFlags::knight_block);
+        .def_readwrite("knight_block", &RuleFlags::knight_block)
+        .def_readwrite("flying_general", &RuleFlags::flying_general);
 
     m.def("set_rule_flags", &set_rule_flags, py::arg("flags"),
           "Set global rule flags for the C++ engine (thread-local)");

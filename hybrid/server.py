@@ -15,6 +15,7 @@ from hybrid.core.render import render_board
 from hybrid.web_variants import bilingual, catalog, parse_variant, preview
 
 ROOT = Path(__file__).resolve().parent.parent
+GENERAL_MODEL = None
 AVAILABLE_AGENTS = [
     {"id": "ab_d1", "label": "Quick", "name": bilingual("快速", "Quick"), "seconds": 1},
     {"id": "ab_d2", "label": "Standard", "name": bilingual("标准", "Standard"), "seconds": 3},
@@ -39,6 +40,12 @@ def create_agent(agent_id):
     if agent_id == "greedy":
         from hybrid.agents.greedy_agent import GreedyAgent
         return GreedyAgent()
+    if agent_id.startswith("az_") and GENERAL_MODEL is not None:
+        from hybrid.agents.alphazero_stub import AlphaZeroMiniAgent, MCTSConfig, TorchPolicyValueModel
+        seconds = {"az_fast": 1, "az_standard": 3, "az_deep": 6}[agent_id]
+        return AlphaZeroMiniAgent(TorchPolicyValueModel(GENERAL_MODEL, "cpu"),
+            MCTSConfig(simulations=100000, time_limit_seconds=seconds,
+                       discount_factor=1., dirichlet_eps=0.))
     from hybrid.agents.alphabeta_agent import AlphaBetaAgent, SearchConfig
     depth, seconds = {"ab_d1": (1, 1), "ab_d2": (2, 3), "ab_d4": (4, 6)}[agent_id]
     return AlphaBetaAgent(SearchConfig(depth=depth, time_limit_seconds=seconds))
@@ -246,12 +253,35 @@ class HybridChessHandler(SimpleHTTPRequestHandler):
         self.wfile.write(body)
 
 
+def configure_model(path):
+    global GENERAL_MODEL
+    AVAILABLE_AGENTS[:] = [a for a in AVAILABLE_AGENTS if not a["id"].startswith("az_")]
+    GENERAL_MODEL = None
+    if not path:
+        return
+    model_path = Path(path)
+    if not model_path.is_file():
+        print(f"Model not found: {model_path}; built-in opponents remain available.", flush=True)
+        return
+    import torch
+    from hybrid.rl.general_model import load_general_model
+    torch.set_num_threads(1)
+    GENERAL_MODEL = load_general_model(model_path)
+    AVAILABLE_AGENTS.extend([
+        {"id": "az_fast", "label": "Neural Quick", "name": bilingual("学习型 · 快速", "Neural · Quick"), "seconds": 1},
+        {"id": "az_standard", "label": "Neural Standard", "name": bilingual("学习型 · 标准", "Neural · Standard"), "seconds": 3},
+        {"id": "az_deep", "label": "Neural Deep", "name": bilingual("学习型 · 深入", "Neural · Deep"), "seconds": 6},
+    ])
+
+
 def main():
     parser = argparse.ArgumentParser(description="Hybrid Chess game server")
     parser.add_argument("--port", type=int, default=8000)
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--no-browser", action="store_true")
+    parser.add_argument("--model", help="Optional version 2 rule-aware model (.pt)")
     args = parser.parse_args()
+    configure_model(args.model)
     server = HTTPServer((args.host, args.port), HybridChessHandler)
     url = f"http://{args.host}:{args.port}"
     print(f"Hybrid Chess: {url}\nPress Ctrl+C to stop.", flush=True)

@@ -201,6 +201,11 @@ def build_net_from_checkpoint(
     """
     ckpt = torch.load(path, map_location=device, weights_only=True)
     arch = ckpt.get("arch", {})
+    if ckpt.get("encoding_version", 1) == 2:
+        from hybrid.rl.general_model import load_general_model
+        return load_general_model(path, device)
+    if ckpt.get("encoding_version", 1) != 1:
+        raise ValueError("Unknown model encoding version")
     res_blocks = arch.get("res_blocks", fallback_res_blocks)
     channels = arch.get("channels", fallback_channels)
     net = PolicyValueNet(num_res_blocks=res_blocks, channels=channels)

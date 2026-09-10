@@ -33,6 +33,10 @@ class SharedMemoryPool:
         self.sides = torch.zeros(
             max_workers, max_leaves, dtype=torch.int8
         ).share_memory_()
+        from hybrid.rl.general_model import CONTEXT_SIZE
+        self.context = torch.zeros(
+            max_workers, max_leaves, CONTEXT_SIZE, dtype=torch.float32
+        ).share_memory_()
 
         # ── Backward buffers (Server writes, Worker reads) ──
         self.policies = torch.zeros(

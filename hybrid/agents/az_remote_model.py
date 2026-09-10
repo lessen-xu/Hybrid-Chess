@@ -17,6 +17,7 @@ from hybrid.agents.alphazero_stub import PolicyValueModel
 from hybrid.core.env import GameState
 from hybrid.core.types import Move, Side
 from hybrid.rl.az_encoding import board_to_piece_ids
+from hybrid.rl.general_model import context_features
 from hybrid.rl.az_selfplay import move_to_action_index
 from hybrid.rl.az_inference_server import InferenceClient
 
@@ -48,7 +49,8 @@ class RemotePolicyValueModel(PolicyValueModel):
         # Remote forward pass (encoding happens server-side on GPU)
         import time as _time
         t0 = _time.perf_counter()
-        logits_np, value = self.client.predict_raw(board_ids, side, action_indices)
+        logits_np, value = self.client.predict_raw(board_ids, side, action_indices,
+                                                  context=context_features(state))
         self.ipc_wait_s += (_time.perf_counter() - t0)
         self.predict_count += 1
 
@@ -101,6 +103,7 @@ class RemotePolicyValueModel(PolicyValueModel):
         t0 = _time.perf_counter()
         logits_list, values = self.client.predict_batch_raw(
             board_ids_stack, sides_stack, action_indices_list,
+            context=np.stack([context_features(s) for s, _ in leaf_data]),
         )
         self.ipc_wait_s += (_time.perf_counter() - t0)
         self.predict_count += K

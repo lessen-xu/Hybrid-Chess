@@ -37,6 +37,10 @@
       "每步约 {seconds} 秒，完成深度取决于局面。",
       "About {seconds}s per move; search depth depends on the position.",
     ],
+    neuralBudget: [
+      "每步约 {seconds} 秒。不同规则下的棋力可能不同。",
+      "About {seconds}s per move. Playing strength varies across rules.",
+    ],
     practiceHint: [
       "适合熟悉棋子走法与规则。",
       "A relaxed way to learn the pieces and rules.",

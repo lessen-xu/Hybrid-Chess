@@ -25,10 +25,11 @@
     return v && typeof v === "object" && !Array.isArray(v) ? v : {};
   }
   function resultLabel(g) {
+    const code = g?.result_code || g?.result;
     if (
-      ["chess_win", "xiangqi_win", "draw", "ongoing"].includes(g?.result_code)
+      ["chess_win", "xiangqi_win", "draw", "ongoing"].includes(code)
     )
-      return t(g.result_code);
+      return t(code);
     const value = g?.result || "";
     if (/^Chess wins/i.test(value)) return t("chess_win");
     if (/^Xiangqi wins/i.test(value)) return t("xiangqi_win");

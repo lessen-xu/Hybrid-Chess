@@ -191,7 +191,7 @@ static void xiangqi_general_moves(const Board& board, int x, int y, Side side,
 
     // Flying general: if King is on the same file with no pieces between
     auto [kx, ky] = board.royal_xy(Side::CHESS);
-    if (kx >= 0) {
+    if (g_rule_flags.flying_general && kx >= 0) {
         if (kx == x) {
             int step = (ky > y) ? 1 : -1;
             int cy = y + step;
@@ -507,7 +507,7 @@ bool is_square_attacked_fast(const Board& board, int x, int y, Side by_side) {
     // is on same column as the General, check for clear path.
     {
         // Only applies if target (x,y) is the Chess King (one-directional rule)
-        if (target_cell.has_value() && target_cell->kind == PieceKind::KING &&
+        if (g_rule_flags.flying_general && target_cell.has_value() && target_cell->kind == PieceKind::KING &&
             target_cell->side == Side::CHESS) {
             int gsq = board.royal_square(Side::XIANGQI);
             if (gsq >= 0) {
