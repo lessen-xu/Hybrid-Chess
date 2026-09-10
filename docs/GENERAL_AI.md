@@ -108,6 +108,10 @@ Four opening plies provide controlled diversity. Opponents run in the same CPU
 worker with one thread and the same one-second upper search budget; Random and
 Greedy naturally use less time. The AB baseline is the web Quick opponent (depth 1).
 
+Use `--seed` to choose the base opening seed (default `876000`). Use a different
+base seed for final acceptance than for interim candidate screening, and record
+both. Resuming with a different seed requires a new evaluation output directory.
+
 Reports include army-specific scores, W/D/L, move latency and conservative 95%
 Hoeffding intervals over complete opening-pair mean scores. Twenty games per group
 are a screening sample. Partial runs report expected/completed counts explicitly.

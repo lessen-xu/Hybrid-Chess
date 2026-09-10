@@ -37,15 +37,17 @@ def test_evaluation_cli_resumes_completed_games_without_replaying(tmp_path, monk
     monkeypatch.setattr(general_eval, "require_compute", lambda: None)
     monkeypatch.setattr(sys, "argv", ["general_eval", "--model", str(model),
         "--output", str(output), "--variants", str(config), "--games", "2",
-        "--workers", "2", "--seconds", "0.001", "--wall-seconds", "120"])
+        "--workers", "2", "--seconds", "0.001", "--seed", "24680", "--wall-seconds", "120"])
     general_eval.main()
     summary = json.loads((output / "summary.json").read_text())
     assert summary["complete"] and summary["completed_games"] == 12
+    assert json.loads((output / "identity.json").read_text())["opening_seed"] == 24680
     paths = sorted((output / "games").glob("*.json"))
     stamps = {p.name: p.stat().st_mtime_ns for p in paths}
     for path in paths:
         game = json.loads(path.read_text())
         assert game["reason"] and game["plies"] <= 400
+        assert game["seed"] == (24680 if game["preset"] == "none" else 24780)
         assert len(game["states_ascii"]) == len(game["moves"]) + 1
     general_eval.main()
     assert stamps == {p.name: p.stat().st_mtime_ns for p in paths}

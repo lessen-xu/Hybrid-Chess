@@ -112,6 +112,7 @@ def main():
     parser.add_argument("--workers", type=int, default=14)
     parser.add_argument("--games", type=int, default=20, help="Even number per preset/opponent")
     parser.add_argument("--seconds", type=float, default=1.)
+    parser.add_argument("--seed", type=int, default=876000, help="Base seed for paired openings")
     parser.add_argument("--wall-seconds", type=float, default=7000)
     parser.add_argument("--variants", help="Optional JSON list of {id, variant} evaluation configurations")
     args = parser.parse_args()
@@ -130,6 +131,9 @@ def main():
     variants = [{"id": v["id"], "variant": parse_variant(v["variant"]).to_dict()} for v in variants]
     identity = {"model_sha256": model_hash, "games": args.games, "seconds": args.seconds,
                 "protocol": 2, "variants": variants}
+    # Protocol 2 used a fixed 876000 seed before this option existed.
+    if args.seed != 876000:
+        identity["opening_seed"] = args.seed
     with run_lock(root):
         RunStore(root, identity)
         jobs = []
@@ -139,7 +143,7 @@ def main():
                     game_id = f"{preset['id']}-{opponent}-{i:02d}"
                     jobs.append({"id": game_id, "preset": preset["id"], "variant": preset["variant"],
                         "side": "chess" if i % 2 == 0 else "xiangqi", "opponent": opponent,
-                        "seed": 876000+100*preset_index+i//2, "seconds": args.seconds,
+                        "seed": args.seed+100*preset_index+i//2, "seconds": args.seconds,
                         "model_sha256": model_hash, "deadline": stop.deadline,
                         "record": i < 2, "path": str(root / "games" / (game_id+".json"))})
         records, pending = [], []
