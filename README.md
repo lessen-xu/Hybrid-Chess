@@ -1,155 +1,101 @@
 # Hybrid Chess
 
-AlphaZero for asymmetric board games: International Chess pieces vs. Xiangqi (Chinese Chess) pieces on a shared 9×10 board.
+Play International Chess against Xiangqi on a shared 9 × 10 board. Each army
+keeps its own movement rules. Choose a preset, combine your own rules, and play
+either side against an AI.
 
-[![Python 3.9+](https://img.shields.io/badge/Python-3.9%2B-3776ab?logo=python&logoColor=white)](https://python.org)
-[![PyTorch](https://img.shields.io/badge/PyTorch-2.0%2B-ee4c2c?logo=pytorch&logoColor=white)](https://pytorch.org)
-[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+Hybrid Chess is an open-source game and a place to explore asymmetric rules and
+game AI. Rule combinations change the game substantially; no preset is promised
+to give the two armies equal chances.
 
-## Overview
+## Start playing
 
-Hybrid Chess places International Chess pieces against Xiangqi pieces on a 9×10 board. Each side follows its own movement rules, creating an asymmetric two-player zero-sum game with no existing datasets or opening theory. Agents must learn entirely through self-play.
-
-```
-Xiangqi    10  c  h  e  a  g  a  e  h  c      Chariot, Horse, Elephant, Advisor, General
-            9  .  .  .  .  .  .  .  .  .
-            8  .  n  .  .  .  .  .  n  .      Cannons
-            7  s  .  s  .  s  .  s  .  s      Soldiers
-            6  ─  ─  ─  ─  ─  ─  ─  ─  ─      River
-            5  .  .  .  .  .  .  .  .  .
-            4  .  .  .  .  .  .  .  .  .
-            3  .  .  .  .  .  .  .  .  .
-            2  P  P  P  P  P  P  P  P  P      Pawns
-Chess       1  R  N  B  Q  K  B  N  R  .      Rook, Knight, Bishop, Queen, King
-               a  b  c  d  e  f  g  h  i
-```
-
-See [RULES.md](RULES.md) for the complete rule specification.
-
-## Setup
+Use Python 3.9 or newer from a local checkout:
 
 ```bash
 git clone https://github.com/lessen-xu/Hybrid-Chess.git
 cd Hybrid-Chess
-pip install -e .
-
-# Optional: build C++ engine for faster move generation
-pip install pybind11 && bash cpp/build.sh   # macOS/Linux
-pip install pybind11 && .\cpp\build.ps1     # Windows
-```
-
-## Usage
-
-### Play
-
-```bash
+python -m pip install -e .
 python -m hybrid server
 ```
 
-The local page opens at `http://127.0.0.1:8000`. Choose one of six presets
-or combine custom rules, preview the opening, then play as either army.
-The interface supports Chinese and English, legal-move hints, promotion
-choices, undo, and restoring the current game after a page refresh.
+Open **http://127.0.0.1:8000**. Choose the rules, your army and an opponent, then
+start a game. The interface supports Chinese and English, opening previews,
+legal-move hints, promotion choices, undo and board rotation. Chess moves first;
+when you choose Xiangqi, the AI makes the opening move.
 
-Quick, Standard, and Deep AI use Python Alpha-Beta with approximately
-1, 3, and 6 seconds per move; completed search depth depends on the position.
-Random and capture-practice opponents are also available. Web play needs
-neither a compiled C++ engine nor model weights. The server holds one shared
-game in memory; stopping it clears the game. JSON/JSONL recordings remain
-available through the secondary Replays page.
+Quick, Standard and Deep opponents use Python Alpha-Beta with approximate
+1, 3 and 6 second budgets. Random and Greedy opponents are also available.
+Playing requires neither model weights nor a compiled C++ engine.
 
-### Train
+The local server keeps one shared game in memory. Refreshing the page restores
+that game; restarting the server clears it. The secondary Replays page imports
+JSON and JSONL recordings for stepping through or autoplaying a game.
+
+## Choose the rules
+
+| Preset | Changes from the original setup |
+| --- | --- |
+| Original rules | Both armies use their usual movement rules, with the shared-board adaptations below. |
+| Palace & blocked knights | Confine the Chess king to a palace and make Chess knights subject to leg blocking. |
+| A queen for Xiangqi | Replace Xiangqi's left advisor with a queen. |
+| Palace, knights & queen | Combine those movement restrictions with the Xiangqi queen. |
+| Chess without a queen | Remove the starting Chess queen. |
+| An extra cannon | Add a third Xiangqi cannon. |
+
+Custom settings also cover the ninth pawn, individual pieces, pawn promotion and
+the flying general. [Game rules](RULES.md) explains the board, every piece,
+termination and all rule switches.
+
+## Explore the AI
+
+The built-in opponents provide starting points for developing your own agents.
+The rule-aware training pipeline uses one small policy/value network for both
+armies, learns from Alpha-Beta games, then continues through mixed-rule self-play
+with MCTS. See the [AI guide](docs/GENERAL_AI.md) for the model format, training,
+recovery and evaluation.
+
+To play with a compatible exported model:
 
 ```bash
-# Quick test (CPU)
-python -m hybrid train --iterations 5 --games 20 --simulations 50
-
-# Full training with rule variants (GPU)
-python scripts/train_az_iter.py \
-    --iterations 50 --selfplay-games-per-iter 100 --simulations 50 \
-    --ablation "chess_palace,knight_block,xq_queen" \
-    --use-cpp --num-workers 4 \
-    --outdir runs/my_experiment
+python -m hybrid server --model /path/to/candidate.pt
 ```
 
-### Evaluate
+Learned opponents run on a local CPU. Model files are distributed separately;
+their accompanying evaluations describe which rules and opponents were tested.
 
-```bash
-python -m hybrid eval --model runs/my_experiment/best_model.pt --vs ab_d2 --games 50
-```
+## Develop
 
-### Rule Variants
-
-The project supports rule variants via `VariantConfig` to study game balance:
+Create an environment directly to explore a rule combination:
 
 ```python
 from hybrid.core.config import VariantConfig
 from hybrid.core.env import HybridChessEnv
 
-# Default rules
-env = HybridChessEnv()
-
-# Structural reform: palace + knight blocking
-env = HybridChessEnv(variant=VariantConfig(chess_palace=True, knight_block=True))
-
-# Best balance: palace + knight block + give XQ a Queen
 env = HybridChessEnv(variant=VariantConfig(
-    chess_palace=True, knight_block=True, xq_queen=True
+    chess_palace=True,
+    knight_block=True,
+    xq_queen=True,
 ))
+state = env.reset()
+state, reward, done, info = env.step(env.legal_moves()[0])
 ```
 
-Available flags: `no_queen`, `chess_palace`, `knight_block`, `xq_queen`, `no_promotion`, `extra_cannon`, etc. See [RULES.md](RULES.md).
+The engine is written in Python, with an optional C++ extension. The web UI uses
+plain HTML, CSS, JavaScript and a shared SVG board; it has no frontend build step.
 
-### Gymnasium Interface
+| Area | Location |
+| --- | --- |
+| Rules, board and game state | `hybrid/core/` |
+| Random, Greedy, Alpha-Beta and MCTS agents | `hybrid/agents/` |
+| Training, inference and evaluation | `hybrid/rl/` |
+| Local HTTP server and rule catalog | `hybrid/server.py`, `hybrid/web_variants.py` |
+| Play and replay interfaces | `ui/` |
+| Optional native engine | `cpp/` |
 
-```python
-import gymnasium as gym
-import hybrid.gym_env  # registers HybridChess-v0
-
-env = gym.make("HybridChess-v0")
-obs, info = env.reset()
-action = info["legal_actions"][0]
-obs, reward, terminated, truncated, info = env.step(action)
-```
-
-## Project Structure
-
-```
-hybrid-chess/
-├── hybrid/                     # Python package
-│   ├── core/                   # Game engine
-│   │   ├── types.py            #   Side, PieceKind, Move, Piece
-│   │   ├── board.py            #   Board representation (9×10)
-│   │   ├── rules.py            #   Move generation, terminal detection
-│   │   ├── config.py           #   VariantConfig, game constants
-│   │   ├── env.py              #   HybridChessEnv
-│   │   └── fen.py              #   FEN parser/serializer
-│   ├── agents/                 # AI agents
-│   │   ├── random_agent.py     #   Uniform random baseline
-│   │   ├── greedy_agent.py     #   1-ply capture maximiser
-│   │   ├── alphabeta_agent.py  #   Negamax with alpha-beta pruning
-│   │   └── alphazero_stub.py   #   MCTS + neural network agent
-│   └── rl/                     # AlphaZero training pipeline
-│       ├── az_network.py       #   Dual-head residual CNN
-│       ├── az_encoding.py      #   15-plane state / 92-plane action encoding
-│       ├── az_selfplay.py      #   Self-play data generation
-│       ├── az_train.py         #   Training loop
-│       ├── az_eval.py          #   Evaluation, gating, Wilson CI
-│       └── az_runner.py        #   Iterative AlphaZero runner
-├── cpp/                        # C++ engine (pybind11, ~50× speedup)
-├── scripts/                    # Experiment & evaluation scripts
-│   ├── train_az_iter.py        #   Standalone AZ training CLI
-│   ├── cross_variant_tournament.py  # Cross-variant round-robin
-│   └── eval_arena.py           #   Side-switching evaluation
-├── ui/                         # Browser-based game UI
-├── tests/                      # Test suite
-├── docs/                       # Documentation
-│   ├── ARCHITECTURE.md         #   System architecture
-│   ├── EXPERIMENTS_EN.md       #   Experiment log & results (English)
-│   └── EXPERIMENTS_ZH.md       #   Experiment log & results (Chinese)
-└── runs/                       # Training outputs (gitignored)
-```
+See [Architecture](docs/ARCHITECTURE.md) for the data flow and
+[Contributing](CONTRIBUTING.md) for setup, checks and extension points.
 
 ## License
 
-MIT
+MIT.
