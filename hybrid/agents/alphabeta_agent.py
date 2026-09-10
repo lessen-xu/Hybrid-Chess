@@ -33,8 +33,10 @@ class _SearchTimeout(Exception):
 class AlphaBetaAgent(Agent):
     name = "alphabeta"
 
-    def __init__(self, cfg: Optional[SearchConfig] = None):
+    def __init__(self, cfg: Optional[SearchConfig] = None, *, evaluator=None):
         self.cfg = cfg or SearchConfig()
+        # Optional experiment hook; normal/offline/web callers retain the legacy evaluator.
+        self.evaluator = evaluator
         self._deadline = None
         self.last_completed_depth = 0
 
@@ -94,7 +96,7 @@ class AlphaBetaAgent(Agent):
             score = 1e6 - state.ply
             return score if info.winner == perspective else -score
         if depth <= 0:
-            value = evaluate(state, perspective, self.cfg.eval_weights)
+            value = (self.evaluator or evaluate)(state, perspective, self.cfg.eval_weights)
             self._check_time()
             return value
         best = -1e18
