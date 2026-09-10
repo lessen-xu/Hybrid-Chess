@@ -4,13 +4,14 @@ from pathlib import Path
 import pytest
 import torch
 
-from hybrid.agents.alphazero_stub import AlphaZeroMiniAgent, MCTSConfig, TorchPolicyValueModel
+from hybrid.agents.alphazero_stub import AlphaZeroMiniAgent, MCTSConfig, PolicyValueModel, TorchPolicyValueModel
 from hybrid.core.board import Board
 from hybrid.core.env import HybridChessEnv
 from hybrid.core.rules import apply_move, board_hash
 from hybrid.core.types import Piece, PieceKind as K, Side, Move
 from hybrid.rl.general_model import new_model
 from hybrid.web_variants import parse_variant
+from hybrid.rl.diagnostics.common import restore
 
 
 def test_heldout_combinations_are_outside_the_training_sampler():
@@ -52,6 +53,78 @@ def test_search_finds_immediate_win(cpp, kind, side, source, target, screen):
     # Capturing the royal and giving a one-move mate/stalemate are equal wins.
     _, _, done, info = env.step(chosen)
     assert done and info.winner == side
+
+
+class _BadPolicyModel(PolicyValueModel):
+    def __init__(self, preferred_move: Move):
+        self.preferred_move = preferred_move
+
+    def predict(self, state, moves):
+        policy = {mv: 1.0 if mv == self.preferred_move else 0.001 for mv in moves}
+        return policy, 0.98331
+
+    def predict_batch(self, inputs):
+        return [self.predict(state, moves) for state, moves in inputs]
+
+
+def test_ai_prefers_immediate_tactical_win():
+    record = {
+        "pieces": [
+            [4, 0, "KING", "CHESS"],
+            [7, 1, "CHARIOT", "XIANGQI"],
+            [1, 2, "CHARIOT", "XIANGQI"],
+            [5, 2, "PAWN", "CHESS"],
+            [8, 2, "SOLDIER", "XIANGQI"],
+            [0, 3, "PAWN", "CHESS"],
+            [4, 3, "PAWN", "CHESS"],
+            [3, 5, "PAWN", "CHESS"],
+            [0, 6, "SOLDIER", "XIANGQI"],
+            [2, 6, "SOLDIER", "XIANGQI"],
+            [4, 6, "SOLDIER", "XIANGQI"],
+            [6, 6, "SOLDIER", "XIANGQI"],
+            [4, 8, "ADVISOR", "XIANGQI"],
+            [1, 9, "HORSE", "XIANGQI"],
+            [2, 9, "ELEPHANT", "XIANGQI"],
+            [3, 9, "GENERAL", "XIANGQI"],
+            [5, 9, "ADVISOR", "XIANGQI"],
+            [6, 9, "ELEPHANT", "XIANGQI"],
+        ],
+        "side": "XIANGQI",
+        "ply": 47,
+        "repetition": {},
+        "variant": {
+            "extra_pawn_i_file": True,
+            "no_queen": False,
+            "no_bishop": False,
+            "one_rook": False,
+            "remove_extra_pawn": False,
+            "extra_cannon": False,
+            "extra_soldier": False,
+            "xq_queen": False,
+            "flying_general": True,
+            "no_promotion": False,
+            "chess_palace": True,
+            "knight_block": True,
+            "no_queen_promotion": False,
+        },
+        "max_plies": 400,
+    }
+    env, state = restore(record)
+    legal = env.legal_moves()
+    assert legal, "expected legal moves from diagnostic position"
+
+    forced_win = Move(1, 2, 1, 0)
+    assert forced_win in legal
+
+    # Give the model a strong incorrect preference for a non-winning move to
+    # reproduce the shallow-search failure mode.
+    wrong = next(mv for mv in legal if mv != forced_win)
+    agent = AlphaZeroMiniAgent(_BadPolicyModel(wrong), MCTSConfig(simulations=32, dirichlet_eps=0.), use_cpp=False)
+    chosen = agent.select_move(state, legal)
+
+    assert chosen == forced_win
+    _, _, done, info = env.step(chosen)
+    assert done and info.winner == Side.XIANGQI
 
 
 @pytest.mark.parametrize("cpp", [False, True])

@@ -310,6 +310,29 @@ class AlphaZeroMiniAgent(Agent):
 
         return root
 
+    def _forced_win_move(self, state: GameState, legal_moves: List[Move]) -> Optional[Move]:
+        """Return an immediate winning move if one exists in legal moves."""
+        forced: List[Move] = []
+        for mv in legal_moves:
+            child_board = apply_move(state.board, mv)
+            child_side = state.side_to_move.opponent()
+            repetition = dict(state.repetition)
+            repetition_key = board_hash(child_board, child_side)
+            repetition[repetition_key] = repetition.get(repetition_key, 0) + 1
+
+            info = terminal_info(child_board, child_side, repetition,
+                                 state.ply + 1, state.max_plies)
+            if info.status != TerminalStatus.ONGOING and info.winner == state.side_to_move:
+                forced.append(mv)
+
+        if not forced:
+            return None
+        if len(forced) == 1:
+            return forced[0]
+
+        priors, _ = self.model.predict(state, legal_moves)
+        return max(forced, key=lambda mv: priors.get(mv, 0.0))
+
     def _assert_no_vl_leak(self, root: Node) -> None:
         """DFS the entire tree asserting all virtual_loss == 0."""
         stack = [root]
@@ -360,6 +383,9 @@ class AlphaZeroMiniAgent(Agent):
 
     def select_move(self, state: GameState, legal_moves: List[Move]) -> Move:
         """Return the most-visited move after MCTS."""
+        tactical = self._forced_win_move(state, legal_moves)
+        if tactical is not None:
+            return tactical
         root = self._run_mcts_search(state, legal_moves, add_noise=False)
         best_mv = max(root.children.items(), key=lambda kv: kv[1].N)[0]
         return best_mv
@@ -367,6 +393,10 @@ class AlphaZeroMiniAgent(Agent):
     def run_mcts(self, state: GameState, legal_moves: List[Move],
                  add_noise: bool = True) -> Tuple[Dict[Move, float], float]:
         """Run MCTS, return (pi_dict, root_value). pi_dict is the visit-count distribution."""
+        tactical = self._forced_win_move(state, legal_moves)
+        if tactical is not None:
+            return {mv: 1.0 if mv == tactical else 0.0 for mv in legal_moves}, 1.0
+
         root = self._run_mcts_search(state, legal_moves, add_noise=add_noise)
 
         total_visits = sum(ch.N for ch in root.children.values())
@@ -389,6 +419,11 @@ class AlphaZeroMiniAgent(Agent):
         temperature > 0: sample proportional to N^(1/T).
         temperature ≈ 0: argmax (most-visited move).
         """
+        tactical = self._forced_win_move(state, legal_moves)
+        if tactical is not None:
+            pi_dict = {mv: 1.0 if mv == tactical else 0.0 for mv in legal_moves}
+            return tactical, pi_dict, 1.0
+
         root = self._run_mcts_search(state, legal_moves, add_noise=add_noise)
 
         moves = list(root.children.keys())
