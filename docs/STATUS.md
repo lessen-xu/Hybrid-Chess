@@ -6,13 +6,13 @@
 - **Codebase Clean-Up**: Removed obsolete course-project files (RQ1–RQ4 scripts, legacy diagnostics, and outdated report dumps).
 - **Cluster Deployment**: Packaged source archive `round02-r01.tar.gz` and deployed to `/storage/homefs/lx24y045/hybrid-chess/releases/round02-r01`.
 - **Cluster Verification**: Ran verification suite on compute node `gnode25` with C++ engine (82 passed, 1 skipped).
-- **Teacher Dataset Generation**: Executed `hc2-teacher01` on compute node `bnode048`, generating 49,980 samples.
-- **Teacher Dataset Audit**: Ran `audit_teacher.py` to verify game-disjointness and win/loss balance across splits.
-- **GPU Training Submission**: Submitted Stage 2 job `hc2-train01` via `cluster_submit.py` requesting 1x H100 GPU and 16 CPUs for 10 supervised epochs + self-play.
+- **Teacher Dataset Generation**: Executed `hc2-teacher01` on compute node `bnode048`, generating 49,980 samples (35 Chess wins vs 34 Xiangqi wins in decisive training games).
+- **GPU Supervised Pretraining**: Executed on `gnode26` (H100 GPU), converging to validation loss 1.219; exported `supervised.pt` and initial `candidate.pt`.
+- **RL Self-Play Iterations**: Completed Iteration 0 (128 games, 5,800 samples, loss 3.332 with `BalancedBuffer`); currently running Iteration 1.
 
 ## Current Results
-- **Teacher Dataset**: 49,980 samples across 727 games generated in 1,544 seconds.
-- **Dataset Symmetry**: Decisive games in training split: 35 Chess wins vs 34 Xiangqi wins (1.03:1 balance, resolving legacy 3.5:1 skew).
-- **Active Job**: `hc2-train01` (JobID: `14959962`) queued as the top runnable job on partition `gpu` (1x H100, 16 CPUs, 64GB RAM).
-- **Budget Ledger**: 0 / 28,800 GPU-seconds used; 22,442 CPU core-seconds used (100,800 reserved) under account `gratis`.
+- **Active Job**: `hc2-train01` (JobID: `14959962`) actively running on `gnode26` (1x H100 GPU, 16 CPUs, 64GB RAM).
+- **Model Checkpoints**: `supervised.pt`, `candidate.pt`, and `candidate-0001.pt` generated.
+- **Self-Play Progress**: Iteration 0 completed (29 Chess wins, 17 Xiangqi wins, 82 draws); Iteration 1 in progress.
+- **Budget Ledger**: ~300 / 28,800 GPU-seconds used; 22,442 / 230,400 CPU core-seconds used under account `gratis`.
 - **Git Status**: Clean working tree on `main`.
