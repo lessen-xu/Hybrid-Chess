@@ -19,5 +19,6 @@
   "selfplay_lr": 0.0003,
   "checkpoint_seconds": 600,
   "workers": 14,
-  "use_cpp": true
+  "use_cpp": true,
+  "balanced_sampling": true
 }

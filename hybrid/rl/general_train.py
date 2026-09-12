@@ -20,7 +20,7 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 
-from hybrid.rl.az_replay import ReplayBuffer
+from hybrid.rl.az_replay import ReplayBuffer, BalancedBuffer
 from hybrid.rl.az_train import train_one_epoch
 from hybrid.rl.general_games import collect_games, load_game
 from hybrid.rl.general_model import new_model, model_payload
@@ -51,14 +51,15 @@ def game_reference(path):
     return {"path": str(path), "sha256": sha256(path)}
 
 
-def load_buffer(references, capacity):
-    buffer = ReplayBuffer(capacity)
+def load_buffer(references, capacity, balanced: bool = False):
+    buffer = BalancedBuffer(capacity) if balanced else ReplayBuffer(capacity)
     for reference in references:
         if sha256(reference["path"]) != reference["sha256"]:
             raise RuntimeError(f"Changed replay shard: {reference['path']}")
         examples, _ = load_game(reference["path"])
         buffer.append(examples)
     return buffer
+
 
 
 def validation_loss(net, buffer, device, batch_size):
@@ -159,8 +160,9 @@ class Trainer:
             if "teacher_manifest_sha256" in state and state["teacher_manifest_sha256"] != sha256(teacher_manifest):
                 raise ValueError("Teacher dataset changed while resuming")
             state["teacher_manifest_sha256"] = sha256(teacher_manifest)
-            train = load_buffer(manifest["train"], cfg["teacher_samples"])
-            valid = load_buffer(manifest["validation"], cfg["teacher_samples"])
+            balanced = cfg.get("balanced_sampling", True)
+            train = load_buffer(manifest["train"], cfg["teacher_samples"], balanced=balanced)
+            valid = load_buffer(manifest["validation"], cfg["teacher_samples"], balanced=False)
             if not len(train) or not len(valid):
                 raise RuntimeError("Need nonempty game-disjoint teacher train and validation sets")
             while state["epoch"] < cfg["supervised_epochs"] and state["bad_epochs"] < cfg["patience"]:
@@ -236,7 +238,8 @@ class Trainer:
                 state["stage"] = "train"
                 self.save()
             if state["stage"] == "train":
-                buffer = load_buffer(state["replay"], cfg["replay_capacity"])
+                balanced = cfg.get("balanced_sampling", True)
+                buffer = load_buffer(state["replay"], cfg["replay_capacity"], balanced=balanced)
                 if not self.train_epoch(buffer):
                     return
                 metric = {"stage": "selfplay_train", "iteration": state["iteration"],

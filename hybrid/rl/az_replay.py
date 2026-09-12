@@ -115,3 +115,41 @@ class ReplayBuffer:
             buf.examples.append(ex)
 
         return buf
+
+
+class BalancedBuffer(ReplayBuffer):
+    """Replay buffer with balanced sampling across army and outcome strata.
+
+    Each draw first chooses an available stratum (Side × Outcome) uniformly,
+    then chooses an example uniformly within that stratum.
+    """
+
+    def sample_batch(self, batch_size: int, rng: Optional[np.random.Generator] = None):
+        """Sample a batch balanced equally across available (side, z) strata."""
+        if rng is None:
+            rng = np.random.default_rng()
+
+        n = len(self.examples)
+        if n == 0:
+            raise ValueError("Cannot sample from an empty buffer")
+
+        from collections import defaultdict
+        groups = defaultdict(list)
+        for i, ex in enumerate(self.examples):
+            key = (ex.side_to_move.name, int(round(ex.z)))
+            groups[key].append(i)
+
+        strata = [np.asarray(groups[k]) for k in sorted(groups)]
+        if not strata:
+            raise ValueError("No strata found in buffer")
+
+        chosen_strata = rng.integers(len(strata), size=batch_size)
+        idxs = [int(rng.choice(strata[s])) for s in chosen_strata]
+
+        states = np.stack([self.examples[i].state for i in idxs]).astype(np.float32)
+        pi_indices_list = [self.examples[i].pi_indices for i in idxs]
+        pi_probs_list = [self.examples[i].pi_probs for i in idxs]
+        z = np.array([self.examples[i].z for i in idxs], dtype=np.float32)
+
+        return states, pi_indices_list, pi_probs_list, z
+

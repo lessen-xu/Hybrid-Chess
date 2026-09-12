@@ -79,3 +79,46 @@ def test_sample_batch():
     assert len(pi_probs_list) == 5
     assert z.shape == (5,)
     assert z.dtype == np.float32
+
+
+def test_balanced_buffer_uniform_distribution():
+    """BalancedBuffer samples uniformly across strata despite extreme skew in sample counts."""
+    from hybrid.rl.az_replay import BalancedBuffer
+
+    rng = np.random.default_rng(42)
+    # Heavily skewed: 500 Chess wins (z=1), 500 Chess losses (z=-1),
+    # but only 5 Xiangqi wins (z=1), 5 Xiangqi losses (z=-1), 10 draws (z=0)
+    examples = []
+    for _ in range(500):
+        examples.append(Example(np.zeros((NUM_STATE_CHANNELS, BOARD_H, BOARD_W), dtype=np.uint8),
+                                np.array([0], dtype=np.uint16), np.array([1.0], dtype=np.float32),
+                                Side.CHESS, 1.0))
+        examples.append(Example(np.zeros((NUM_STATE_CHANNELS, BOARD_H, BOARD_W), dtype=np.uint8),
+                                np.array([0], dtype=np.uint16), np.array([1.0], dtype=np.float32),
+                                Side.CHESS, -1.0))
+    for _ in range(5):
+        examples.append(Example(np.zeros((NUM_STATE_CHANNELS, BOARD_H, BOARD_W), dtype=np.uint8),
+                                np.array([0], dtype=np.uint16), np.array([1.0], dtype=np.float32),
+                                Side.XIANGQI, 1.0))
+        examples.append(Example(np.zeros((NUM_STATE_CHANNELS, BOARD_H, BOARD_W), dtype=np.uint8),
+                                np.array([0], dtype=np.uint16), np.array([1.0], dtype=np.float32),
+                                Side.XIANGQI, -1.0))
+    for _ in range(10):
+        examples.append(Example(np.zeros((NUM_STATE_CHANNELS, BOARD_H, BOARD_W), dtype=np.uint8),
+                                np.array([0], dtype=np.uint16), np.array([1.0], dtype=np.float32),
+                                Side.CHESS, 0.0))
+        examples.append(Example(np.zeros((NUM_STATE_CHANNELS, BOARD_H, BOARD_W), dtype=np.uint8),
+                                np.array([0], dtype=np.uint16), np.array([1.0], dtype=np.float32),
+                                Side.XIANGQI, 0.0))
+
+    buf = BalancedBuffer()
+    buf.append(examples)
+
+    # Sample a large batch: each of the 6 strata should get roughly 1/6 (~100 out of 600)
+    batch_states, _, _, batch_z = buf.sample_batch(600, rng=np.random.default_rng(99))
+    assert len(batch_z) == 600
+    for z_val in (-1.0, 0.0, 1.0):
+        count = sum(batch_z == z_val)
+        # Each outcome appears across 2 sides (Chess + XQ) = 2/6 = 1/3 of draws (~200)
+        assert 140 <= count <= 260, f"Outcome {z_val} count {count} deviates from expected ~200"
+
