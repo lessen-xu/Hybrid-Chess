@@ -6,10 +6,11 @@
 - **Codebase Clean-Up**: Removed obsolete course-project files (RQ1–RQ4 scripts, legacy diagnostics, and outdated report dumps).
 - **Cluster Deployment**: Packaged source archive `round02-r01.tar.gz` and deployed to `/storage/homefs/lx24y045/hybrid-chess/releases/round02-r01`.
 - **Cluster Verification**: Ran verification suite on compute node `gnode25` with C++ engine (82 passed, 1 skipped).
-- **Teacher Job Submission**: Submitted `hc2-teacher01` via `cluster_submit.py` to generate 50,000 clean teacher samples on partition `epyc2`.
+- **Teacher Job Execution**: Submitted and running `hc2-teacher01` via `cluster_submit.py` on compute node `bnode048`.
 
 ## Current Results
 - **Test Suite**: 82 passed, 1 skipped on UBELIX compute node.
-- **Active Job**: `hc2-teacher01` (JobID: `14958307`) queued on partition `epyc2` (14 CPUs, 32GB RAM).
+- **Active Job**: `hc2-teacher01` (JobID: `14958307`) running on `bnode048` (14 CPUs, 32GB RAM).
+- **Teacher Dataset Progress**: 120+ games and ~8,000 / 50,000 samples generated with balanced win/loss distributions.
 - **Budget Ledger**: 0 / 28,800 GPU-seconds used; 100,800 / 230,400 CPU core-seconds reserved under account `gratis`.
-- **Git Status**: Clean working tree on `main` (commit `5cd30a9`).
+- **Git Status**: Clean working tree on `main`.
