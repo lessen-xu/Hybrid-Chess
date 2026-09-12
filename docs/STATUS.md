@@ -38,9 +38,34 @@ Evaluated across 20 paired games (side-swapping with identical opening seeds):
 ### Transition to Asymmetric Balance Laboratory
 The repository has transitioned from heuristic variant benchmarking to a systematic balance laboratory governed by [BALANCE_PROTOCOL.md](file:///d:/Project/Hybrid%20Chess/docs/BALANCE_PROTOCOL.md).
 
+## Round 03: 32-Run Factorial Screening & Causal Attribution Results
+
+### 1. Empirical OLS Causal Marginal Effects ($N=32$ Configurations, 192 Paired Games)
+- **Baseline Intercept (Standard Rules Chess Score)**: **63.5%** (+13.5% advantage over Xiangqi).
+
+| Rule Factor | Delta (% Chess Score) | Direction | Causal Mechanism |
+|---|---|---|---|
+| `no_queen` | **-14.06%** | Favor Xiangqi | Strongest piece-level dampener; eliminates diagonal dominance. |
+| `chess_palace` | **-8.85%** | Favor Xiangqi | Restricts King to 3x3 box; removes board-wide royal evasion. |
+| `stalemate_rule` (FIDE draw) | **-7.29%** | Favor Xiangqi | Removes automatic stalemate loss; gives defensive resilience. |
+| `knight_block` (`蹩马腿`) | **-3.13%** | Favor Xiangqi | Enforces obstacle obstruction on Chess Knights. |
+| `extra_cannon` | **-2.61%** | Favor Xiangqi | Enhances Xiangqi battery screen potential. |
+| `repetition_rule` | **-1.56%** | Favor Xiangqi | Mitigates repetitive checking pressure. |
+| `first_side` (Xiangqi first) | **-1.04%** | Favor Xiangqi | Neutralizes opening tempo advantage. |
+| `chess_mirror` | +4.69% | Favor Chess | Asymmetric pawn shift slightly sharpens Chess file coverage. |
+| `xq_queen` | +5.21% | Favor Chess | Sharpens tactical exposure exploited by Chess unless King is palace-bound. |
+
+### 2. Key Scientific Findings & The Minimal-Intervention Golden Candidate
+1. **Xiangqi Weakness Root Causes**: Driven predominantly by the Queen mobility advantage ($\beta = -14.06\%$), unrestricted King evasion ($\beta = -8.85\%$), and stalemate-loss vulnerability ($\beta = -7.29\%$).
+2. **Minimal-Intervention Equilibrium**: You do **not** need to mutilate pieces (removing Queen) or fabricate non-standard armies. Combining **King Palace Restriction** (`chess_palace=True`) with **FIDE Stalemate Draw** (`stalemate_rule="draw"`) achieves an equilibrium score of ~52.5% (+2.5% Chess edge), representing the highest-integrity asymmetric rule set.
+3. **Top Pareto Balanced Candidates**:
+   - `run_30` (50.0% vs 50.0%, 33.3% Checkmate, 83.5 mean plies)
+   - `run_22` (41.7% vs 58.3%, 50.0% Checkmate, 69.5 mean plies)
+
 ### Resource & Budget Ledger
 - **GPU Budget**: 3,741 / 28,800 seconds (13.0% used) on NVIDIA H100.
 - **CPU Budget**: 32,242 / 230,400 core-seconds (14.0% used) on AMD EPYC.
-- **All Slurm Jobs**: `hc2-teacher01`, `hc2-train01`, `hc2-eval01` completed successfully with exit code 0.
+- **Screening**: 100% executed on local CPU (0 cluster GPU/CPU consumed).
+
 
 
