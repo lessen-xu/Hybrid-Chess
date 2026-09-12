@@ -11,7 +11,19 @@ from hybrid.core.rules import apply_move, board_hash
 from hybrid.core.types import Piece, PieceKind as K, Side, Move
 from hybrid.rl.general_model import new_model
 from hybrid.web_variants import parse_variant
-from hybrid.rl.diagnostics.common import restore
+
+
+def restore(record, cpp=False):
+    board = Board.empty()
+    for x, y, kind, side in record["pieces"]:
+        board.set(x, y, Piece(K[kind], Side[side]))
+    env = HybridChessEnv(variant=parse_variant(record["variant"]), use_cpp=cpp,
+                         max_plies=record.get("max_plies", 400))
+    state = env.reset_from_board(board, Side[record["side"]])
+    state.ply = record["ply"]
+    state.repetition = dict(record["repetition"])
+    env.state = state
+    return env, state
 
 
 def test_heldout_combinations_are_outside_the_training_sampler():
