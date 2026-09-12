@@ -66,8 +66,7 @@ their accompanying evaluations describe which rules and opponents were tested.
 
 For investigating differences between the armies, the [diagnostic guide](docs/DIAGNOSTICS.md)
 describes controlled comparisons of rules, search, evaluation and training data.
-The [first diagnostic report (Chinese)](docs/DIAGNOSIS_2026-09-10.md) records
-reproducible findings, small controlled experiments and their limits.
+
 
 ## Develop
 
