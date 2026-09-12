@@ -1,0 +1,64 @@
+{
+  "n_games": 756,
+  "variants": {
+    "golden_palace_draw": {
+      "army_bias_beta": 0.0511,
+      "army_bias_se": 0.2608,
+      "army_bias_95_ci": [
+        -0.4601,
+        0.5623
+      ],
+      "implied_chess_prob_baseline": 0.5128,
+      "balance_drift_delta": 4.0216,
+      "balance_drift_se": 1.3346,
+      "balance_drift_95_ci": [
+        1.4059,
+        6.6374
+      ],
+      "robust_balance_verdict": false
+    },
+    "none": {
+      "army_bias_beta": 1.4488,
+      "army_bias_se": 0.2975,
+      "army_bias_95_ci": [
+        0.8657,
+        2.0318
+      ],
+      "implied_chess_prob_baseline": 0.8098,
+      "balance_drift_delta": -1.0115,
+      "balance_drift_se": 1.3555,
+      "balance_drift_95_ci": [
+        -3.6682,
+        1.6452
+      ],
+      "robust_balance_verdict": false
+    },
+    "pk_xq_queen": {
+      "army_bias_beta": 0.6615,
+      "army_bias_se": 0.2612,
+      "army_bias_95_ci": [
+        0.1495,
+        1.1736
+      ],
+      "implied_chess_prob_baseline": 0.6596,
+      "balance_drift_delta": -0.0013,
+      "balance_drift_se": 1.2153,
+      "balance_drift_95_ci": [
+        -2.3834,
+        2.3807
+      ],
+      "robust_balance_verdict": false
+    }
+  },
+  "agent_skills": {
+    "ab_d1": 0.0,
+    "ab_d2": 4.8483,
+    "greedy": -0.3243,
+    "nn_mcts_256": -1.0183,
+    "nn_mcts_64": -1.3887,
+    "pure_mcts_128": -0.0953,
+    "pure_mcts_32": -1.2577,
+    "random": -1.6291
+  },
+  "optimization_success": true
+}

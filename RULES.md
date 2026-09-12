@@ -57,13 +57,13 @@ Chess king anywhere along an unobstructed shared file. This attack counts when
 checking whether the Chess king is safe. It does not give the Chess king the same
 long-range capture.
 
-## Ending a game
+## Ending a game (Canonical Baseline)
 
 | Condition | Result |
 | --- | --- |
 | The opponent's king or general is captured | The capturing army wins. |
 | The player to move has no legal move and is in check | Checkmate: that player loses. |
-| The player to move has no legal move and is not in check | Stalemate: that player **loses**, following the Xiangqi convention. |
+| The player to move has no legal move and is not in check | Stalemate: that player **loses** under default baseline rules (Xiangqi convention), or **draws** under FIDE stalemate rules (`stalemate_rule="draw"`). |
 | The same board and side to move occur three times | Draw. |
 | 400 half-moves have been played without another ending | Draw. |
 | A player resigns | The opponent wins. |
@@ -72,44 +72,50 @@ One half-move is one move by either player. Repetition uses the board and side t
 move; there are no additional perpetual-check or chase adjudications. The game
 does not apply the Chess fifty-move or insufficient-material draw rules.
 
-## Presets and custom rules
+## Rule Architecture & Three-Tier Ontology
 
-The six presets are starting points for exploration, with no guaranteed balance
-between armies. Every preset begins with the original rules and applies the
-changes listed here:
+To support both casual play and rigorous balance research, rules are organized into three tiers:
 
-| Preset | Enabled changes |
-| --- | --- |
-| Original rules | None. |
-| Palace & blocked knights | `chess_palace`, `knight_block` |
-| A queen for Xiangqi | `xq_queen` |
-| Palace, knights & queen | `chess_palace`, `knight_block`, `xq_queen` |
-| Chess without a queen | `no_queen` |
-| An extra cannon | `extra_cannon` |
+### 1. Canonical Baseline Rules
+The standard initial game setup: original full armies, Chess moves first (`first_side="chess"`), stalemate is loss for the player with no legal moves (`stalemate_rule="loss"`), and flying general is enabled.
 
-Custom settings expose twelve effective switches:
+### 2. Experimental Rule Dimensions
+Orthogonal parameter switches exposed via `VariantConfig`:
 
-| Setting / configuration field | Effect when enabled |
-| --- | --- |
-| Remove queen / `no_queen` | Remove the Chess queen on d1. |
-| Remove left bishop / `no_bishop` | Remove only the bishop on c1; the bishop on f1 remains. |
-| One rook / `one_rook` | Remove the rook on h1; keep the rook on a1. |
-| Remove ninth pawn / `remove_extra_pawn` | Remove the pawn on i2, leaving eight pawns. |
-| Xiangqi queen / `xq_queen` | Replace the advisor on d10 with a Xiangqi queen. |
-| Extra cannon / `extra_cannon` | Add a third cannon on e8. |
-| Extra soldier / `extra_soldier` | Add a soldier on e6. |
-| Chess king palace / `chess_palace` | Confine the Chess king to d1–f3. |
-| Block Chess knight legs / `knight_block` | Apply the Xiangqi horse's leg-blocking rule to Chess knights. |
-| Disable promotion / `no_promotion` | A pawn remains a pawn on rank 10 and cannot move farther. |
-| No queen promotion / `no_queen_promotion` | Allow promotion only to rook, bishop or knight. |
-| Flying general / `flying_general` | Enable the general's unobstructed-file attack on the Chess king. This is on by default. |
+| Dimension / Switch | Options / Type | Baseline Default | Research Effect |
+| --- | --- | --- | --- |
+| Stalemate rule / `stalemate_rule` | `"loss"` \| `"draw"` | `"loss"` | `"draw"` adopts FIDE rules, providing Xiangqi defensive resilience (-7.3% Chess edge). |
+| First side / `first_side` | `"chess"` \| `"xiangqi"` | `"chess"` | Alternates tempo advantage between armies. |
+| Chess king palace / `chess_palace` | `bool` | `False` | Confines Chess king to d1–f3, preventing board-wide king flight (-8.9% Chess edge). |
+| Block knight legs / `knight_block` | `bool` | `False` | Applies Xiangqi horse leg-blocking to Chess knights. |
+| Remove queen / `no_queen` | `bool` | `False` | Removes the starting Chess queen on d1 (-14.1% Chess edge). |
+| Remove left bishop / `no_bishop` | `bool` | `False` | Removes bishop on c1; retains bishop on f1. |
+| One rook / `one_rook` | `bool` | `False` | Removes rook on h1; retains rook on a1. |
+| Remove ninth pawn / `remove_extra_pawn` | `bool` | `False` | Removes pawn on i2, leaving eight pawns. |
+| Xiangqi queen / `xq_queen` | `bool` | `False` | Replaces the advisor on d10 with a Xiangqi queen. |
+| Extra cannon / `extra_cannon` | `bool` | `False` | Adds a third cannon on e8. |
+| Extra soldier / `extra_soldier` | `bool` | `False` | Adds a soldier on e6. |
+| Disable promotion / `no_promotion` | `bool` | `False` | Pawns remain pawns on rank 10 and cannot move farther. |
+| No queen promotion / `no_queen_promotion` | `bool` | `False` | Allows promotion only to rook, bishop or knight. |
+| Flying general / `flying_general` | `bool` | `True` | General attacks king across unobstructed shared file. |
+| Repetition rule / `repetition_rule` | `"draw"` \| `"loss"` | `"draw"` | Canonical threefold repetition adjudication. |
+
+### 3. Presets & Research Benchmarks
+
+| Preset ID | Name | Category | Key Configuration Changes |
+| --- | --- | --- | --- |
+| `none` | Original rules | Baseline | Baseline standard rules (no modifications). |
+| `golden_palace_draw` | Golden Balanced Variant | Research Candidate | `chess_palace=True`, `stalemate_rule="draw"` (Minimal intervention, ~50/50 balance). |
+| `pk_xq_queen` | Palace, knights & queen | Heuristic Composite | `chess_palace=True`, `knight_block=True`, `xq_queen=True`. |
+| `pk` | Palace & blocked knights | Movement Restriction | `chess_palace=True`, `knight_block=True`. |
+| `xq_queen` | A queen for Xiangqi | Asymmetric Piece | `xq_queen=True`. |
+| `no_queen` | Chess without a queen | Asymmetric Piece | `no_queen=True`. |
+| `extra_cannon` | An extra cannon | Asymmetric Piece | `extra_cannon=True`. |
 
 Disabling promotion makes the separate queen-promotion restriction irrelevant;
 the UI disables it and configuration parsing clears it. Removing the starting
 queen alone does **not** prohibit promoting a pawn to a queen.
 
-For Python users, `VariantConfig` also retains `extra_pawn_i_file` for compatibility.
-Setting it to `False` has the same effect as `remove_extra_pawn=True`; the web and
-general-AI interfaces normalize both into the single remove-ninth-pawn switch.
 Pass a configuration to `HybridChessEnv(variant=...)` as shown in the
 [README](README.md#develop). A game's configuration stays fixed until a new game.
+

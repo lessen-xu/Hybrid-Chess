@@ -1,0 +1,433 @@
+{
+  "expected_games": 792,
+  "completed_games": 792,
+  "complete": true,
+  "summary_by_variant": {
+    "golden_palace_draw": {
+      "balance_curve": [
+        {
+          "agent": "random",
+          "log_budget": 0.0,
+          "games": 12,
+          "chess_wins": 3,
+          "xiangqi_wins": 1,
+          "draws": 8,
+          "chess_score": 0.5833,
+          "xiangqi_score": 0.4167,
+          "army_advantage": 0.1667,
+          "army_adv_95_ci": [
+            -0.1123,
+            0.4456
+          ]
+        },
+        {
+          "agent": "greedy",
+          "log_budget": 1.0,
+          "games": 12,
+          "chess_wins": 0,
+          "xiangqi_wins": 1,
+          "draws": 11,
+          "chess_score": 0.4583,
+          "xiangqi_score": 0.5417,
+          "army_advantage": -0.0833,
+          "army_adv_95_ci": [
+            -0.3653,
+            0.1986
+          ]
+        },
+        {
+          "agent": "ab_d1",
+          "log_budget": 1.4,
+          "games": 12,
+          "chess_wins": 3,
+          "xiangqi_wins": 3,
+          "draws": 6,
+          "chess_score": 0.5,
+          "xiangqi_score": 0.5,
+          "army_advantage": 0.0,
+          "army_adv_95_ci": [
+            -0.2829,
+            0.2829
+          ]
+        },
+        {
+          "agent": "pure_mcts_32",
+          "log_budget": 1.5,
+          "games": 12,
+          "chess_wins": 7,
+          "xiangqi_wins": 4,
+          "draws": 1,
+          "chess_score": 0.625,
+          "xiangqi_score": 0.375,
+          "army_advantage": 0.25,
+          "army_adv_95_ci": [
+            -0.0239,
+            0.5239
+          ]
+        },
+        {
+          "agent": "nn_mcts_64",
+          "log_budget": 1.8,
+          "games": 12,
+          "chess_wins": 4,
+          "xiangqi_wins": 2,
+          "draws": 6,
+          "chess_score": 0.5833,
+          "xiangqi_score": 0.4167,
+          "army_advantage": 0.1667,
+          "army_adv_95_ci": [
+            -0.1123,
+            0.4456
+          ]
+        },
+        {
+          "agent": "pure_mcts_128",
+          "log_budget": 2.1,
+          "games": 12,
+          "chess_wins": 10,
+          "xiangqi_wins": 2,
+          "draws": 0,
+          "chess_score": 0.8333,
+          "xiangqi_score": 0.1667,
+          "army_advantage": 0.6667,
+          "army_adv_95_ci": [
+            0.4558,
+            0.8775
+          ]
+        },
+        {
+          "agent": "nn_mcts_256",
+          "log_budget": 2.4,
+          "games": 12,
+          "chess_wins": 5,
+          "xiangqi_wins": 0,
+          "draws": 7,
+          "chess_score": 0.7083,
+          "xiangqi_score": 0.2917,
+          "army_advantage": 0.4167,
+          "army_adv_95_ci": [
+            0.1595,
+            0.6738
+          ]
+        },
+        {
+          "agent": "ab_d2",
+          "log_budget": 2.6,
+          "games": 12,
+          "chess_wins": 12,
+          "xiangqi_wins": 0,
+          "draws": 0,
+          "chess_score": 1.0,
+          "xiangqi_score": 0.0,
+          "army_advantage": 1.0,
+          "army_adv_95_ci": [
+            1.0,
+            1.0
+          ]
+        }
+      ],
+      "game_quality": {
+        "total_games": 264,
+        "decisiveness": 0.5341,
+        "draw_rate": 0.4659,
+        "plies_median": 87.0,
+        "plies_mean": 119.3,
+        "plies_p90": 298.40000000000003,
+        "plies_iqr": 127.5,
+        "avg_checks_chess": 3.33,
+        "avg_checks_xiangqi": 5.29,
+        "avg_captures": 16.92,
+        "termination_distribution": {
+          "Max plies reached": 0.0568,
+          "Checkmate": 0.5341,
+          "Threefold repetition": 0.2045,
+          "Stalemate (draw)": 0.2045
+        }
+      }
+    },
+    "none": {
+      "balance_curve": [
+        {
+          "agent": "random",
+          "log_budget": 0.0,
+          "games": 12,
+          "chess_wins": 5,
+          "xiangqi_wins": 0,
+          "draws": 7,
+          "chess_score": 0.7083,
+          "xiangqi_score": 0.2917,
+          "army_advantage": 0.4167,
+          "army_adv_95_ci": [
+            0.1595,
+            0.6738
+          ]
+        },
+        {
+          "agent": "greedy",
+          "log_budget": 1.0,
+          "games": 12,
+          "chess_wins": 8,
+          "xiangqi_wins": 1,
+          "draws": 3,
+          "chess_score": 0.7917,
+          "xiangqi_score": 0.2083,
+          "army_advantage": 0.5833,
+          "army_adv_95_ci": [
+            0.3536,
+            0.8131
+          ]
+        },
+        {
+          "agent": "ab_d1",
+          "log_budget": 1.4,
+          "games": 12,
+          "chess_wins": 7,
+          "xiangqi_wins": 1,
+          "draws": 4,
+          "chess_score": 0.75,
+          "xiangqi_score": 0.25,
+          "army_advantage": 0.5,
+          "army_adv_95_ci": [
+            0.255,
+            0.745
+          ]
+        },
+        {
+          "agent": "pure_mcts_32",
+          "log_budget": 1.5,
+          "games": 12,
+          "chess_wins": 7,
+          "xiangqi_wins": 2,
+          "draws": 3,
+          "chess_score": 0.7083,
+          "xiangqi_score": 0.2917,
+          "army_advantage": 0.4167,
+          "army_adv_95_ci": [
+            0.1595,
+            0.6738
+          ]
+        },
+        {
+          "agent": "nn_mcts_64",
+          "log_budget": 1.8,
+          "games": 12,
+          "chess_wins": 0,
+          "xiangqi_wins": 2,
+          "draws": 10,
+          "chess_score": 0.4167,
+          "xiangqi_score": 0.5833,
+          "army_advantage": -0.1667,
+          "army_adv_95_ci": [
+            -0.4456,
+            0.1123
+          ]
+        },
+        {
+          "agent": "pure_mcts_128",
+          "log_budget": 2.1,
+          "games": 12,
+          "chess_wins": 11,
+          "xiangqi_wins": 1,
+          "draws": 0,
+          "chess_score": 0.9167,
+          "xiangqi_score": 0.0833,
+          "army_advantage": 0.8333,
+          "army_adv_95_ci": [
+            0.677,
+            0.9897
+          ]
+        },
+        {
+          "agent": "nn_mcts_256",
+          "log_budget": 2.4,
+          "games": 12,
+          "chess_wins": 0,
+          "xiangqi_wins": 1,
+          "draws": 11,
+          "chess_score": 0.4583,
+          "xiangqi_score": 0.5417,
+          "army_advantage": -0.0833,
+          "army_adv_95_ci": [
+            -0.3653,
+            0.1986
+          ]
+        },
+        {
+          "agent": "ab_d2",
+          "log_budget": 2.6,
+          "games": 12,
+          "chess_wins": 12,
+          "xiangqi_wins": 0,
+          "draws": 0,
+          "chess_score": 1.0,
+          "xiangqi_score": 0.0,
+          "army_advantage": 1.0,
+          "army_adv_95_ci": [
+            1.0,
+            1.0
+          ]
+        }
+      ],
+      "game_quality": {
+        "total_games": 264,
+        "decisiveness": 0.7121,
+        "draw_rate": 0.2879,
+        "plies_median": 89.5,
+        "plies_mean": 120.9,
+        "plies_p90": 273.1,
+        "plies_iqr": 131.0,
+        "avg_checks_chess": 2.96,
+        "avg_checks_xiangqi": 3.96,
+        "avg_captures": 16.02,
+        "termination_distribution": {
+          "Checkmate": 0.5644,
+          "Stalemate (loss for stalemated side)": 0.1477,
+          "Threefold repetition": 0.2121,
+          "Max plies reached": 0.0758
+        }
+      }
+    },
+    "pk_xq_queen": {
+      "balance_curve": [
+        {
+          "agent": "random",
+          "log_budget": 0.0,
+          "games": 12,
+          "chess_wins": 4,
+          "xiangqi_wins": 3,
+          "draws": 5,
+          "chess_score": 0.5417,
+          "xiangqi_score": 0.4583,
+          "army_advantage": 0.0833,
+          "army_adv_95_ci": [
+            -0.1986,
+            0.3653
+          ]
+        },
+        {
+          "agent": "greedy",
+          "log_budget": 1.0,
+          "games": 12,
+          "chess_wins": 7,
+          "xiangqi_wins": 2,
+          "draws": 3,
+          "chess_score": 0.7083,
+          "xiangqi_score": 0.2917,
+          "army_advantage": 0.4167,
+          "army_adv_95_ci": [
+            0.1595,
+            0.6738
+          ]
+        },
+        {
+          "agent": "ab_d1",
+          "log_budget": 1.4,
+          "games": 12,
+          "chess_wins": 7,
+          "xiangqi_wins": 3,
+          "draws": 2,
+          "chess_score": 0.6667,
+          "xiangqi_score": 0.3333,
+          "army_advantage": 0.3333,
+          "army_adv_95_ci": [
+            0.0666,
+            0.6001
+          ]
+        },
+        {
+          "agent": "pure_mcts_32",
+          "log_budget": 1.5,
+          "games": 12,
+          "chess_wins": 4,
+          "xiangqi_wins": 4,
+          "draws": 4,
+          "chess_score": 0.5,
+          "xiangqi_score": 0.5,
+          "army_advantage": 0.0,
+          "army_adv_95_ci": [
+            -0.2829,
+            0.2829
+          ]
+        },
+        {
+          "agent": "nn_mcts_64",
+          "log_budget": 1.8,
+          "games": 12,
+          "chess_wins": 3,
+          "xiangqi_wins": 2,
+          "draws": 7,
+          "chess_score": 0.5417,
+          "xiangqi_score": 0.4583,
+          "army_advantage": 0.0833,
+          "army_adv_95_ci": [
+            -0.1986,
+            0.3653
+          ]
+        },
+        {
+          "agent": "pure_mcts_128",
+          "log_budget": 2.1,
+          "games": 12,
+          "chess_wins": 11,
+          "xiangqi_wins": 0,
+          "draws": 1,
+          "chess_score": 0.9583,
+          "xiangqi_score": 0.0417,
+          "army_advantage": 0.9167,
+          "army_adv_95_ci": [
+            0.8036,
+            1.0
+          ]
+        },
+        {
+          "agent": "nn_mcts_256",
+          "log_budget": 2.4,
+          "games": 12,
+          "chess_wins": 3,
+          "xiangqi_wins": 4,
+          "draws": 5,
+          "chess_score": 0.4583,
+          "xiangqi_score": 0.5417,
+          "army_advantage": -0.0833,
+          "army_adv_95_ci": [
+            -0.3653,
+            0.1986
+          ]
+        },
+        {
+          "agent": "ab_d2",
+          "log_budget": 2.6,
+          "games": 12,
+          "chess_wins": 8,
+          "xiangqi_wins": 4,
+          "draws": 0,
+          "chess_score": 0.6667,
+          "xiangqi_score": 0.3333,
+          "army_advantage": 0.3333,
+          "army_adv_95_ci": [
+            0.0666,
+            0.6001
+          ]
+        }
+      ],
+      "game_quality": {
+        "total_games": 264,
+        "decisiveness": 0.7538,
+        "draw_rate": 0.2462,
+        "plies_median": 78.5,
+        "plies_mean": 113.1,
+        "plies_p90": 295.0,
+        "plies_iqr": 121.5,
+        "avg_checks_chess": 2.8,
+        "avg_checks_xiangqi": 4.83,
+        "avg_captures": 16.06,
+        "termination_distribution": {
+          "Threefold repetition": 0.197,
+          "Checkmate": 0.5795,
+          "Max plies reached": 0.0492,
+          "Stalemate (loss for stalemated side)": 0.1742
+        }
+      }
+    }
+  }
+}

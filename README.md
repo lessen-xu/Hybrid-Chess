@@ -34,18 +34,20 @@ JSON and JSONL recordings for stepping through or autoplaying a game.
 
 ## Choose the rules
 
-| Preset | Changes from the original setup |
-| --- | --- |
-| Original rules | Both armies use their usual movement rules, with the shared-board adaptations below. |
-| Palace & blocked knights | Confine the Chess king to a palace and make Chess knights subject to leg blocking. |
-| A queen for Xiangqi | Replace Xiangqi's left advisor with a queen. |
-| Palace, knights & queen | Combine those movement restrictions with the Xiangqi queen. |
-| Chess without a queen | Remove the starting Chess queen. |
-| An extra cannon | Add a third Xiangqi cannon. |
+| Preset | Changes from the original setup | Category |
+| --- | --- | --- |
+| Original rules (`none`) | Both armies use their usual movement rules, with the shared-board adaptations below. | Baseline |
+| Golden Balanced (`golden_palace_draw`) | Confine Chess king to palace and adopt FIDE stalemate draw rules (~50/50 balance). | Research Benchmark |
+| Palace & blocked knights (`pk`) | Confine the Chess king to a palace and make Chess knights subject to leg blocking. | Movement |
+| A queen for Xiangqi (`xq_queen`) | Replace Xiangqi's left advisor with a queen. | Piece Adjustment |
+| Palace, knights & queen (`pk_xq_queen`) | Combine those movement restrictions with the Xiangqi queen. | Heuristic Composite |
+| Chess without a queen (`no_queen`) | Remove the starting Chess queen. | Piece Removal |
+| An extra cannon (`extra_cannon`) | Add a third Xiangqi cannon. | Piece Addition |
 
-Custom settings also cover the ninth pawn, individual pieces, pawn promotion and
-the flying general. [Game rules](RULES.md) explains the board, every piece,
-termination and all rule switches.
+Custom settings expose orthogonal experimental switches across starting armies, movement, and termination rules.
+See [Game rules](RULES.md) for piece movements and switch definitions, and [Balance Protocol](docs/BALANCE_PROTOCOL.md)
+for our empirical game-theoretic equilibrium methodology.
+
 
 ## Explore the AI
 
