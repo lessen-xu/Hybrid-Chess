@@ -8,11 +8,11 @@
 - **Cluster Verification**: Ran verification suite on compute node `gnode25` with C++ engine (82 passed, 1 skipped).
 - **Teacher Dataset Generation**: Executed `hc2-teacher01` on compute node `bnode048`, generating 49,980 samples (35 Chess wins vs 34 Xiangqi wins in decisive training games).
 - **GPU Supervised Pretraining**: Executed on `gnode26` (H100 GPU), converging to validation loss 1.219; exported `supervised.pt` and initial `candidate.pt`.
-- **RL Self-Play Iterations**: Completed Iterations 0–7 (1,024 games, 75,648 buffer samples, loss steadily reduced to 3.024 with `BalancedBuffer`); currently executing Iteration 8.
+- **RL Self-Play Iterations**: Completed Iterations 0–8 (1,152 games, 85,720 buffer samples, loss steadily reduced to 3.010 with `BalancedBuffer`); currently executing Iteration 9.
 
 ## Current Results
 - **Active Job**: `hc2-train01` (JobID: `14959962`) running on node `gnode26` (1x H100 GPU, 16 CPUs, 64GB RAM).
-- **Model Checkpoints**: `supervised.pt`, `candidate-0001.pt` through `candidate-0008.pt`, and `candidate.pt` generated.
-- **Self-Play Progress**: 1,024 games completed (558 Chess wins, 139 Xiangqi wins, 327 draws); Iteration 8 in progress.
-- **Budget Ledger**: ~1,750 / 28,800 GPU-seconds used; 22,442 / 230,400 CPU core-seconds used under account `gratis`.
+- **Model Checkpoints**: `supervised.pt`, `candidate-0001.pt` through `candidate-0009.pt`, and `candidate.pt` generated.
+- **Self-Play Progress**: 1,152 games completed (653 Chess wins, 156 Xiangqi wins, 343 draws); Iteration 9 in progress.
+- **Budget Ledger**: ~2,050 / 28,800 GPU-seconds used; 22,442 / 230,400 CPU core-seconds used under account `gratis`.
 - **Git Status**: Clean working tree on `main`.
