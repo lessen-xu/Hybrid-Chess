@@ -31,12 +31,13 @@ def test_fixture_contract(record):
 def test_legacy_evaluator_and_opt_in_controls():
     env = HybridChessEnv()
     state = env.reset()
-    assert abs(evaluate(state,Side.CHESS)+evaluate(state,Side.XIANGQI))>1
+    assert abs(evaluate(state,Side.CHESS)+evaluate(state,Side.XIANGQI)) == pytest.approx(0.0)
     for function in (basic_evaluate,symmetric_evaluate):
         assert function(state,Side.CHESS)==pytest.approx(-function(state,Side.XIANGQI))
     original = AlphaBetaAgent(SearchConfig(depth=1)).select_move(state,env.legal_moves())
     explicit = AlphaBetaAgent(SearchConfig(depth=1),evaluator=evaluate).select_move(state,env.legal_moves())
     assert original==explicit
+
 
 
 def test_stalemate_penalty_can_be_isolated():

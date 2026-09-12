@@ -434,9 +434,11 @@ static inline double evaluate_leaf(
     int my_piece_count = 0;
     int opp_piece_count = 0;
 
-    // Track positions for endgame heuristics (up to 16 pieces each)
+    // Track positions for endgame heuristics (up to 32 pieces each)
     int my_px[32], my_py[32];
     int my_n = 0;
+    int opp_px[32], opp_py[32];
+    int opp_n = 0;
 
     for (int y = 0; y < BOARD_H; ++y)
         for (int x = 0; x < BOARD_W; ++x) {
@@ -454,6 +456,11 @@ static inline double evaluate_leaf(
                 } else {
                     mat -= v;
                     opp_piece_count++;
+                    if (opp_n < 32) {
+                        opp_px[opp_n] = x;
+                        opp_py[opp_n] = y;
+                        opp_n++;
+                    }
                 }
             }
         }
@@ -476,65 +483,77 @@ static inline double evaluate_leaf(
     }
     double mob = MOBILITY_WEIGHT * static_cast<double>(perspective_count - opp_persp_count);
 
-    // Check bonus — amplified in winning endgames
-    double chk = 0.0;
+    // Identify attacker and defender symmetrically based on mat
     Side rp_opp = opponent(root_perspective);
-    bool winning_big = (mat > MATERIAL_AMP_THRESHOLD);
+    double abs_mat = std::abs(mat);
+    Side attacker_side = (mat >= 0.0) ? root_perspective : rp_opp;
+    Side defender_side = opponent(attacker_side);
+    int total_pieces = my_piece_count + opp_piece_count;
+    int defender_count = (mat >= 0.0) ? opp_piece_count : my_piece_count;
+
+    // Endgame heuristics only fire when pieces are actually depleted,
+    // preventing false triggers at ply 0 opening where material sums differ.
+    bool is_endgame = (total_pieces <= 14) || (defender_count <= 6);
+    bool winning_big = is_endgame && (abs_mat > MATERIAL_AMP_THRESHOLD);
+
+    // Check bonus — amplified in winning endgames
     double effective_check_bonus = winning_big ? ENDGAME_CHECK_BONUS : CHECK_BONUS;
+    double chk = 0.0;
     bool opp_in_check = is_in_check(board, rp_opp);
     bool self_in_check = is_in_check(board, root_perspective);
     if (opp_in_check)  chk += effective_check_bonus;
     if (self_in_check) chk -= effective_check_bonus;
-    double endgame_bonus = 0.0;
 
+    double conversion_bonus = 0.0;
     if (winning_big) {
-        // 1. Material amplification: strongly encourage converting advantages
-        mat *= MATERIAL_AMP_FACTOR;
+        // 1. Material amplification: tripling material advantage (add 2.0 * abs_mat)
+        conversion_bonus += (MATERIAL_AMP_FACTOR - 1.0) * abs_mat;
 
-        // 2. Locate enemy royal for proximity calculations
-        int opp_royal_sq = board.royal_square(rp_opp);
-        int my_royal_sq  = board.royal_square(root_perspective);
+        // 2. Locate attacker and defender royals
+        int def_royal_sq = board.royal_square(defender_side);
+        int att_royal_sq = board.royal_square(attacker_side);
 
-        if (opp_royal_sq >= 0) {
-            int ekx = opp_royal_sq % BOARD_W;
-            int eky = opp_royal_sq / BOARD_W;
+        if (def_royal_sq >= 0) {
+            int ekx = def_royal_sq % BOARD_W;
+            int eky = def_royal_sq / BOARD_W;
 
-            // 3. King confinement: push enemy royal to edges/corners
-            endgame_bonus += CONFINE_WEIGHT * king_edge_distance(ekx, eky);
+            // 3. King confinement: push defender royal to edges/corners
+            conversion_bonus += CONFINE_WEIGHT * king_edge_distance(ekx, eky);
 
-            // 4. Approach bonus: reward ALL our pieces being close to enemy king
-            //    This creates a strong gradient guiding pieces toward the enemy
+            // 4. Approach bonus: reward attacker pieces close to defender royal
+            int* att_px = (attacker_side == root_perspective) ? my_px : opp_px;
+            int* att_py = (attacker_side == root_perspective) ? my_py : opp_py;
+            int  att_n  = (attacker_side == root_perspective) ? my_n  : opp_n;
+
             double approach_sum = 0.0;
-            for (int i = 0; i < my_n; ++i) {
-                int dist = chebyshev(my_px[i], my_py[i], ekx, eky);
-                // Max Chebyshev on 9x10 board is 9. Reward closeness.
+            for (int i = 0; i < att_n; ++i) {
+                int dist = chebyshev(att_px[i], att_py[i], ekx, eky);
                 approach_sum += (10.0 - dist);
             }
-            endgame_bonus += APPROACH_WEIGHT * approach_sum;
+            conversion_bonus += APPROACH_WEIGHT * approach_sum;
 
-            // 5. Own king proximity: reward our king being close to enemy king
-            //    (kings must cooperate to deliver mate)
-            if (my_royal_sq >= 0) {
-                int mkx = my_royal_sq % BOARD_W;
-                int mky = my_royal_sq / BOARD_W;
+            // 5. Own king proximity: reward attacker king being close to defender royal
+            if (att_royal_sq >= 0) {
+                int mkx = att_royal_sq % BOARD_W;
+                int mky = att_royal_sq / BOARD_W;
                 int king_dist = chebyshev(mkx, mky, ekx, eky);
-                endgame_bonus += KING_PROXIMITY_WEIGHT * (10.0 - king_dist);
+                conversion_bonus += KING_PROXIMITY_WEIGHT * (10.0 - king_dist);
             }
         }
 
-        // 6. Mobility squeeze: reward restricting opponent's moves
-        if (opp_piece_count <= ENDGAME_PIECE_THRESHOLD) {
-            endgame_bonus += SQUEEZE_WEIGHT * (30.0 - opp_persp_count);
-
-            // 7. Anti-stalemate: PENALIZE positions where opponent has 0 or very
-            //    few moves but is NOT in check (= accidental stalemate = draw!)
-            if (opp_persp_count <= 1 && !opp_in_check) {
-                endgame_bonus -= STALEMATE_PENALTY;
-            }
+        // 6. Mobility squeeze: reward restricting defender's moves
+        if (defender_count <= ENDGAME_PIECE_THRESHOLD) {
+            int defender_moves = (defender_side == root_perspective) ? perspective_count : opp_persp_count;
+            conversion_bonus += SQUEEZE_WEIGHT * (30.0 - defender_moves);
+            // Anti-stalemate penalty is removed: stalemate is a win for the attacker.
         }
     }
 
-    return mat + mob + chk + endgame_bonus;
+    if (root_perspective == attacker_side) {
+        return mat + mob + chk + conversion_bonus;
+    } else {
+        return mat + mob + chk - conversion_bonus;
+    }
 }
 // Conversion-mode leaf evaluation — lexicographic objective
 
