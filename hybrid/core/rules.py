@@ -477,6 +477,8 @@ def terminal_info(board: Board, side_to_move: Side, repetition_table: Dict[str, 
         status = TerminalStatus.CHESS_WIN if winner == Side.CHESS else TerminalStatus.XIANGQI_WIN
         if is_in_check(board, side_to_move):
             return GameInfo(status, winner=winner, reason="Checkmate")
+        if _active_variant is not None and getattr(_active_variant, "stalemate_rule", "loss") == "draw":
+            return GameInfo(TerminalStatus.DRAW, winner=None, reason="Stalemate (draw)")
         # Stalemate = loss for the side with no moves (Xiangqi convention)
         return GameInfo(status, winner=winner, reason="Stalemate (loss for stalemated side)")
 
@@ -487,6 +489,11 @@ def terminal_info(board: Board, side_to_move: Side, repetition_table: Dict[str, 
     # 4) Threefold repetition
     key = board_hash(board, side_to_move)
     if repetition_table.get(key, 0) >= 3:
+        if _active_variant is not None and getattr(_active_variant, "repetition_rule", "draw") == "perpetual_check_loss":
+            if is_in_check(board, side_to_move):
+                winner = side_to_move
+                status = TerminalStatus.CHESS_WIN if winner == Side.CHESS else TerminalStatus.XIANGQI_WIN
+                return GameInfo(status, winner=winner, reason="Perpetual check (checking side loses)")
         return GameInfo(TerminalStatus.DRAW, winner=None, reason="Threefold repetition")
 
     return GameInfo(TerminalStatus.ONGOING, winner=None, reason="")

@@ -8,6 +8,17 @@ reachable by importing the raw extension directly (the tests do this for
 the perft helper and the slow attack-detection variant).
 """
 
+import sys
+import os
+
+if sys.platform == "win32":
+    for p in os.environ.get("PATH", "").split(os.pathsep):
+        if os.path.isdir(p) and (os.path.exists(os.path.join(p, "g++.exe")) or os.path.exists(os.path.join(p, "libwinpthread-1.dll"))):
+            try:
+                os.add_dll_directory(p)
+            except Exception:
+                pass
+
 from .hybrid_cpp_engine import (   # noqa: F401
     Side,
     PieceKind,

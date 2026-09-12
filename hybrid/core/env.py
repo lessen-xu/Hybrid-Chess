@@ -194,14 +194,15 @@ class HybridChessEnv:
     def reset(self) -> GameState:
         self._set_active_variant()
         b = initial_board(variant=self.variant)
-        s = GameState(board=b, side_to_move=Side.CHESS, variant=self.variant, max_plies=self.max_plies)
+        first_side = Side.XIANGQI if getattr(self.variant, "first_side", "chess") == "xiangqi" else Side.CHESS
+        s = GameState(board=b, side_to_move=first_side, variant=self.variant, max_plies=self.max_plies)
         if ENABLE_THREEFOLD_REPETITION_DRAW:
             key = board_hash(s.board, s.side_to_move)
             s.repetition[key] = s.repetition.get(key, 0) + 1
         self.state = s
 
         if self.use_cpp:
-            self._init_cpp_state(b, Side.CHESS)
+            self._init_cpp_state(b, first_side)
 
         return s.clone()
 

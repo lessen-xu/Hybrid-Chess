@@ -52,6 +52,12 @@ class VariantConfig:
     knight_block: bool = False         # Chess Knight uses XQ Horse leg-blocking rules
     no_queen_promotion: bool = False   # Pawn can only promote to R/B/N
 
+    # --- Experimental causal de-confounding flags ---
+    first_side: str = "chess"          # Initial side to move: "chess" or "xiangqi" (tempo de-confounding)
+    stalemate_rule: str = "loss"       # "loss" (stalemated side loses) or "draw" (FIDE style)
+    repetition_rule: str = "draw"      # "draw" (exact threefold draw) or "perpetual_check_loss"
+    chess_mirror: bool = False         # Horizontally mirror Chess setup (_RNBKQBNR) to de-confound i-file edge
+
     def to_dict(self) -> dict:
         """Serialize for checkpoints / JSON configs."""
         return asdict(self)

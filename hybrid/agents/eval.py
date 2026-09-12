@@ -70,7 +70,7 @@ def evaluate(state: GameState, perspective: Side, w: EvalWeights = EvalWeights()
     and Xiangqi rules, driving the opponent into stalemate is a win for the attacker.
     """
     mat = material_score(state, perspective)
-    mob = w.mobility * mobility_score(state, perspective)
+    mob = w.mobility * mobility_score(state, perspective) if w.mobility != 0.0 else 0.0
 
     # Count pieces and locate royals for both armies
     chess_pieces = []

@@ -30,9 +30,13 @@ Evaluated across 20 paired games (side-swapping with identical opening seeds):
 | `pk` | Palace & Blocked Knights | 0.85 (85%) | 0.65 (65%) | 20% | 12W / 6D / 2L |
 | `pk_xq_queen` | Palace, Blocked Knights & Xiangqi Queen | **0.70 (70%)** | **0.60 (60%)** | **10%** | 7W / 12D / 1L |
 
-### Key Conclusions
-1. **Xiangqi Weakness Root Cause**: Under standard rules, Chess dominance is overwhelming (55% win rate delta against AlphaBeta, 60% delta against Random). The primary cause is not just the Queen, but Chess King's board-wide escape mobility and Chess Knight's unblockable jumping.
-2. **Optimal Balance**: The `pk_xq_queen` variant (restricting Chess King to palace, blocking Chess Knight legs like Xiangqi horses, and giving Xiangqi a Queen) achieves near-ideal equilibrium: 70% vs 60% score (10% delta) with a 60% draw rate.
+### Key Observations & Methodological Notes
+1. **Empirical Asymmetry**: Under standard rules (`none`), the model demonstrates significant performance asymmetry against AlphaBeta (1.00 as Chess vs 0.45 as Xiangqi).
+2. **Preset Comparison vs. Equilibrium**: In this preliminary test, `pk_xq_queen` exhibited the smallest disparity (0.70 as Chess vs 0.60 as Xiangqi) among the six tested presets. However, per `docs/BALANCE_PROTOCOL.md`, these numbers reflect $P(M_{\text{Chess}} \text{ beats } AB_{\text{XQ}})$ vs $P(M_{\text{XQ}} \text{ beats } AB_{\text{Chess}})$, which convolve army advantage with agent competence and heuristic bias rather than proving game-theoretic equilibrium.
+3. **Causal Attribution Next Step**: Because `pk` and `pk_xq_queen` bundle multiple modifications simultaneously (palace, knight-blocking, xiangqi-queen), isolating the exact main effect of each rule requires systematic fractional factorial screening.
+
+### Transition to Asymmetric Balance Laboratory
+The repository has transitioned from heuristic variant benchmarking to a systematic balance laboratory governed by [BALANCE_PROTOCOL.md](file:///d:/Project/Hybrid%20Chess/docs/BALANCE_PROTOCOL.md).
 
 ### Resource & Budget Ledger
 - **GPU Budget**: 3,741 / 28,800 seconds (13.0% used) on NVIDIA H100.

@@ -98,16 +98,25 @@ def initial_board(variant: "VariantConfig | None" = None) -> Board:
         None if v.one_rook else PieceKind.ROOK,
         None,  # 9th file empty by default
     ]
+    if getattr(v, "chess_mirror", False):
+        chess_back = chess_back[::-1]
+
     for x, kind in enumerate(chess_back):
         if kind is not None:
             b.set(x, 0, Piece(kind, Side.CHESS))
 
     # Pawn rank: 8 pawns + optional 9th
-    for x in range(8):
-        b.set(x, 1, Piece(PieceKind.PAWN, Side.CHESS))
     extra_pawn = v.extra_pawn_i_file and not v.remove_extra_pawn
-    if extra_pawn:
-        b.set(8, 1, Piece(PieceKind.PAWN, Side.CHESS))
+    if getattr(v, "chess_mirror", False):
+        for x in range(1, 9):
+            b.set(x, 1, Piece(PieceKind.PAWN, Side.CHESS))
+        if extra_pawn:
+            b.set(0, 1, Piece(PieceKind.PAWN, Side.CHESS))
+    else:
+        for x in range(8):
+            b.set(x, 1, Piece(PieceKind.PAWN, Side.CHESS))
+        if extra_pawn:
+            b.set(8, 1, Piece(PieceKind.PAWN, Side.CHESS))
 
     # --- Xiangqi side (top) ---
     xiangqi_back = [
