@@ -48,6 +48,8 @@ PRESETS = [
 
 def parse_variant(value="none"):
     if isinstance(value, str):
+        if value == "golden_palace_draw":
+            return VariantConfig(chess_palace=True, stalemate_rule="draw")
         match = next((p for p in PRESETS if p["id"] == value), None)
         if match is None:
             raise ValueError("invalid_variant")
@@ -55,8 +57,13 @@ def parse_variant(value="none"):
     valid = {f.name for f in fields(VariantConfig)}
     if not isinstance(value, dict) or set(value) - valid:
         raise ValueError("invalid_variant")
-    if any(type(v) is not bool for v in value.values()):
-        raise ValueError("invalid_variant")
+    str_fields = {"first_side", "stalemate_rule", "repetition_rule"}
+    for k, v in value.items():
+        if k in str_fields:
+            if not isinstance(v, str):
+                raise ValueError("invalid_variant")
+        elif not isinstance(v, bool):
+            raise ValueError("invalid_variant")
     config = VariantConfig(**value).to_dict()
     config["remove_extra_pawn"] |= not config["extra_pawn_i_file"]
     config["extra_pawn_i_file"] = True

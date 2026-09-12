@@ -207,6 +207,7 @@ class Trainer:
                 jobs = [{"mode": "selfplay", "game_id": state["iteration"]*cfg["games_per_iteration"]+i,
                     "seed": cfg["seed"]+100000, "simulations": sims, "use_cpp": cfg["use_cpp"],
                     "max_plies": cfg["max_plies"], "deadline": self.stop.deadline,
+                    "target_variant": cfg.get("target_variant"),
                     "model_sha256": model_hash, "record": i < 2,
                     "path": str(frozen.parent / f"game-{i:04d}.npz")} for i in range(cfg["games_per_iteration"])]
                 def on_game(meta):
@@ -294,6 +295,7 @@ def generate_teacher(cfg, root, source_version, stop):
     while not finished():
         jobs = [{"mode": "teacher", "game_id": i, "seed": cfg["seed"], "teacher_seconds": cfg["teacher_seconds"],
             "max_plies": cfg["max_plies"], "deadline": stop.deadline, "record": i < 2,
+            "target_variant": cfg.get("target_variant"),
             "use_cpp": False, "path": str(root / "games" / f"game-{i:05d}.npz")}
             for i in range(game_start, game_start+wave_size)]
         collect_games(jobs, cfg["workers"], on_game=on_game, should_stop=finished)

@@ -55,7 +55,12 @@ def play_training_game(job, model=None, cancelled=None):
     """Return None for interrupted games; never label a wall-time cutoff as a draw."""
     seed, game_id = job["seed"], job["game_id"]
     rng = random.Random(seed * 1_000_003 + game_id)
-    variant, family = sample_variant(game_id, seed)
+    target_var = job.get("target_variant")
+    if target_var:
+        variant = parse_variant(target_var)
+        family = target_var if isinstance(target_var, str) else "golden"
+    else:
+        variant, family = sample_variant(game_id, seed)
     max_plies = job.get("max_plies", 400)
     env = HybridChessEnv(variant=variant, use_cpp=job.get("use_cpp", False), max_plies=max_plies)
     state = env.reset()
